@@ -1,7 +1,7 @@
 // FIX: Changed React import from a named import to a default import to correctly resolve the React namespace for types like React.ChangeEvent.
 import React, { useState, useCallback, useMemo } from 'react';
 import { Project, Character, Chapter, ScriptLine } from '../../../types';
-import mm from 'music-metadata-browser';
+import * as mm from 'music-metadata-browser';
 import { bufferToWav } from '../../../lib/wavEncoder';
 
 interface UseAudioFileMatcherProps {
@@ -26,7 +26,131 @@ const parseChapterIdentifier = (identifier: string): number[] => {
     if (!isNaN(num)) {
         return [num];
     }
-    return []; 
+    return [];
+};
+
+// 解析Adobe Audition XMP格式的CuePoint标记
+const parseXmpCuePoints = (metadata: any, audioDuration: number): { startTime: number; endTime: number }[] | null => {
+    try {
+        // 从 native 标签中查找所有 PRIV 帧
+        let privTags: any[] = [];
+
+        // 检查所有可能的 ID3 版本
+        const id3Versions = ['ID3v2.3', 'ID3v2.4', 'ID3v2.2', 'ID3v2'];
+
+        for (const version of id3Versions) {
+            const nativeTags = metadata.native?.[version];
+            if (Array.isArray(nativeTags)) {
+                // 如果是数组，查找 id === 'PRIV' 的元素
+                const privFrames = nativeTags.filter((tag: any) => tag?.id === 'PRIV');
+                privTags.push(...privFrames);
+            } else if (nativeTags?.PRIV) {
+                // 如果是对象，直接获取 PRIV
+                const privData = Array.isArray(nativeTags.PRIV) ? nativeTags.PRIV : [nativeTags.PRIV];
+                privTags.push(...privData);
+            }
+        }
+
+        if (privTags.length === 0) {
+            console.log('未找到PRIV标签');
+            return null;
+        }
+
+        console.log(`找到 ${privTags.length} 个PRIV标签`);
+
+        // 查找XMP私有标签
+        const xmpTag = privTags.find((tag: any) => {
+            // 检查多种可能的XMP标识
+            if (tag?.value?.owner_identifier === 'XMP') return true;
+            if (tag?.owner_identifier === 'XMP') return true;
+            if (typeof tag === 'string' && tag.includes('xmpmeta')) return true;
+            if (tag?.description && tag.description.includes('xmpmeta')) return true;
+            // 检查tag.value是否为字符串且包含XMP
+            if (typeof tag?.value === 'string' && tag.value.includes('xmpmeta')) return true;
+            // 检查data字段
+            if (tag?.value?.data && typeof tag.value.data === 'string' && tag.value.data.includes('xmpmeta')) return true;
+            return false;
+        });
+
+        if (!xmpTag) {
+            console.log('未找到XMP标签');
+            return null;
+        }
+
+        console.log('找到XMP标签:', xmpTag);
+
+        // 获取XMP字符串 - 尝试多种可能的数据位置
+        let xmpString = '';
+        if (typeof xmpTag === 'string') {
+            xmpString = xmpTag;
+        } else if (typeof xmpTag.value === 'string') {
+            xmpString = xmpTag.value;
+        } else if (xmpTag.value?.data) {
+            if (typeof xmpTag.value.data === 'string') {
+                xmpString = xmpTag.value.data;
+            } else if (xmpTag.value.data instanceof Uint8Array || xmpTag.value.data instanceof Buffer) {
+                // 将字节数组转换为字符串
+                xmpString = new TextDecoder('utf-8').decode(xmpTag.value.data);
+            }
+        } else if (xmpTag.description) {
+            xmpString = xmpTag.description;
+        }
+
+        if (!xmpString) {
+            console.log('XMP标签中没有数据');
+            return null;
+        }
+
+        console.log(`XMP字符串长度: ${xmpString.length}`);
+        console.log('XMP字符串片段:', xmpString.substring(0, 200));
+
+        // 简单的正则表达式解析XMP中的CuePoint标记
+        // 匹配 xmpDM:startTime="数字"
+        const startTimeRegex = /xmpDM:startTime="(\d+)"/g;
+        const frameRateRegex = /xmpDM:frameRate="f(\d+)"/;
+
+        // 提取采样率
+        const frameRateMatch = xmpString.match(frameRateRegex);
+        const sampleRate = frameRateMatch ? parseInt(frameRateMatch[1], 10) : 48000; // 默认48kHz
+
+        // 提取所有startTime
+        const startTimes: number[] = [];
+        let match;
+        while ((match = startTimeRegex.exec(xmpString)) !== null) {
+            startTimes.push(parseInt(match[1], 10));
+        }
+
+        if (startTimes.length === 0) {
+            return null;
+        }
+
+        // 排序
+        startTimes.sort((a, b) => a - b);
+
+        // 如果第一个标记不是从 0 开始，添加一个起始标记
+        if (startTimes.length > 0 && startTimes[0] > 0) {
+            startTimes.unshift(0);
+            console.log('添加起始标记（时间 0）');
+        }
+
+        // 创建时间段：从每个marker到下一个marker（或音频结束）
+        const segments: { startTime: number; endTime: number }[] = [];
+        for (let i = 0; i < startTimes.length; i++) {
+            const startTime = startTimes[i] / sampleRate;
+            const endTime = i < startTimes.length - 1
+                ? startTimes[i + 1] / sampleRate
+                : audioDuration;
+
+            segments.push({ startTime, endTime });
+        }
+
+        console.log(`从XMP中解析到 ${segments.length} 个音频段落（包含起始段）`);
+        return segments;
+
+    } catch (error) {
+        console.error('解析XMP CuePoint标记失败:', error);
+        return null;
+    }
 };
 
 export const useAudioFileMatcher = ({
@@ -45,21 +169,41 @@ export const useAudioFileMatcher = ({
   }, [characters]);
 
   const handleFileSelectionForCvMatch = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+      console.log('🔵 handleFileSelectionForCvMatch 被调用');
       const files = event.target.files;
-      if (!files || files.length === 0 || !currentProject) return;
-  
+      console.log('📁 选择的文件数量:', files?.length);
+
+      if (!files || files.length === 0 || !currentProject) {
+          console.log('⚠️ 没有文件或没有项目');
+          return;
+      }
+
+      console.log('🚀 开始处理文件...');
+
+      // 检查 Buffer 是否可用
+      if (typeof window.Buffer === 'undefined') {
+          console.error('❌ Buffer 未定义！这可能导致 music-metadata-browser 无法工作');
+          alert('错误：Buffer 未加载。请刷新页面重试。');
+          return;
+      } else {
+          console.log('✅ Buffer 已加载');
+      }
+
       setIsCvMatchLoading(true);
-      
+
       let totalMatchedCount = 0;
       let totalMissedCount = 0;
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      console.log('🎵 AudioContext 创建成功');
 
       for (const file of Array.from(files)) {
+          console.log('📄 处理文件:', file.name, '大小:', file.size, 'bytes');
           const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
           const parts = nameWithoutExt.split('_');
-  
+          console.log('📝 文件名部分:', parts);
+
           if (parts.length !== 2) { // Expecting chapter_cv
-              console.warn(`Skipping file with invalid name format: ${file.name}`);
+              console.warn(`⚠️ 跳过：文件名格式不正确: ${file.name} (期望格式: 章节_CV名.mp3)`);
               continue;
           }
 
@@ -102,20 +246,62 @@ export const useAudioFileMatcher = ({
                   continue;
               }
 
-              // 2. Parse MP3 markers
-              const metadata = await mm.parseBlob(file);
-              const markers = metadata.native?.['ID3v2.3']?.CHAP ?? metadata.native?.['ID3v2.4']?.CHAP ?? metadata.native?.ID3v2?.CHAP;
+              // 2. Parse MP3 markers - 支持ID3v2 CHAP和Adobe XMP CuePoint
+              console.log('🔍 开始解析 MP3 元数据...');
+              let metadata;
+              try {
+                  metadata = await mm.parseBlob(file);
+                  console.log('✅ 元数据解析成功');
+              } catch (parseError) {
+                  console.error('❌ 解析元数据失败:', parseError);
+                  console.error('这可能是由于浏览器环境的兼容性问题');
+                  console.error('建议：1) 使用其他浏览器  2) 使用按角色匹配上传已分段的音频文件');
 
-              if (!markers || markers.length === 0) {
+                  // 显示友好的错误提示
+                  alert(`无法解析 MP3 文件 "${file.name}" 的元数据。\n\n可能的原因：\n- 当前环境不支持此功能\n- MP3 文件格式问题\n\n建议：\n- 使用"按角色匹配"功能上传已分段的音频文件\n- 或在本地环境运行`);
+
                   totalMissedCount += targetLines.length;
-                  console.warn(`File ${file.name} has no chapter markers.`);
                   continue;
               }
-              
-              const audioSegments = markers.map(m => ({
-                  startTime: m.value.startTime / 1000,
-                  endTime: m.value.endTime / 1000,
-              }));
+
+              // 调试：打印完整的 metadata 结构
+              console.log('完整元数据:', metadata);
+              console.log('metadata.common:', metadata.common);
+              console.log('metadata.native:', metadata.native);
+              console.log('metadata.common.chapters:', metadata.common.chapters);
+
+              // 详细查看 native 标签
+              if (metadata.native) {
+                  Object.keys(metadata.native).forEach(key => {
+                      console.log(`metadata.native['${key}']:`, metadata.native[key]);
+                  });
+              }
+
+              let audioSegments: { startTime: number; endTime: number }[] = [];
+
+              // 首先尝试从 metadata.common.chapters 读取（music-metadata-browser 会自动解析 CHAP/CTOC）
+              const chapters = metadata.common.chapters || [];
+
+              if (chapters.length > 0) {
+                  // 使用解析好的章节信息
+                  audioSegments = chapters.map(chapter => ({
+                      startTime: chapter.startTime / 1000,  // 已经是毫秒，转换为秒
+                      endTime: chapter.endTime / 1000,
+                  }));
+                  console.log(`从章节信息中解析到 ${audioSegments.length} 个章节标记`);
+              } else {
+                  // 尝试解析Adobe Audition XMP CuePoint标记
+                  const audioDuration = metadata.format.duration || 0;
+                  const xmpSegments = parseXmpCuePoints(metadata, audioDuration);
+
+                  if (xmpSegments && xmpSegments.length > 0) {
+                      audioSegments = xmpSegments;
+                  } else {
+                      totalMissedCount += targetLines.length;
+                      console.warn(`File ${file.name} has no chapter markers (neither CHAP nor XMP CuePoint).`);
+                      continue;
+                  }
+              }
 
               // 3. Decode audio and split into blobs
               const mainAudioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
