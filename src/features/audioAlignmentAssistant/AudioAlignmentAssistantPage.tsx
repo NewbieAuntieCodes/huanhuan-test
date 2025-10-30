@@ -205,7 +205,10 @@ const AudioAlignmentAssistantPage: React.FC = () => {
             setDirectoryHandle(handle);
             await scanDirectory(handle, true);
         } catch (err) {
-            if (!(err instanceof DOMException && err.name === 'AbortError')) {
+            // FIX: Added type guard to safely access `err.name` and prevent a TypeScript error on `unknown`.
+            if (err instanceof DOMException && err.name === 'AbortError') {
+                // User cancelled the picker, this is not an error to be logged.
+            } else {
                 console.error("Error picking directory:", err);
             }
         }

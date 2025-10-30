@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useStore } from '../../../store/useStore';
 import { db } from '../../../db';
-import { PlayIcon, PauseIcon, XMarkIcon, SpeakerWaveIcon, SpeakerXMarkIcon, ScissorsIcon, ChevronDoubleDownIcon } from '../../../components/ui/icons';
+import { PlayIcon, PauseIcon, XMarkIcon, SpeakerWaveIcon, SpeakerXMarkIcon } from '../../../components/ui/icons';
 import { isHexColor, getContrastingTextColor } from '../../../lib/colorUtils';
 import { ScriptLine, Character } from '../../../types';
 
@@ -11,15 +11,10 @@ const WAVE_BG_COLOR = "#475569"; // slate-600
 const WAVE_PROGRESS_COLOR = "#38bdf8"; // sky-400
 const PLAYHEAD_COLOR = "#f1f5f9"; // slate-100
 
-interface GlobalAudioPlayerProps {
-    onSplitRequest: (splitTime: number, lineInfo: { line: ScriptLine; character: Character | undefined; }) => void;
-    onMergeRequest: (lineInfo: { line: ScriptLine; character: Character | undefined; }) => void;
-    canMerge: boolean;
-    mergeDisabledReason: string;
-}
+interface GlobalAudioPlayerProps {}
 
 
-const GlobalAudioPlayer: React.FC<GlobalAudioPlayerProps> = ({ onSplitRequest, onMergeRequest, canMerge, mergeDisabledReason }) => {
+const GlobalAudioPlayer: React.FC<GlobalAudioPlayerProps> = () => {
     const { playingLineInfo, clearPlayingLine } = useStore(state => ({
         playingLineInfo: state.playingLineInfo,
         clearPlayingLine: state.clearPlayingLine,
@@ -316,8 +311,6 @@ const GlobalAudioPlayer: React.FC<GlobalAudioPlayerProps> = ({ onSplitRequest, o
     };
     const panelStyle = getPanelStyle();
 
-    const canSplit = playingLineInfo && duration > 0 && currentTime > 0.1 && currentTime < duration - 0.1;
-
     return (
         <div 
             className={`fixed bottom-0 left-0 right-0 h-28 bg-slate-800 border-t border-slate-700 shadow-lg z-50 flex items-center p-4 transition-transform duration-300 ease-in-out ${playingLineInfo ? 'translate-y-0' : 'translate-y-full'}`}
@@ -340,20 +333,7 @@ const GlobalAudioPlayer: React.FC<GlobalAudioPlayerProps> = ({ onSplitRequest, o
             <button onClick={handlePlayPause} className="p-3 bg-slate-600 hover:bg-sky-500 rounded-full mr-4" aria-label={isPlaying ? "Pause audio" : "Play audio"}>
                 {isPlaying ? <PauseIcon className="w-6 h-6 text-white" /> : <PlayIcon className="w-6 h-6 text-white" />}
             </button>
-            <button onClick={() => canSplit && playingLineInfo && onSplitRequest(currentTime, playingLineInfo)} disabled={!canSplit} className="p-3 bg-slate-600 hover:bg-orange-500 rounded-full mr-4 disabled:opacity-50 disabled:cursor-not-allowed" aria-label={"Split audio at current position"}>
-                <ScissorsIcon className="w-6 h-6 text-white" />
-            </button>
-            <button 
-                onClick={() => canMerge && playingLineInfo && onMergeRequest(playingLineInfo)} 
-                disabled={!canMerge} 
-                className={`p-3 rounded-full mr-4 transition-colors disabled:cursor-not-allowed ${canMerge ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-slate-700 opacity-60'}`}
-                title={mergeDisabledReason}
-                aria-label={mergeDisabledReason}
-            >
-                <ChevronDoubleDownIcon className="w-6 h-6 text-white" />
-            </button>
-
-
+            
             <div className="flex-grow flex flex-col justify-center space-y-2 overflow-hidden h-full">
                 <div 
                     className="text-sm text-slate-300 truncate"

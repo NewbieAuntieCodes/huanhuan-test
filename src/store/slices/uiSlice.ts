@@ -45,6 +45,11 @@ export interface UiSlice {
     isOpen: boolean;
     characterToEdit: Character | null;
   };
+  waveformEditor: {
+    isOpen: boolean;
+    lineId: string;
+    sourceAudioInfo: { id: string; filename: string; } | null;
+  };
   isSettingsModalOpen: boolean;
   isShortcutSettingsModalOpen: boolean;
   apiSettings: ApiSettings;
@@ -71,6 +76,8 @@ export interface UiSlice {
   closeConfirmModal: () => void;
   openCharacterAndCvStyleModal: (character: Character | null) => void;
   closeCharacterAndCvStyleModal: () => void;
+  openWaveformEditor: (lineId: string, sourceAudioId: string, sourceAudioFilename: string) => void;
+  closeWaveformEditor: () => void;
   openSettingsModal: () => void;
   closeSettingsModal: () => void;
   openShortcutSettingsModal: () => void;
@@ -89,6 +96,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   playingLineInfo: null,
   confirmModal: confirmModalInitState,
   characterAndCvStyleModal: { isOpen: false, characterToEdit: null },
+  waveformEditor: { isOpen: false, lineId: '', sourceAudioInfo: null },
   isSettingsModalOpen: false,
   isShortcutSettingsModalOpen: false,
   apiSettings: {
@@ -165,6 +173,14 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   closeConfirmModal: () => set({ confirmModal: confirmModalInitState }),
   openCharacterAndCvStyleModal: (character) => set({ characterAndCvStyleModal: { isOpen: true, characterToEdit: character } }),
   closeCharacterAndCvStyleModal: () => set({ characterAndCvStyleModal: { isOpen: false, characterToEdit: null } }),
+  openWaveformEditor: (lineId, sourceAudioId, sourceAudioFilename) => set({ 
+    waveformEditor: { 
+      isOpen: true, 
+      lineId,
+      sourceAudioInfo: { id: sourceAudioId, filename: sourceAudioFilename }
+    }
+  }),
+  closeWaveformEditor: () => set({ waveformEditor: { isOpen: false, lineId: '', sourceAudioInfo: null } }),
   openSettingsModal: () => set({ isSettingsModalOpen: true }),
   closeSettingsModal: () => set({ isSettingsModalOpen: false }),
   openShortcutSettingsModal: () => set({ isShortcutSettingsModalOpen: true }),

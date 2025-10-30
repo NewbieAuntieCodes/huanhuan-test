@@ -3,7 +3,8 @@ import { ScriptLine, Character, LineType, SilencePairing } from '../../../types'
 import { useStore } from '../../../store/useStore';
 import { db } from '../../../db';
 import { isHexColor, getContrastingTextColor } from '../../../lib/colorUtils';
-import { TrashIcon, UploadIcon, PlayIcon, PauseIcon, CheckCircleIcon, XMarkIcon, ArrowDownIcon, ArrowUpIcon, ReturnIcon, ArrowPathIcon } from '../../../components/ui/icons';
+// FIX: Import `UploadIcon` to resolve the "Cannot find name 'UploadIcon'" error.
+import { TrashIcon, PlayIcon, PauseIcon, CheckCircleIcon, XMarkIcon, ReturnIcon, ArrowPathIcon, AdjustmentsVerticalIcon, UploadIcon } from '../../../components/ui/icons';
 import NumberInput from '../../../components/ui/NumberInput';
 
 interface AudioScriptLineProps {
@@ -12,8 +13,7 @@ interface AudioScriptLineProps {
     character: Character | undefined;
     projectId: string;
     chapterId: string;
-    onRequestShiftDown: (lineId: string, character: Character | undefined) => void;
-    onRequestShiftUp: (lineId: string, character: Character | undefined) => void;
+    onRequestCalibration: (lineId: string, sourceAudioId: string, sourceAudioFilename: string) => void;
 }
 
 const getLineType = (line: ScriptLine | undefined, characters: Character[]): LineType => {
@@ -97,7 +97,7 @@ const SilenceEditor: React.FC<{
 }
 
 
-const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, nextLine, character, projectId, chapterId, onRequestShiftDown, onRequestShiftUp }) => {
+const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, nextLine, character, projectId, chapterId, onRequestCalibration }) => {
     const { 
         assignAudioToLine, 
         updateLineAudio, 
@@ -117,7 +117,7 @@ const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, nextLine, chara
         toggleLineReturnMark: state.toggleLineReturnMark,
         updateLineFeedback: state.updateLineFeedback,
     }));
-    const [hasAudio, setHasAudio] = useState<boolean>(!!line.audioBlobId);
+    const [audioInfo, setAudioInfo] = useState<{ hasAudio: boolean; sourceAudioId?: string; sourceAudioFilename?: string }>({ hasAudio: false });
     const [isDraggingOver, setIsDraggingOver] = useState(false);
 
     const cvStyles = React.useMemo(() => {
@@ -126,7 +126,21 @@ const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, nextLine, chara
     }, [projects, projectId]);
     
     useEffect(() => {
-        setHasAudio(!!line.audioBlobId);
+        if (line.audioBlobId) {
+            db.audioBlobs.get(line.audioBlobId).then(blobData => {
+                if (blobData) {
+                    setAudioInfo({ 
+                        hasAudio: true, 
+                        sourceAudioId: blobData.sourceAudioId, 
+                        sourceAudioFilename: blobData.sourceAudioFilename 
+                    });
+                } else {
+                    setAudioInfo({ hasAudio: false });
+                }
+            });
+        } else {
+            setAudioInfo({ hasAudio: false });
+        }
     }, [line.audioBlobId]);
 
     const handleDeleteAudio = async () => {
@@ -145,7 +159,7 @@ const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, nextLine, chara
     const handlePlayPauseClick = () => {
         if (isPlaying) {
             clearPlayingLine();
-        } else if (hasAudio) {
+        } else if (audioInfo.hasAudio) {
             setPlayingLine(line, character);
         }
     };
@@ -301,7 +315,7 @@ const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, nextLine, chara
                     <div className="flex-shrink-0 flex items-center space-x-2 z-10">
                         <button
                             onClick={handlePlayPauseClick}
-                            disabled={!hasAudio}
+                            disabled={!audioInfo.hasAudio}
                             className="p-2 rounded-full bg-slate-600 hover:bg-sky-500 text-slate-200 hover:text-white transition-colors disabled:opacity-50"
                             title={isPlaying ? "暂停" : "播放"}
                         >
@@ -309,21 +323,12 @@ const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, nextLine, chara
                         </button>
                         
                         <button
-                            onClick={() => onRequestShiftUp(line.id, character)}
-                            disabled={!line.audioBlobId}
-                            className="p-2 rounded-full bg-slate-600 hover:bg-teal-500 text-slate-200 hover:text-white transition-colors disabled:opacity-50"
-                            title="向上顺移音频"
+                           onClick={() => audioInfo.sourceAudioId && audioInfo.sourceAudioFilename && onRequestCalibration(line.id, audioInfo.sourceAudioId, audioInfo.sourceAudioFilename)}
+                           disabled={!audioInfo.sourceAudioId}
+                           className="p-2 rounded-full bg-slate-600 hover:bg-teal-500 text-slate-200 hover:text-white transition-colors disabled:opacity-50"
+                           title="校准音频标记"
                         >
-                            <ArrowUpIcon className="w-4 h-4" />
-                        </button>
-
-                        <button
-                            onClick={() => onRequestShiftDown(line.id, character)}
-                            disabled={!line.audioBlobId}
-                            className="p-2 rounded-full bg-slate-600 hover:bg-indigo-500 text-slate-200 hover:text-white transition-colors disabled:opacity-50"
-                            title="向下顺移音频"
-                        >
-                            <ArrowDownIcon className="w-4 h-4" />
+                            <AdjustmentsVerticalIcon className="w-4 h-4" />
                         </button>
 
                         <button
@@ -337,7 +342,7 @@ const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, nextLine, chara
                     </div>
                 </div>
                 <div className="flex-shrink-0 flex items-center justify-end gap-x-2">
-                  {hasAudio ? (
+                  {audioInfo.hasAudio ? (
                       <span title="已有音频">
                         <CheckCircleIcon className="w-5 h-5 text-green-500" />
                       </span>

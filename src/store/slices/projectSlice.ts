@@ -1,9 +1,9 @@
 import { StateCreator } from 'zustand';
 import { AppState } from '../useStore';
-import { Project, Collaborator, Chapter, AudioBlob, ScriptLine, Character, SilenceSettings } from '../../types';
+import { Project, Collaborator, Chapter, AudioBlob, ScriptLine, Character, SilenceSettings, MasterAudio } from '../../types';
 import { db } from '../../db';
-import { splitAudio, mergeAudio } from '../../lib/audioProcessing';
-import { calculateShiftChain, ShiftMode } from '../../lib/shiftChainUtils';
+import { bufferToWav } from '../../lib/wavEncoder';
+// FIX: Import `defaultSilenceSettings` to resolve reference error.
 import { defaultSilenceSettings } from '../../lib/defaultSilenceSettings';
 
 const defaultCharConfigs = [
@@ -21,12 +21,9 @@ export interface ProjectSlice {
   addCollaboratorToProject: (projectId: string, username: string, role: 'reader' | 'editor') => Promise<void>;
   appendChaptersToProject: (projectId: string, newChapters: Chapter[]) => Promise<void>;
   updateLineAudio: (projectId: string, chapterId: string, lineId: string, audioBlobId: string | null) => Promise<void>;
-  assignAudioToLine: (projectId: string, chapterId: string, lineId: string, audioBlob: Blob) => Promise<void>;
+  assignAudioToLine: (projectId: string, chapterId: string, lineId: string, audioBlob: Blob, sourceAudioId?: string, sourceAudioFilename?: string) => Promise<void>;
   clearAudioFromChapter: (projectId: string, chapterId: string) => Promise<void>;
-  splitAndShiftAudio: (projectId: string, chapterId: string, lineId: string, splitTime: number, shiftMode: ShiftMode) => Promise<void>;
-  shiftAudioDown: (projectId: string, chapterId: string, startLineId: string, shiftMode: ShiftMode) => Promise<void>;
-  shiftAudioUp: (projectId: string, chapterId: string, startLineId: string, shiftMode: ShiftMode) => Promise<void>;
-  mergeWithNextAndShift: (projectId: string, chapterId: string, currentLineId: string, shiftMode: ShiftMode) => Promise<void>;
+  resegmentAndRealignAudio: (projectId: string, sourceAudioId: string, markers: number[]) => Promise<void>;
   addCustomSoundType: (projectId: string, soundType: string) => Promise<void>;
   deleteCustomSoundType: (projectId: string, soundType: string) => Promise<void>;
   batchAddChapters: (projectId: string, count: number) => Promise<void>;
@@ -206,14 +203,17 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
         .sort((a,b) => b.lastModified - a.lastModified),
     }));
   },
-  assignAudioToLine: async (projectId, chapterId, lineId, audioBlob) => {
+  assignAudioToLine: async (projectId, chapterId, lineId, audioBlob, sourceAudioId, sourceAudioFilename) => {
     const newId = `audio_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    const audioBlobEntry: AudioBlob = { id: newId, lineId, data: audioBlob };
+    const audioBlobEntry: AudioBlob = { 
+        id: newId, 
+        lineId, 
+        data: audioBlob,
+        sourceAudioId: sourceAudioId || newId, // If no source, it's its own source
+        sourceAudioFilename: sourceAudioFilename || 'Untitled.wav',
+    };
     
-    // First, save the blob to the database.
     await db.audioBlobs.put(audioBlobEntry);
-
-    // Then, call the existing function to update the project state with the new ID.
     await get().updateLineAudio(projectId, chapterId, lineId, newId);
   },
   clearAudioFromChapter: async (projectId, chapterId) => {
@@ -258,265 +258,108 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
         .sort((a,b) => b.lastModified - a.lastModified),
     }));
   },
-  splitAndShiftAudio: async (projectId, chapterId, lineId, splitTime, shiftMode) => {
-    const state = get();
-    const project = state.projects.find(p => p.id === projectId);
-    const chapter = project?.chapters.find(c => c.id === chapterId);
-    const line = chapter?.scriptLines.find(l => l.id === lineId);
-
-    if (!project || !chapter || !line || !line.audioBlobId) {
-        console.error("Split precondition not met.");
-        return;
-    }
-
-    get().clearPlayingLine(); 
+  resegmentAndRealignAudio: async (projectId, sourceAudioId, markers) => {
+    get().clearPlayingLine();
+    get().setIsLoading(true);
 
     try {
-        const audioBlob = await db.audioBlobs.get(line.audioBlobId);
-        if (!audioBlob) throw new Error("Audio blob not found in DB.");
+        await db.audioMarkers.put({ sourceAudioId, markers });
 
-        const { part1Blob, part2Blob } = await splitAudio(audioBlob.data, splitTime);
-        
-        const part1BlobId = `audio_split_${Date.now()}_1`;
-        const part2BlobId = `audio_split_${Date.now()}_2`;
-        
-        const newBlobs: AudioBlob[] = [{ id: part1BlobId, lineId: line.id, data: part1Blob }];
-        const blobsToDelete: string[] = [line.audioBlobId];
+        const masterAudio = await db.masterAudios.get(sourceAudioId);
+        if (!masterAudio) throw new Error("母带音频未找到。");
 
-        const lineIndex = chapter.scriptLines.findIndex(l => l.id === lineId);
-        const shiftChain = calculateShiftChain(chapter.scriptLines, lineIndex + 1, shiftMode, get().characters, line.characterId);
-        
-        const newScriptLines = [...chapter.scriptLines];
-        newScriptLines[lineIndex] = { ...newScriptLines[lineIndex], audioBlobId: part1BlobId };
+        const affectedLines: { line: ScriptLine, chapterId: string }[] = [];
+        const oldBlobIds = new Set<string>();
 
-        if (shiftChain.length > 0) {
-            const firstInChain = shiftChain[0];
-            const audioIdFromFirstInChain = firstInChain.line.audioBlobId;
+        const project = get().projects.find(p => p.id === projectId);
+        if (!project) throw new Error("项目未找到。");
 
-            newScriptLines[firstInChain.index] = { ...firstInChain.line, audioBlobId: part2BlobId };
-            newBlobs.push({ id: part2BlobId, lineId: firstInChain.line.id, data: part2Blob });
-
-            let previousAudioId = audioIdFromFirstInChain;
-            for (let i = 1; i < shiftChain.length; i++) {
-                const currentInChain = shiftChain[i];
-                const audioIdFromCurrent = currentInChain.line.audioBlobId;
-                newScriptLines[currentInChain.index] = { ...currentInChain.line, audioBlobId: previousAudioId };
-                previousAudioId = audioIdFromCurrent;
+        for (const chapter of project.chapters) {
+            for (const line of chapter.scriptLines) {
+                if (line.audioBlobId) {
+                    const blobInfo = await db.audioBlobs.get(line.audioBlobId);
+                    if (blobInfo && blobInfo.sourceAudioId === sourceAudioId) {
+                        affectedLines.push({ line, chapterId: chapter.id });
+                        oldBlobIds.add(line.audioBlobId);
+                    }
+                }
             }
+        }
+        
+        if(affectedLines.length === 0) {
+            throw new Error("在项目中未找到使用此母带音频的台词行。");
+        }
+        
+        // Resegment audio
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const mainAudioBuffer = await audioContext.decodeAudioData(await masterAudio.data.arrayBuffer());
+        
+        const newBlobs: AudioBlob[] = [];
+        const fullDuration = mainAudioBuffer.duration;
+        const allMarkers = [0, ...markers.sort((a, b) => a - b), fullDuration];
+
+        for (let i = 0; i < allMarkers.length - 1; i++) {
+            const startTime = allMarkers[i];
+            const endTime = allMarkers[i+1];
+            const duration = endTime - startTime;
+            if (duration <= 0) continue;
+
+            const startSample = Math.floor(startTime * mainAudioBuffer.sampleRate);
+            const endSample = Math.floor(endTime * mainAudioBuffer.sampleRate);
             
-            if (previousAudioId) blobsToDelete.push(previousAudioId);
+            const segmentBuffer = audioContext.createBuffer(mainAudioBuffer.numberOfChannels, endSample - startSample, mainAudioBuffer.sampleRate);
+            for (let ch = 0; ch < mainAudioBuffer.numberOfChannels; ch++) {
+                segmentBuffer.copyToChannel(mainAudioBuffer.getChannelData(ch).subarray(startSample, endSample), ch);
+            }
+
+            const segmentBlob = bufferToWav(segmentBuffer);
+            const newBlobId = `audio_reseg_${Date.now()}_${i}`;
+            newBlobs.push({
+                id: newBlobId,
+                lineId: '', // Will be assigned below
+                data: segmentBlob,
+                sourceAudioId: sourceAudioId,
+                sourceAudioFilename: masterAudio.id.replace(`${projectId}_`, ''),
+            });
         }
+        audioContext.close();
 
-        const updatedChapter = { ...chapter, scriptLines: newScriptLines };
-        const updatedProject = { ...project, chapters: project.chapters.map(c => c.id === chapterId ? updatedChapter : c), lastModified: Date.now() };
-
+        // Realign
+        let updatedProject = { ...project, lastModified: Date.now() };
+        let blobIndex = 0;
+        
+        affectedLines.forEach(({ line, chapterId }) => {
+            const newBlob = newBlobs[blobIndex];
+            if (newBlob) {
+                newBlob.lineId = line.id;
+                const chapterIdx = updatedProject.chapters.findIndex(c => c.id === chapterId);
+                const lineIdx = updatedProject.chapters[chapterIdx].scriptLines.findIndex(l => l.id === line.id);
+                updatedProject.chapters[chapterIdx].scriptLines[lineIdx].audioBlobId = newBlob.id;
+                blobIndex++;
+            } else {
+                 // Not enough segments for all lines, unassign audio
+                const chapterIdx = updatedProject.chapters.findIndex(c => c.id === chapterId);
+                const lineIdx = updatedProject.chapters[chapterIdx].scriptLines.findIndex(l => l.id === line.id);
+                updatedProject.chapters[chapterIdx].scriptLines[lineIdx].audioBlobId = undefined;
+            }
+        });
+        
+        // Persist changes
         await db.transaction('rw', db.projects, db.audioBlobs, async () => {
-            await db.audioBlobs.bulkDelete(blobsToDelete);
-            await db.audioBlobs.bulkPut(newBlobs);
+            await db.audioBlobs.bulkDelete(Array.from(oldBlobIds));
+            if (newBlobs.length > 0) {
+                await db.audioBlobs.bulkPut(newBlobs);
+            }
             await db.projects.put(updatedProject);
         });
-
-        set({ projects: state.projects.map(p => p.id === projectId ? updatedProject : p) });
+        
+        set({ projects: get().projects.map(p => p.id === projectId ? updatedProject : p) });
 
     } catch (e) {
-        console.error("Failed to split and shift audio:", e);
-        alert(`分割音频失败: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  },
-  shiftAudioDown: async (projectId, chapterId, startLineId, shiftMode) => {
-    const state = get();
-    const project = state.projects.find(p => p.id === projectId);
-    const chapter = project?.chapters.find(c => c.id === chapterId);
-    const startLineIndex = chapter?.scriptLines.findIndex(l => l.id === startLineId);
-
-    if (!project || !chapter || startLineIndex === undefined || startLineIndex === -1) return;
-    
-    get().clearPlayingLine();
-
-    try {
-        const startLine = chapter.scriptLines[startLineIndex];
-        const shiftChain = calculateShiftChain(chapter.scriptLines, startLineIndex, shiftMode, get().characters, startLine.characterId);
-
-        if (shiftChain.length === 0) return;
-
-        const newScriptLines = [...chapter.scriptLines];
-        const blobsToDelete: string[] = [];
-        
-        const lastLineInChain = shiftChain[shiftChain.length - 1];
-        if (lastLineInChain.line.audioBlobId) {
-            blobsToDelete.push(lastLineInChain.line.audioBlobId);
-        }
-
-        for (let i = shiftChain.length - 1; i > 0; i--) {
-            const currentLineInfo = shiftChain[i];
-            const prevLineInfo = shiftChain[i - 1];
-            newScriptLines[currentLineInfo.index] = { ...currentLineInfo.line, audioBlobId: prevLineInfo.line.audioBlobId };
-        }
-
-        const firstLineInfo = shiftChain[0];
-        newScriptLines[firstLineInfo.index] = { ...firstLineInfo.line, audioBlobId: undefined };
-
-        const updatedChapter = { ...chapter, scriptLines: newScriptLines };
-        const updatedProject = { ...project, chapters: project.chapters.map(c => c.id === chapterId ? updatedChapter : c), lastModified: Date.now() };
-
-        await db.transaction('rw', db.projects, db.audioBlobs, async () => {
-            if (blobsToDelete.length > 0) await db.audioBlobs.bulkDelete(blobsToDelete);
-            await db.projects.put(updatedProject);
-        });
-
-        set({ projects: state.projects.map(p => p.id === projectId ? updatedProject : p) });
-
-    } catch (e) {
-        console.error("Failed to shift audio down:", e);
-        alert(`顺移音频失败: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  },
-  shiftAudioUp: async (projectId, chapterId, startLineId, shiftMode) => {
-    const state = get();
-    const project = state.projects.find(p => p.id === projectId);
-    const chapter = project?.chapters.find(c => c.id === chapterId);
-    const startLineIndex = chapter?.scriptLines.findIndex(l => l.id === startLineId);
-
-    if (!project || !chapter || startLineIndex === undefined || startLineIndex === -1) return;
-
-    get().clearPlayingLine();
-
-    try {
-        const startLine = chapter.scriptLines[startLineIndex];
-        const shiftChain = calculateShiftChain(chapter.scriptLines, startLineIndex, shiftMode, get().characters, startLine.characterId);
-        
-        if (shiftChain.length < 2) {
-             alert('无法向上顺移：这是此筛选条件下的最后一句台词。');
-             return;
-        }
-
-        const newScriptLines = [...chapter.scriptLines];
-        const blobsToDelete: string[] = [];
-
-        if (shiftChain[0].line.audioBlobId) {
-            blobsToDelete.push(shiftChain[0].line.audioBlobId);
-        }
-
-        for (let i = 0; i < shiftChain.length - 1; i++) {
-            const currentLineInfo = shiftChain[i];
-            const nextLineInfo = shiftChain[i + 1];
-            newScriptLines[currentLineInfo.index] = { ...currentLineInfo.line, audioBlobId: nextLineInfo.line.audioBlobId };
-        }
-
-        const lastLineInfo = shiftChain[shiftChain.length - 1];
-        newScriptLines[lastLineInfo.index] = { ...lastLineInfo.line, audioBlobId: undefined };
-
-        const updatedChapter = { ...chapter, scriptLines: newScriptLines };
-        const updatedProject = { ...project, chapters: project.chapters.map(c => c.id === chapterId ? updatedChapter : c), lastModified: Date.now() };
-        
-        await db.transaction('rw', db.projects, db.audioBlobs, async () => {
-            if (blobsToDelete.length > 0) await db.audioBlobs.bulkDelete(blobsToDelete);
-            await db.projects.put(updatedProject);
-        });
-
-        set({ projects: state.projects.map(p => p.id === projectId ? updatedProject : p) });
-
-    } catch (e) {
-        console.error("Failed to shift audio up:", e);
-        alert(`向上顺移音频失败: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  },
-  mergeWithNextAndShift: async (projectId, chapterId, currentLineId, shiftMode) => {
-    const state = get();
-    const project = state.projects.find(p => p.id === projectId);
-    const chapter = project?.chapters.find(c => c.id === chapterId);
-    if (!project || !chapter) return;
-
-    const currentLineIndex = chapter.scriptLines.findIndex(l => l.id === currentLineId);
-    if (currentLineIndex < 0) return;
-    const currentLine = chapter.scriptLines[currentLineIndex];
-
-    let nextLine: ScriptLine | null = null;
-    let nextLineIndex: number = -1;
-    const allCharacters = get().characters;
-    const startChar = allCharacters.find(c => c.id === currentLine.characterId);
-    const silentAndEffectCharIds = new Set(allCharacters.filter(c => c.name === '[静音]' || c.name === '音效').map(c => c.id));
-
-    for (let i = currentLineIndex + 1; i < chapter.scriptLines.length; i++) {
-        const potentialNextLine = chapter.scriptLines[i];
-        if (!potentialNextLine.audioBlobId || silentAndEffectCharIds.has(potentialNextLine.characterId || '')) continue;
-
-        let isMatch = false;
-        if (shiftMode === 'chapter') {
-            isMatch = true;
-        } else if (shiftMode === 'character' && startChar) {
-            isMatch = potentialNextLine.characterId === startChar.id;
-        } else if (shiftMode === 'cv' && startChar?.cvName) {
-            const potentialChar = allCharacters.find(c => c.id === potentialNextLine.characterId);
-            isMatch = !!potentialChar && !!potentialChar.cvName && potentialChar.cvName === startChar.cvName;
-        }
-        
-        if (isMatch) {
-            nextLine = potentialNextLine;
-            nextLineIndex = i;
-            break;
-        }
-    }
-
-    if (!nextLine || !currentLine.audioBlobId || !nextLine.audioBlobId) {
-        alert("无法合并：找不到符合条件的下一句带音频的台词。");
-        return;
-    }
-
-    get().clearPlayingLine();
-
-    try {
-        const [blob1, blob2] = await Promise.all([
-            db.audioBlobs.get(currentLine.audioBlobId),
-            db.audioBlobs.get(nextLine.audioBlobId),
-        ]);
-
-        if (!blob1 || !blob2) throw new Error("Audio blob not found in DB.");
-
-        const mergedBlob = await mergeAudio([blob1.data, blob2.data]);
-        const mergedBlobId = `audio_merged_${Date.now()}`;
-        
-        const newBlobEntry: AudioBlob = { id: mergedBlobId, lineId: currentLine.id, data: mergedBlob };
-        const blobsToDelete = [currentLine.audioBlobId, nextLine.audioBlobId];
-
-        const shiftChain = calculateShiftChain(chapter.scriptLines, nextLineIndex + 1, shiftMode, get().characters, currentLine.characterId);
-
-        const newScriptLines = [...chapter.scriptLines];
-        
-        // 1. Update current line with merged audio. DO NOT CHANGE TEXT.
-        newScriptLines[currentLineIndex] = { ...currentLine, audioBlobId: mergedBlobId };
-
-        // 2. The line we merged FROM gets the audio of the first item in the chain.
-        const firstShiftedAudioId = shiftChain.length > 0 ? shiftChain[0].line.audioBlobId : undefined;
-        newScriptLines[nextLineIndex] = { ...nextLine, audioBlobId: firstShiftedAudioId };
-
-        // 3. Shift audio up for the rest of the chain
-        for (let i = 0; i < shiftChain.length - 1; i++) {
-            const currentInChain = shiftChain[i];
-            const nextInChain = shiftChain[i + 1];
-            newScriptLines[currentInChain.index] = { ...currentInChain.line, audioBlobId: nextInChain.line.audioBlobId };
-        }
-
-        // 4. Last item in chain becomes empty
-        if (shiftChain.length > 0) {
-            const lastInChain = shiftChain[shiftChain.length - 1];
-            newScriptLines[lastInChain.index] = { ...lastInChain.line, audioBlobId: undefined };
-        }
-        
-        const updatedChapter = { ...chapter, scriptLines: newScriptLines };
-        const updatedProject = { ...project, chapters: project.chapters.map(c => c.id === chapterId ? updatedChapter : c), lastModified: Date.now() };
-
-        await db.transaction('rw', db.projects, db.audioBlobs, async () => {
-            await db.audioBlobs.bulkDelete(blobsToDelete);
-            await db.audioBlobs.put(newBlobEntry);
-            await db.projects.put(updatedProject);
-        });
-
-        set({ projects: state.projects.map(p => p.id === projectId ? updatedProject : p) });
-
-    } catch (e) {
-        console.error("Failed to merge and shift audio:", e);
-        alert(`合并音频失败: ${e instanceof Error ? e.message : String(e)}`);
+        console.error("Failed to resegment and realign audio:", e);
+        alert(`校准失败: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+        get().setIsLoading(false);
     }
   },
   addCustomSoundType: async (projectId, soundType) => {

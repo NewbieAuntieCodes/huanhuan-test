@@ -1,13 +1,16 @@
 // FIX: Changed React import from a named import to a default import to correctly resolve the React namespace for types like React.ChangeEvent.
 import React, { useState, useCallback, useMemo } from 'react';
-import { Project, Character, Chapter, ScriptLine } from '../../../types';
+import { Project, Character, Chapter, ScriptLine, MasterAudio } from '../../../types';
 import * as mm from 'music-metadata-browser';
 import { bufferToWav } from '../../../lib/wavEncoder';
+import { db } from '../../../db';
+// FIX: Import `Buffer` to resolve "Cannot find name 'Buffer'" error.
+import { Buffer } from 'buffer';
 
 interface UseAudioFileMatcherProps {
   currentProject: Project | undefined;
   characters: Character[];
-  assignAudioToLine: (projectId: string, chapterId: string, lineId: string, audioBlob: Blob) => Promise<void>;
+  assignAudioToLine: (projectId: string, chapterId: string, lineId: string, audioBlob: Blob, sourceAudioId?: string, sourceAudioFilename?: string) => Promise<void>;
 }
 
 const parseChapterIdentifier = (identifier: string): number[] => {
@@ -168,470 +171,149 @@ export const useAudioFileMatcher = ({
       .map(c => c.id);
   }, [characters]);
 
-  const handleFileSelectionForCvMatch = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-      console.log('🔵 handleFileSelectionForCvMatch 被调用');
-      const files = event.target.files;
-      console.log('📁 选择的文件数量:', files?.length);
+  const processMasterAudioFile = useCallback(async (
+    file: File, 
+    identifier: string,
+    matchType: 'cv' | 'character' | 'chapter',
+    setIsLoading: (loading: boolean) => void
+  ) => {
+    if (!currentProject) return { matched: 0, missed: 0 };
+    
+    const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
+    const parts = nameWithoutExt.split('_');
+    const chapterIdentifier = parts[0];
 
-      if (!files || files.length === 0 || !currentProject) {
-          console.log('⚠️ 没有文件或没有项目');
-          return;
-      }
+    const sourceAudioId = `${currentProject.id}_${file.name}`;
 
-      console.log('🚀 开始处理文件...');
+    try {
+        // 1. Find target lines based on matchType
+        const targetCharacterIds = new Set<string>();
+        if (matchType === 'cv') {
+            characters.filter(c => c.cvName === identifier && c.status !== 'merged').forEach(c => targetCharacterIds.add(c.id));
+        } else if (matchType === 'character') {
+            characters.filter(c => c.name === identifier && c.status !== 'merged').forEach(c => targetCharacterIds.add(c.id));
+        }
+        
+        const chapterMatchers = parseChapterIdentifier(chapterIdentifier);
+        const targetChapters = currentProject.chapters.filter((_, index) => chapterMatchers.includes(index + 1));
+        
+        const targetLines = targetChapters.flatMap(chapter => 
+            chapter.scriptLines
+                .filter(line => !nonAudioCharacterIds.includes(line.characterId || ''))
+                .filter(line => matchType === 'chapter' || (line.characterId && targetCharacterIds.has(line.characterId)))
+                .map(line => ({ line, chapterId: chapter.id }))
+        );
 
-      // 检查 Buffer 是否可用
-      if (typeof window.Buffer === 'undefined') {
-          console.error('❌ Buffer 未定义！这可能导致 music-metadata-browser 无法工作');
-          alert('错误：Buffer 未加载。请刷新页面重试。');
-          return;
-      } else {
-          console.log('✅ Buffer 已加载');
-      }
+        if (targetLines.length === 0) {
+            console.warn(`No target lines found for ${matchType} '${identifier}' in chapters '${chapterIdentifier}'`);
+            return { matched: 0, missed: 0 };
+        }
+        
+        // 2. Parse markers from audio
+        let metadata;
+        try {
+            metadata = await mm.parseBlob(file);
+        } catch (e) {
+            console.error(`Metadata parsing failed for ${file.name}:`, e);
+            return { matched: 0, missed: targetLines.length };
+        }
 
-      setIsCvMatchLoading(true);
+        let audioSegments: { startTime: number; endTime: number }[] = [];
+        const chapters = metadata.common.chapters || [];
+        if (chapters.length > 0) {
+            audioSegments = chapters.map(ch => ({ startTime: ch.startTime / 1000, endTime: ch.endTime / 1000 }));
+        } else {
+            const duration = metadata.format.duration || 0;
+            const xmpSegments = parseXmpCuePoints(metadata, duration);
+            if (xmpSegments) {
+                audioSegments = xmpSegments;
+            } else {
+                console.warn(`File ${file.name} has no chapter markers.`);
+                return { matched: 0, missed: targetLines.length };
+            }
+        }
 
-      let totalMatchedCount = 0;
-      let totalMissedCount = 0;
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      console.log('🎵 AudioContext 创建成功');
+        // 3. Store master audio
+        const masterAudioEntry: MasterAudio = { id: sourceAudioId, projectId: currentProject.id, data: file };
+        await db.masterAudios.put(masterAudioEntry);
 
-      for (const file of Array.from(files)) {
-          console.log('📄 处理文件:', file.name, '大小:', file.size, 'bytes');
-          const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
-          const parts = nameWithoutExt.split('_');
-          console.log('📝 文件名部分:', parts);
+        // 4. Decode, split, and assign
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const mainAudioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+        
+        let matchedCount = 0;
+        const limit = Math.min(targetLines.length, audioSegments.length);
 
-          if (parts.length !== 2) { // Expecting chapter_cv
-              console.warn(`⚠️ 跳过：文件名格式不正确: ${file.name} (期望格式: 章节_CV名.mp3)`);
-              continue;
-          }
+        for (let i = 0; i < limit; i++) {
+            const segment = audioSegments[i];
+            const lineInfo = targetLines[i];
+            
+            const duration = segment.endTime - segment.startTime;
+            if (duration <= 0) continue;
 
-          const chapterIdentifier = parts[0];
-          const cvName = parts[1];
-          
-          try {
-              // 1. Find target script lines for this CV and chapter range
-              const targetCharacterIds = new Set(
-                  characters.filter(c => c.cvName === cvName && c.status !== 'merged').map(c => c.id)
-              );
+            const startSample = Math.floor(segment.startTime * mainAudioBuffer.sampleRate);
+            const endSample = Math.floor(segment.endTime * mainAudioBuffer.sampleRate);
+            
+            const segmentBuffer = audioContext.createBuffer(mainAudioBuffer.numberOfChannels, endSample - startSample, mainAudioBuffer.sampleRate);
+            for (let ch = 0; ch < mainAudioBuffer.numberOfChannels; ch++) {
+                segmentBuffer.copyToChannel(mainAudioBuffer.getChannelData(ch).subarray(startSample, endSample), ch);
+            }
 
-              if (targetCharacterIds.size === 0) {
-                  console.warn(`No characters found for CV: ${cvName}`);
-                  continue;
-              }
+            const segmentBlob = bufferToWav(segmentBuffer);
+            await assignAudioToLine(currentProject.id, lineInfo.chapterId, lineInfo.line.id, segmentBlob, sourceAudioId, file.name);
+            matchedCount++;
+        }
+        
+        audioContext.close();
+        return { matched: matchedCount, missed: targetLines.length - matchedCount };
 
-              const chapterMatchers = parseChapterIdentifier(chapterIdentifier);
-              const targetChapters = currentProject.chapters.filter((chapter, index) => {
-                  const chapterNumber = index + 1;
-                  return chapterMatchers.includes(chapterNumber);
-              });
+    } catch (error) {
+        console.error(`Error processing master audio file ${file.name}:`, error);
+        return { matched: 0, missed: 0 };
+    }
+  }, [currentProject, characters, nonAudioCharacterIds, assignAudioToLine]);
 
-              if (targetChapters.length === 0) {
-                  console.warn(`No chapters found for identifier: ${chapterIdentifier}`);
-                  continue;
-              }
 
-              const targetLines: { line: ScriptLine; chapterId: string }[] = [];
-              for (const chapter of targetChapters) {
-                  for (const line of chapter.scriptLines) {
-                      if (line.characterId && targetCharacterIds.has(line.characterId) && !nonAudioCharacterIds.includes(line.characterId)) {
-                          targetLines.push({ line, chapterId: chapter.id });
-                      }
-                  }
-              }
-              
-              if (targetLines.length === 0) {
-                  console.warn(`No lines found for CV ${cvName} in chapters ${chapterIdentifier}`);
-                  continue;
-              }
-
-              // 2. Parse MP3 markers - 支持ID3v2 CHAP和Adobe XMP CuePoint
-              console.log('🔍 开始解析 MP3 元数据...');
-              let metadata;
-              try {
-                  metadata = await mm.parseBlob(file);
-                  console.log('✅ 元数据解析成功');
-              } catch (parseError) {
-                  console.error('❌ 解析元数据失败:', parseError);
-                  console.error('这可能是由于浏览器环境的兼容性问题');
-                  console.error('建议：1) 使用其他浏览器  2) 使用按角色匹配上传已分段的音频文件');
-
-                  // 显示友好的错误提示
-                  alert(`无法解析 MP3 文件 "${file.name}" 的元数据。\n\n可能的原因：\n- 当前环境不支持此功能\n- MP3 文件格式问题\n\n建议：\n- 使用"按角色匹配"功能上传已分段的音频文件\n- 或在本地环境运行`);
-
-                  totalMissedCount += targetLines.length;
-                  continue;
-              }
-
-              // 调试：打印完整的 metadata 结构
-              console.log('完整元数据:', metadata);
-              console.log('metadata.common:', metadata.common);
-              console.log('metadata.native:', metadata.native);
-              console.log('metadata.common.chapters:', metadata.common.chapters);
-
-              // 详细查看 native 标签
-              if (metadata.native) {
-                  Object.keys(metadata.native).forEach(key => {
-                      console.log(`metadata.native['${key}']:`, metadata.native[key]);
-                  });
-              }
-
-              let audioSegments: { startTime: number; endTime: number }[] = [];
-
-              // 首先尝试从 metadata.common.chapters 读取（music-metadata-browser 会自动解析 CHAP/CTOC）
-              const chapters = metadata.common.chapters || [];
-
-              if (chapters.length > 0) {
-                  // 使用解析好的章节信息
-                  audioSegments = chapters.map(chapter => ({
-                      startTime: chapter.startTime / 1000,  // 已经是毫秒，转换为秒
-                      endTime: chapter.endTime / 1000,
-                  }));
-                  console.log(`从章节信息中解析到 ${audioSegments.length} 个章节标记`);
-              } else {
-                  // 尝试解析Adobe Audition XMP CuePoint标记
-                  const audioDuration = metadata.format.duration || 0;
-                  const xmpSegments = parseXmpCuePoints(metadata, audioDuration);
-
-                  if (xmpSegments && xmpSegments.length > 0) {
-                      audioSegments = xmpSegments;
-                  } else {
-                      totalMissedCount += targetLines.length;
-                      console.warn(`File ${file.name} has no chapter markers (neither CHAP nor XMP CuePoint).`);
-                      continue;
-                  }
-              }
-
-              // 3. Decode audio and split into blobs
-              const mainAudioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
-
-              const limit = Math.min(targetLines.length, audioSegments.length);
-              
-              for (let i = 0; i < limit; i++) {
-                  const segment = audioSegments[i];
-                  const lineInfo = targetLines[i];
-                  
-                  const { startTime, endTime } = segment;
-                  const duration = endTime - startTime;
-                  if (duration <= 0) continue;
-
-                  const startSample = Math.floor(startTime * mainAudioBuffer.sampleRate);
-                  const endSample = Math.floor(endTime * mainAudioBuffer.sampleRate);
-                  const numSamples = endSample - startSample;
-                  
-                  const segmentBuffer = audioContext.createBuffer(
-                      mainAudioBuffer.numberOfChannels,
-                      numSamples,
-                      mainAudioBuffer.sampleRate
-                  );
-
-                  for (let channel = 0; channel < mainAudioBuffer.numberOfChannels; channel++) {
-                      const channelData = mainAudioBuffer.getChannelData(channel);
-                      const segmentData = channelData.subarray(startSample, endSample);
-                      segmentBuffer.copyToChannel(segmentData, channel);
-                  }
-
-                  const segmentBlob = bufferToWav(segmentBuffer);
-
-                  // 4. Assign split blob to line
-                  await assignAudioToLine(currentProject.id, lineInfo.chapterId, lineInfo.line.id, segmentBlob);
-                  totalMatchedCount++;
-              }
-              totalMissedCount += Math.abs(targetLines.length - audioSegments.length);
-
-          } catch (error) {
-              console.error(`Error processing file ${file.name}:`, error);
-          }
-      }
-
-      await audioContext.close();
-      setIsCvMatchLoading(false);
-      alert(`按CV匹配完成。\n成功匹配: ${totalMatchedCount} 条音轨\n未匹配/失败: ${totalMissedCount}`);
-  
-      if (event.target) {
-          event.target.value = '';
-      }
-  }, [currentProject, characters, assignAudioToLine, nonAudioCharacterIds]);
-  
-  const handleFileSelectionForCharacterMatch = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-      console.log('🔵 handleFileSelectionForCharacterMatch 被调用');
-      const files = event.target.files;
-      console.log('📁 选择的文件数量:', files?.length);
-
-      if (!files || files.length === 0 || !currentProject) {
-          console.log('⚠️ 没有文件或没有项目');
-          return;
-      }
-
-      console.log('🚀 开始处理文件...');
-      if (typeof window.Buffer === 'undefined') {
-          console.error('❌ Buffer 未定义！');
-          alert('错误：Buffer 未加载。请刷新页面重试。');
-          return;
-      }
-
-      setIsCharacterMatchLoading(true);
-
-      let totalMatchedCount = 0;
-      let totalMissedCount = 0;
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      console.log('🎵 AudioContext 创建成功');
-
-      for (const file of Array.from(files)) {
-          console.log('📄 处理文件:', file.name, '大小:', file.size, 'bytes');
-          const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
-          const parts = nameWithoutExt.split('_');
-          console.log('📝 文件名部分:', parts);
-
-          if (parts.length !== 2) { // Expecting chapter_characterName
-              console.warn(`⚠️ 跳过：文件名格式不正确: ${file.name} (期望格式: 章节_角色名.mp3)`);
-              continue;
-          }
-
-          const chapterIdentifier = parts[0];
-          const characterName = parts[1];
-          
-          try {
-              // 1. Find target script lines for this character and chapter range
-              const targetCharacterIds = new Set(
-                  characters.filter(c => c.name === characterName && c.status !== 'merged').map(c => c.id)
-              );
-
-              if (targetCharacterIds.size === 0) {
-                  console.warn(`No characters found for name: ${characterName}`);
-                  continue;
-              }
-
-              const chapterMatchers = parseChapterIdentifier(chapterIdentifier);
-              const targetChapters = currentProject.chapters.filter((chapter, index) => {
-                  const chapterNumber = index + 1;
-                  return chapterMatchers.includes(chapterNumber);
-              });
-
-              if (targetChapters.length === 0) {
-                  console.warn(`No chapters found for identifier: ${chapterIdentifier}`);
-                  continue;
-              }
-
-              const targetLines: { line: ScriptLine; chapterId: string }[] = [];
-              for (const chapter of targetChapters) {
-                  for (const line of chapter.scriptLines) {
-                      if (line.characterId && targetCharacterIds.has(line.characterId) && !nonAudioCharacterIds.includes(line.characterId)) {
-                          targetLines.push({ line, chapterId: chapter.id });
-                      }
-                  }
-              }
-              
-              if (targetLines.length === 0) {
-                  console.warn(`No lines found for character ${characterName} in chapters ${chapterIdentifier}`);
-                  continue;
-              }
-
-              // 2. Parse audio markers
-              console.log('🔍 开始解析音频元数据...');
-              let metadata;
-              try {
-                  metadata = await mm.parseBlob(file);
-                  console.log('✅ 元数据解析成功');
-              } catch (parseError) {
-                  console.error('❌ 解析元数据失败:', parseError);
-                  alert(`无法解析音频文件 "${file.name}" 的元数据。`);
-                  totalMissedCount += targetLines.length;
-                  continue;
-              }
-
-              let audioSegments: { startTime: number; endTime: number }[] = [];
-              const chapters = metadata.common.chapters || [];
-
-              if (chapters.length > 0) {
-                  audioSegments = chapters.map(chapter => ({
-                      startTime: chapter.startTime / 1000,
-                      endTime: chapter.endTime / 1000,
-                  }));
-                  console.log(`从章节信息中解析到 ${audioSegments.length} 个章节标记`);
-              } else {
-                  const audioDuration = metadata.format.duration || 0;
-                  const xmpSegments = parseXmpCuePoints(metadata, audioDuration);
-                  if (xmpSegments && xmpSegments.length > 0) {
-                      audioSegments = xmpSegments;
-                  } else {
-                      totalMissedCount += targetLines.length;
-                      console.warn(`File ${file.name} has no chapter markers (neither CHAP nor XMP CuePoint).`);
-                      continue;
-                  }
-              }
-
-              // 3. Decode audio and split into blobs
-              const mainAudioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
-              const limit = Math.min(targetLines.length, audioSegments.length);
-              
-              for (let i = 0; i < limit; i++) {
-                  const segment = audioSegments[i];
-                  const lineInfo = targetLines[i];
-                  
-                  const { startTime, endTime } = segment;
-                  const duration = endTime - startTime;
-                  if (duration <= 0) continue;
-
-                  const startSample = Math.floor(startTime * mainAudioBuffer.sampleRate);
-                  const endSample = Math.floor(endTime * mainAudioBuffer.sampleRate);
-                  const numSamples = endSample - startSample;
-                  
-                  const segmentBuffer = audioContext.createBuffer(
-                      mainAudioBuffer.numberOfChannels,
-                      numSamples,
-                      mainAudioBuffer.sampleRate
-                  );
-
-                  for (let channel = 0; channel < mainAudioBuffer.numberOfChannels; channel++) {
-                      const channelData = mainAudioBuffer.getChannelData(channel);
-                      const segmentData = channelData.subarray(startSample, endSample);
-                      segmentBuffer.copyToChannel(segmentData, channel);
-                  }
-
-                  const segmentBlob = bufferToWav(segmentBuffer);
-
-                  // 4. Assign split blob to line
-                  await assignAudioToLine(currentProject.id, lineInfo.chapterId, lineInfo.line.id, segmentBlob);
-                  totalMatchedCount++;
-              }
-              totalMissedCount += Math.abs(targetLines.length - audioSegments.length);
-
-          } catch (error) {
-              console.error(`Error processing file ${file.name}:`, error);
-          }
-      }
-
-      await audioContext.close();
-      setIsCharacterMatchLoading(false);
-      alert(`按角色匹配完成。\n成功匹配: ${totalMatchedCount} 条音轨\n未匹配/失败: ${totalMissedCount}`);
-  
-      if (event.target) {
-          event.target.value = '';
-      }
-  }, [currentProject, characters, assignAudioToLine, nonAudioCharacterIds]);
-
-  const handleFileSelectionForChapterMatch = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelection = useCallback(async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    matchType: 'cv' | 'character' | 'chapter',
+    setIsLoading: (loading: boolean) => void
+  ) => {
     const files = event.target.files;
     if (!files || files.length === 0 || !currentProject) return;
 
-    setIsChapterMatchLoading(true);
-
-    let totalMatchedCount = 0;
-    let totalMissedCount = 0;
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    setIsLoading(true);
+    let totalMatched = 0, totalMissed = 0;
 
     for (const file of Array.from(files)) {
-        const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
-        const chapterIdentifier = nameWithoutExt;
+      const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
+      const parts = nameWithoutExt.split('_');
+      
+      let identifier: string | null = null;
+      if (matchType === 'chapter') {
+          identifier = parts[0];
+      } else if (parts.length === 2) {
+          identifier = parts[1]; // cvName or characterName
+      }
+      
+      if (!identifier) {
+        console.warn(`Skipping file with incorrect format: ${file.name}`);
+        continue;
+      }
 
-        try {
-            // 1. Find target script lines for this chapter range
-            const chapterMatchers = parseChapterIdentifier(chapterIdentifier);
-            const targetChapters = currentProject.chapters.filter((chapter, index) => {
-                const chapterNumber = index + 1;
-                return chapterMatchers.includes(chapterNumber);
-            });
-
-            if (targetChapters.length === 0) {
-                console.warn(`No chapters found for identifier: ${chapterIdentifier}`);
-                continue;
-            }
-
-            const targetLines: { line: ScriptLine; chapterId: string }[] = [];
-            for (const chapter of targetChapters) {
-                for (const line of chapter.scriptLines) {
-                    if (!nonAudioCharacterIds.includes(line.characterId || '')) {
-                        targetLines.push({ line, chapterId: chapter.id });
-                    }
-                }
-            }
-            
-            if (targetLines.length === 0) {
-                console.warn(`No lines found in chapters ${chapterIdentifier}`);
-                continue;
-            }
-
-            // 2. Parse audio markers
-            let metadata;
-            try {
-                metadata = await mm.parseBlob(file);
-            } catch (parseError) {
-                console.error(`Failed to parse metadata for ${file.name}:`, parseError);
-                totalMissedCount += targetLines.length;
-                continue;
-            }
-
-            let audioSegments: { startTime: number; endTime: number }[] = [];
-            const chapters = metadata.common.chapters || [];
-
-            if (chapters.length > 0) {
-                audioSegments = chapters.map(chapter => ({
-                    startTime: chapter.startTime / 1000,
-                    endTime: chapter.endTime / 1000,
-                }));
-            } else {
-                const audioDuration = metadata.format.duration || 0;
-                const xmpSegments = parseXmpCuePoints(metadata, audioDuration);
-                if (xmpSegments && xmpSegments.length > 0) {
-                    audioSegments = xmpSegments;
-                } else {
-                    totalMissedCount += targetLines.length;
-                    console.warn(`File ${file.name} has no chapter markers.`);
-                    continue;
-                }
-            }
-
-            // 3. Decode audio and split into blobs
-            const mainAudioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
-            const limit = Math.min(targetLines.length, audioSegments.length);
-            
-            for (let i = 0; i < limit; i++) {
-                const segment = audioSegments[i];
-                const lineInfo = targetLines[i];
-                
-                const { startTime, endTime } = segment;
-                const duration = endTime - startTime;
-                if (duration <= 0) continue;
-
-                const startSample = Math.floor(startTime * mainAudioBuffer.sampleRate);
-                const endSample = Math.floor(endTime * mainAudioBuffer.sampleRate);
-                const numSamples = endSample - startSample;
-                
-                const segmentBuffer = audioContext.createBuffer(
-                    mainAudioBuffer.numberOfChannels,
-                    numSamples,
-                    mainAudioBuffer.sampleRate
-                );
-
-                for (let channel = 0; channel < mainAudioBuffer.numberOfChannels; channel++) {
-                    const channelData = mainAudioBuffer.getChannelData(channel);
-                    const segmentData = channelData.subarray(startSample, endSample);
-                    segmentBuffer.copyToChannel(segmentData, channel);
-                }
-
-                const segmentBlob = bufferToWav(segmentBuffer);
-
-                // 4. Assign split blob to line
-                await assignAudioToLine(currentProject.id, lineInfo.chapterId, lineInfo.line.id, segmentBlob);
-                totalMatchedCount++;
-            }
-            totalMissedCount += Math.abs(targetLines.length - audioSegments.length);
-
-        } catch (error) {
-            console.error(`Error processing file ${file.name}:`, error);
-        }
+      const result = await processMasterAudioFile(file, identifier, matchType, setIsLoading);
+      totalMatched += result.matched;
+      totalMissed += result.missed;
     }
 
-    await audioContext.close();
-    setIsChapterMatchLoading(false);
-    alert(`按章节匹配完成。\n成功匹配: ${totalMatchedCount} 条音轨\n未匹配/失败: ${totalMissedCount}`);
+    setIsLoading(false);
+    alert(`匹配完成。\n成功匹配: ${totalMatched} 条音轨\n未匹配/失败: ${totalMissed}`);
+    if (event.target) event.target.value = '';
+  }, [currentProject, processMasterAudioFile]);
 
-    if (event.target) {
-        event.target.value = '';
-    }
-  }, [currentProject, assignAudioToLine, nonAudioCharacterIds]);
+  const handleFileSelectionForCvMatch = (e: React.ChangeEvent<HTMLInputElement>) => handleFileSelection(e, 'cv', setIsCvMatchLoading);
+  const handleFileSelectionForCharacterMatch = (e: React.ChangeEvent<HTMLInputElement>) => handleFileSelection(e, 'character', setIsCharacterMatchLoading);
+  const handleFileSelectionForChapterMatch = (e: React.ChangeEvent<HTMLInputElement>) => handleFileSelection(e, 'chapter', setIsChapterMatchLoading);
 
   return {
     isCvMatchLoading,

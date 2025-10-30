@@ -82,7 +82,21 @@ export interface AudioBlob {
   id: string;
   lineId: string;
   data: Blob;
+  sourceAudioId?: string; // ID linking to the master audio file
+  sourceAudioFilename?: string; // Original filename of the master audio
 }
+
+export interface MasterAudio {
+    id: string; // same as sourceAudioId
+    projectId: string;
+    data: Blob;
+}
+
+export interface AudioMarkerSet {
+    sourceAudioId: string; // Primary Key
+    markers: number[]; // Array of timestamps in seconds
+}
+
 
 // For Editor Page UI State
 export type CharacterFilterMode = 'currentChapter' | 'all';

@@ -8,15 +8,12 @@ import ExportAudioModal from './components/ExportAudioModal';
 import { exportAudioWithMarkers } from '../../lib/wavExporter';
 import { db } from '../../db';
 import { ScriptLine, Chapter, Character } from '../../types';
-import SplitAudioModal, { ShiftMode } from './components/SplitAudioModal';
-import ShiftAudioModal from './components/ShiftAudioModal';
-import ShiftUpAudioModal from './components/ShiftUpAudioModal';
-import MergeAudioModal from './components/MergeAudioModal';
 import { useAudioFileMatcher } from './hooks/useAudioFileMatcher';
 import ResizablePanels from '../../components/ui/ResizablePanels';
 import { usePaginatedChapters } from '../scriptEditor/hooks/usePaginatedChapters';
 import ChapterPagination from '../scriptEditor/components/chapter_list_panel/ChapterPagination';
 import SilenceSettingsModal from './components/SilenceSettingsModal';
+import AudioWaveformEditor from './components/AudioWaveformEditor';
 
 const formatChapterNumber = (index: number) => {
   if (index < 0) return '';
@@ -34,13 +31,13 @@ const AudioAlignmentPage: React.FC = () => {
     setSelectedChapterId,
     playingLineInfo,
     assignAudioToLine,
-    splitAndShiftAudio,
-    shiftAudioDown,
-    shiftAudioUp,
-    mergeWithNextAndShift,
+    resegmentAndRealignAudio,
     navigateTo,
     openConfirmModal,
     clearAudioFromChapter,
+    waveformEditorState,
+    openWaveformEditor,
+    closeWaveformEditor,
   } = useStore(state => ({
     projects: state.projects,
     characters: state.characters,
@@ -49,13 +46,13 @@ const AudioAlignmentPage: React.FC = () => {
     setSelectedChapterId: state.setSelectedChapterId,
     playingLineInfo: state.playingLineInfo,
     assignAudioToLine: state.assignAudioToLine,
-    splitAndShiftAudio: state.splitAndShiftAudio,
-    shiftAudioDown: state.shiftAudioDown,
-    shiftAudioUp: state.shiftAudioUp,
-    mergeWithNextAndShift: state.mergeWithNextAndShift,
+    resegmentAndRealignAudio: state.resegmentAndRealignAudio,
     navigateTo: state.navigateTo,
     openConfirmModal: state.openConfirmModal,
     clearAudioFromChapter: state.clearAudioFromChapter,
+    waveformEditorState: state.waveformEditor,
+    openWaveformEditor: state.openWaveformEditor,
+    closeWaveformEditor: state.closeWaveformEditor,
   }));
 
   const cvMatchFileInputRef = useRef<HTMLInputElement>(null);
@@ -66,32 +63,6 @@ const AudioAlignmentPage: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [isSilenceSettingsModalOpen, setIsSilenceSettingsModalOpen] = useState(false);
   
-  const [splitModalInfo, setSplitModalInfo] = useState<{ isOpen: boolean; lineId: string | null; character: Character | undefined, splitTime: number | null }>({
-    isOpen: false,
-    lineId: null,
-    character: undefined,
-    splitTime: null,
-  });
-
-  const [shiftModalInfo, setShiftModalInfo] = useState<{ isOpen: boolean; lineId: string | null; character: Character | undefined }>({
-    isOpen: false,
-    lineId: null,
-    character: undefined,
-  });
-
-  const [shiftUpModalInfo, setShiftUpModalInfo] = useState<{ isOpen: boolean; lineId: string | null; character: Character | undefined }>({
-    isOpen: false,
-    lineId: null,
-    character: undefined,
-  });
-
-  const [mergeModalInfo, setMergeModalInfo] = useState<{ isOpen: boolean; lineId: string | null; character: Character | undefined }>({
-    isOpen: false,
-    lineId: null,
-    character: undefined,
-  });
-
-
   const currentProject = projects.find(p => p.id === selectedProjectId);
   
   const {
@@ -225,94 +196,13 @@ const AudioAlignmentPage: React.FC = () => {
         );
     }
   };
-  
-  const handleSplitRequest = (splitTime: number, lineInfo: { line: ScriptLine; character: Character | undefined }) => {
-    if (!lineInfo) return;
-    setSplitModalInfo({
-        isOpen: true,
-        lineId: lineInfo.line.id,
-        character: lineInfo.character,
-        splitTime: splitTime,
-    });
-  };
 
-  const handleSplitConfirm = async (shiftMode: ShiftMode) => {
-    if (splitModalInfo.lineId && splitModalInfo.splitTime !== null && currentProject && selectedChapter) {
-        await splitAndShiftAudio(currentProject.id, selectedChapter.id, splitModalInfo.lineId, splitModalInfo.splitTime, shiftMode);
+  const handleCalibrationSave = async (sourceAudioId: string, markers: number[]) => {
+    if (currentProject) {
+        await resegmentAndRealignAudio(currentProject.id, sourceAudioId, markers);
     }
-    setSplitModalInfo({ isOpen: false, lineId: null, character: undefined, splitTime: null });
+    closeWaveformEditor();
   };
-  
-  const handleRequestShiftDown = (lineId: string, character: Character | undefined) => {
-    setShiftModalInfo({
-        isOpen: true,
-        lineId: lineId,
-        character: character,
-    });
-  };
-
-  const handleShiftConfirm = async (shiftMode: ShiftMode) => {
-    if (shiftModalInfo.lineId && currentProject && selectedChapter) {
-        await shiftAudioDown(currentProject.id, selectedChapter.id, shiftModalInfo.lineId, shiftMode);
-    }
-    setShiftModalInfo({ isOpen: false, lineId: null, character: undefined });
-  };
-
-  const handleRequestShiftUp = (lineId: string, character: Character | undefined) => {
-    setShiftUpModalInfo({
-        isOpen: true,
-        lineId: lineId,
-        character: character,
-    });
-  };
-
-  const handleShiftUpConfirm = async (shiftMode: ShiftMode) => {
-    if (shiftUpModalInfo.lineId && currentProject && selectedChapter) {
-        await shiftAudioUp(currentProject.id, selectedChapter.id, shiftUpModalInfo.lineId, shiftMode);
-    }
-    setShiftUpModalInfo({ isOpen: false, lineId: null, character: undefined });
-  };
-  
-  const handleRequestMerge = (lineInfo: { line: ScriptLine; character: Character | undefined; }) => {
-    if (!lineInfo) return;
-    setMergeModalInfo({
-        isOpen: true,
-        lineId: lineInfo.line.id,
-        character: lineInfo.character,
-    });
-  };
-
-  const handleMergeConfirm = async (shiftMode: ShiftMode) => {
-    if (mergeModalInfo.lineId && currentProject && selectedChapter) {
-        await mergeWithNextAndShift(currentProject.id, selectedChapter.id, mergeModalInfo.lineId, shiftMode);
-    }
-    setMergeModalInfo({ isOpen: false, lineId: null, character: undefined });
-  };
-
-  const mergeability = useMemo(() => {
-    if (!playingLineInfo || !selectedChapter) return { canMerge: false, reason: "没有正在播放的音频行。" };
-    const { line: currentLine, character: currentChar } = playingLineInfo;
-
-    if (!currentChar || nonAudioCharacterIds.includes(currentChar.id) || !currentLine.audioBlobId) {
-        return { canMerge: false, reason: "当前行没有音频或为特殊行(静音/音效)。" };
-    }
-    
-    const lineIndex = selectedChapter.scriptLines.findIndex(l => l.id === currentLine.id);
-    if (lineIndex < 0 || lineIndex >= selectedChapter.scriptLines.length - 1) {
-        return { canMerge: false, reason: "这是本章最后一句台词。" };
-    }
-
-    const hasNextByChapter = selectedChapter.scriptLines
-        .slice(lineIndex + 1)
-        .some(line => line.audioBlobId && !nonAudioCharacterIds.includes(line.characterId || ''));
-
-    if (hasNextByChapter) {
-        return { canMerge: true, reason: "与后续音频合并" };
-    }
-    
-    return { canMerge: false, reason: "后面没有可合并的台词行。" };
-
-  }, [playingLineInfo, selectedChapter, characters, nonAudioCharacterIds]);
 
 
   const hasAudioInChapter = useMemo(() => {
@@ -483,8 +373,7 @@ const AudioAlignmentPage: React.FC = () => {
                                     chapterId={selectedChapter.id}
                                     projectId={currentProject.id}
                                     character={characters.find(c => c.id === line.characterId)}
-                                    onRequestShiftDown={handleRequestShiftDown}
-                                    onRequestShiftUp={handleRequestShiftUp}
+                                    onRequestCalibration={openWaveformEditor}
                                 />
                             ))}
                         </div>
@@ -500,12 +389,7 @@ const AudioAlignmentPage: React.FC = () => {
           initialLeftWidthPercent={25}
         />
       </div>
-      <GlobalAudioPlayer 
-        onSplitRequest={handleSplitRequest} 
-        onMergeRequest={handleRequestMerge} 
-        canMerge={mergeability.canMerge}
-        mergeDisabledReason={mergeability.reason}
-       />
+      <GlobalAudioPlayer />
       <ExportAudioModal
         isOpen={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
@@ -515,35 +399,21 @@ const AudioAlignmentPage: React.FC = () => {
         projectTitle={currentProject.name}
         hasAudioInProject={hasAudioInProject}
       />
-      <SplitAudioModal
-        isOpen={splitModalInfo.isOpen}
-        onClose={() => setSplitModalInfo({ isOpen: false, lineId: null, character: undefined, splitTime: null })}
-        onConfirm={handleSplitConfirm}
-        character={splitModalInfo.character}
-      />
-      <ShiftAudioModal
-        isOpen={shiftModalInfo.isOpen}
-        onClose={() => setShiftModalInfo({ isOpen: false, lineId: null, character: undefined })}
-        onConfirm={handleShiftConfirm}
-        character={shiftModalInfo.character}
-      />
-      <ShiftUpAudioModal
-        isOpen={shiftUpModalInfo.isOpen}
-        onClose={() => setShiftUpModalInfo({ isOpen: false, lineId: null, character: undefined })}
-        onConfirm={handleShiftUpConfirm}
-        character={shiftUpModalInfo.character}
-      />
-      <MergeAudioModal
-        isOpen={mergeModalInfo.isOpen}
-        onClose={() => setMergeModalInfo({ isOpen: false, lineId: null, character: undefined })}
-        onConfirm={handleMergeConfirm}
-        character={mergeModalInfo.character}
-      />
+      
        {currentProject && (
           <SilenceSettingsModal
               isOpen={isSilenceSettingsModalOpen}
               onClose={() => setIsSilenceSettingsModalOpen(false)}
               project={currentProject}
+          />
+       )}
+       {waveformEditorState.isOpen && waveformEditorState.sourceAudioInfo && (
+          <AudioWaveformEditor
+            isOpen={waveformEditorState.isOpen}
+            onClose={closeWaveformEditor}
+            sourceAudioInfo={waveformEditorState.sourceAudioInfo}
+            currentLineId={waveformEditorState.lineId}
+            onSave={handleCalibrationSave}
           />
        )}
     </div>

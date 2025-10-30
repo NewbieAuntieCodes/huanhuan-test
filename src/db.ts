@@ -3,7 +3,7 @@
 // This was likely due to a module resolution or type inference issue with class extension.
 // Switched to the direct instantiation pattern with casting, which is a robust alternative.
 import Dexie, { type Table } from 'dexie';
-import { Project, Character, MergeHistoryEntry, AudioBlob, AudioAssistantState, DirectoryHandleEntry } from './types';
+import { Project, Character, MergeHistoryEntry, AudioBlob, AudioAssistantState, DirectoryHandleEntry, MasterAudio, AudioMarkerSet } from './types';
 // Fix: Import from types.ts to break circular dependency with App.tsx -> useStore.ts -> db.ts cycle
 import { CVStylesMap } from './types';
 
@@ -19,6 +19,8 @@ interface IAudioCreatorDB {
   characters: Table<Character, string>;
   misc: Table<MiscData, string>;
   audioBlobs: Table<AudioBlob, string>;
+  masterAudios: Table<MasterAudio, string>;
+  audioMarkers: Table<AudioMarkerSet, string>;
   assistantState: Table<AudioAssistantState, string>;
   directoryHandles: Table<DirectoryHandleEntry, string>;
 }
@@ -62,6 +64,17 @@ db.version(5).stores({
   characters: 'id, projectId',
   misc: 'key',
   audioBlobs: 'id, lineId',
+  assistantState: 'projectId',
+  directoryHandles: 'projectId',
+});
+
+db.version(6).stores({
+  projects: 'id, lastModified',
+  characters: 'id, projectId',
+  misc: 'key',
+  audioBlobs: 'id, lineId, sourceAudioId', // Add sourceAudioId for linking
+  masterAudios: 'id', // Stores master audio files, id is sourceAudioId
+  audioMarkers: 'sourceAudioId', // Stores custom markers for a master audio
   assistantState: 'projectId',
   directoryHandles: 'projectId',
 });
