@@ -15,7 +15,8 @@
     "dexie": "^4.0.7",
     "zustand": "^4.5.4",
     "mammoth": "^1.7.1",
-    "jszip": "^3.10.1"
+    "jszip": "^3.10.1",
+    "music-metadata-browser": "^2.5.10"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
