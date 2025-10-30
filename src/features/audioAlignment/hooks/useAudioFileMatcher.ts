@@ -355,118 +355,158 @@ export const useAudioFileMatcher = ({
   }, [currentProject, characters, assignAudioToLine, nonAudioCharacterIds]);
   
   const handleFileSelectionForCharacterMatch = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+      console.log('🔵 handleFileSelectionForCharacterMatch 被调用');
       const files = event.target.files;
-      if (!files || files.length === 0 || !currentProject) return;
+      console.log('📁 选择的文件数量:', files?.length);
+
+      if (!files || files.length === 0 || !currentProject) {
+          console.log('⚠️ 没有文件或没有项目');
+          return;
+      }
+
+      console.log('🚀 开始处理文件...');
+      if (typeof window.Buffer === 'undefined') {
+          console.error('❌ Buffer 未定义！');
+          alert('错误：Buffer 未加载。请刷新页面重试。');
+          return;
+      }
 
       setIsCharacterMatchLoading(true);
-      
-      const fileGroups = new Map<string, { file: File; sequence: number }[]>();
 
-      for (let i = 0; i < files.length; i++) {
-          const file = files[i];
+      let totalMatchedCount = 0;
+      let totalMissedCount = 0;
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      console.log('🎵 AudioContext 创建成功');
+
+      for (const file of Array.from(files)) {
+          console.log('📄 处理文件:', file.name, '大小:', file.size, 'bytes');
           const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
           const parts = nameWithoutExt.split('_');
+          console.log('📝 文件名部分:', parts);
 
-          if (parts.length === 4) { // Expecting chapter_cv_char_seq
-              const sequence = parseInt(parts[3], 10);
-              if (!isNaN(sequence)) {
-                  const baseName = `${parts[0]}_${parts[1]}_${parts[2]}`; // chapter_cv_char
-                  if (!fileGroups.has(baseName)) {
-                      fileGroups.set(baseName, []);
-                  }
-                  fileGroups.get(baseName)!.push({ file: file, sequence });
+          if (parts.length !== 2) { // Expecting chapter_characterName
+              console.warn(`⚠️ 跳过：文件名格式不正确: ${file.name} (期望格式: 章节_角色名.mp3)`);
+              continue;
+          }
+
+          const chapterIdentifier = parts[0];
+          const characterName = parts[1];
+          
+          try {
+              // 1. Find target script lines for this character and chapter range
+              const targetCharacterIds = new Set(
+                  characters.filter(c => c.name === characterName && c.status !== 'merged').map(c => c.id)
+              );
+
+              if (targetCharacterIds.size === 0) {
+                  console.warn(`No characters found for name: ${characterName}`);
+                  continue;
               }
-          } else if (parts.length === 3) { // Expecting chapter_char_seq
-              const sequence = parseInt(parts[2], 10);
-              if (!isNaN(sequence)) {
-                  const baseName = `${parts[0]}_${parts[1]}`; // chapter_char
-                  const key = `NO_CV::${baseName}`; // Marker for no CV in filename
-                  if (!fileGroups.has(key)) {
-                      fileGroups.set(key, []);
-                  }
-                  fileGroups.get(key)!.push({ file: file, sequence });
+
+              const chapterMatchers = parseChapterIdentifier(chapterIdentifier);
+              const targetChapters = currentProject.chapters.filter((chapter, index) => {
+                  const chapterNumber = index + 1;
+                  return chapterMatchers.includes(chapterNumber);
+              });
+
+              if (targetChapters.length === 0) {
+                  console.warn(`No chapters found for identifier: ${chapterIdentifier}`);
+                  continue;
               }
+
+              const targetLines: { line: ScriptLine; chapterId: string }[] = [];
+              for (const chapter of targetChapters) {
+                  for (const line of chapter.scriptLines) {
+                      if (line.characterId && targetCharacterIds.has(line.characterId) && !nonAudioCharacterIds.includes(line.characterId)) {
+                          targetLines.push({ line, chapterId: chapter.id });
+                      }
+                  }
+              }
+              
+              if (targetLines.length === 0) {
+                  console.warn(`No lines found for character ${characterName} in chapters ${chapterIdentifier}`);
+                  continue;
+              }
+
+              // 2. Parse audio markers
+              console.log('🔍 开始解析音频元数据...');
+              let metadata;
+              try {
+                  metadata = await mm.parseBlob(file);
+                  console.log('✅ 元数据解析成功');
+              } catch (parseError) {
+                  console.error('❌ 解析元数据失败:', parseError);
+                  alert(`无法解析音频文件 "${file.name}" 的元数据。`);
+                  totalMissedCount += targetLines.length;
+                  continue;
+              }
+
+              let audioSegments: { startTime: number; endTime: number }[] = [];
+              const chapters = metadata.common.chapters || [];
+
+              if (chapters.length > 0) {
+                  audioSegments = chapters.map(chapter => ({
+                      startTime: chapter.startTime / 1000,
+                      endTime: chapter.endTime / 1000,
+                  }));
+                  console.log(`从章节信息中解析到 ${audioSegments.length} 个章节标记`);
+              } else {
+                  const audioDuration = metadata.format.duration || 0;
+                  const xmpSegments = parseXmpCuePoints(metadata, audioDuration);
+                  if (xmpSegments && xmpSegments.length > 0) {
+                      audioSegments = xmpSegments;
+                  } else {
+                      totalMissedCount += targetLines.length;
+                      console.warn(`File ${file.name} has no chapter markers (neither CHAP nor XMP CuePoint).`);
+                      continue;
+                  }
+              }
+
+              // 3. Decode audio and split into blobs
+              const mainAudioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+              const limit = Math.min(targetLines.length, audioSegments.length);
+              
+              for (let i = 0; i < limit; i++) {
+                  const segment = audioSegments[i];
+                  const lineInfo = targetLines[i];
+                  
+                  const { startTime, endTime } = segment;
+                  const duration = endTime - startTime;
+                  if (duration <= 0) continue;
+
+                  const startSample = Math.floor(startTime * mainAudioBuffer.sampleRate);
+                  const endSample = Math.floor(endTime * mainAudioBuffer.sampleRate);
+                  const numSamples = endSample - startSample;
+                  
+                  const segmentBuffer = audioContext.createBuffer(
+                      mainAudioBuffer.numberOfChannels,
+                      numSamples,
+                      mainAudioBuffer.sampleRate
+                  );
+
+                  for (let channel = 0; channel < mainAudioBuffer.numberOfChannels; channel++) {
+                      const channelData = mainAudioBuffer.getChannelData(channel);
+                      const segmentData = channelData.subarray(startSample, endSample);
+                      segmentBuffer.copyToChannel(segmentData, channel);
+                  }
+
+                  const segmentBlob = bufferToWav(segmentBuffer);
+
+                  // 4. Assign split blob to line
+                  await assignAudioToLine(currentProject.id, lineInfo.chapterId, lineInfo.line.id, segmentBlob);
+                  totalMatchedCount++;
+              }
+              totalMissedCount += Math.abs(targetLines.length - audioSegments.length);
+
+          } catch (error) {
+              console.error(`Error processing file ${file.name}:`, error);
           }
       }
 
-      let matchedCount = 0;
-      let missedCount = 0;
-      
-      for (const [groupKey, filesForGroup] of fileGroups.entries()) {
-          let chapterIdentifier: string;
-          let characterName: string;
-          let cvName: string | undefined;
-
-          if (groupKey.startsWith('NO_CV::')) {
-              const baseName = groupKey.replace('NO_CV::', '');
-              const parts = baseName.split('_');
-              chapterIdentifier = parts[0];
-              characterName = parts[1];
-              cvName = undefined;
-          } else {
-              const parts = groupKey.split('_');
-              chapterIdentifier = parts[0];
-              cvName = parts[1];
-              characterName = parts[2];
-          }
-
-          if (!chapterIdentifier || !characterName) {
-              missedCount += filesForGroup.length;
-              continue;
-          }
-          
-          const targetCharacters: Character[] = characters.filter(c => {
-              const nameMatch = c.name === characterName;
-              const cvMatch = cvName ? c.cvName === cvName : true; // If no cvName, match any CV for that character name.
-              return nameMatch && cvMatch && c.status !== 'merged';
-          });
-          
-          if (targetCharacters.length === 0) {
-              missedCount += filesForGroup.length;
-              continue;
-          }
-          
-          const targetCharacterIds = new Set(targetCharacters.map(c => c.id));
-          const chapterMatchers = parseChapterIdentifier(chapterIdentifier);
-          if (chapterMatchers.length === 0) {
-              missedCount += filesForGroup.length;
-              continue;
-          }
-          
-          const targetChapters = currentProject.chapters.filter((chapter, index) => {
-              const chapterNumber = index + 1;
-              return chapterMatchers.includes(chapterNumber);
-          });
-          
-          if (targetChapters.length === 0) {
-              missedCount += filesForGroup.length;
-              continue;
-          }
-          
-          const targetLines: { line: ScriptLine; chapterId: string }[] = [];
-          for (const chapter of targetChapters) {
-              for (const line of chapter.scriptLines) {
-                  if (line.characterId && targetCharacterIds.has(line.characterId) && !nonAudioCharacterIds.includes(line.characterId)) {
-                      targetLines.push({ line, chapterId: chapter.id });
-                  }
-              }
-          }
-          
-          const sortedFiles = filesForGroup.sort((a, b) => a.sequence - b.sequence);
-          
-          const limit = Math.min(targetLines.length, sortedFiles.length);
-          for (let i = 0; i < limit; i++) {
-              const { line, chapterId } = targetLines[i];
-              const { file } = sortedFiles[i];
-              await assignAudioToLine(currentProject.id, chapterId, line.id, file);
-              matchedCount++;
-          }
-          missedCount += sortedFiles.length - limit;
-      }
-      
+      await audioContext.close();
       setIsCharacterMatchLoading(false);
-      alert(`按角色匹配完成。\n成功匹配: ${matchedCount} 个文件\n未匹配: ${missedCount} 个文件`);
-
+      alert(`按角色匹配完成。\n成功匹配: ${totalMatchedCount} 条音轨\n未匹配/失败: ${totalMissedCount}`);
+  
       if (event.target) {
           event.target.value = '';
       }
@@ -478,69 +518,115 @@ export const useAudioFileMatcher = ({
 
     setIsChapterMatchLoading(true);
 
-    const chapterFileGroups = new Map<string, { file: File; sequence: number }[]>();
+    let totalMatchedCount = 0;
+    let totalMissedCount = 0;
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
 
-    for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+    for (const file of Array.from(files)) {
         const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
-        const parts = nameWithoutExt.split('_');
+        const chapterIdentifier = nameWithoutExt;
 
-        if (parts.length === 2) { // Expecting chapter_seq
-            const chapterIdentifier = parts[0];
-            const sequence = parseInt(parts[1], 10);
+        try {
+            // 1. Find target script lines for this chapter range
+            const chapterMatchers = parseChapterIdentifier(chapterIdentifier);
+            const targetChapters = currentProject.chapters.filter((chapter, index) => {
+                const chapterNumber = index + 1;
+                return chapterMatchers.includes(chapterNumber);
+            });
 
-            if (chapterIdentifier && !isNaN(sequence)) {
-                if (!chapterFileGroups.has(chapterIdentifier)) {
-                    chapterFileGroups.set(chapterIdentifier, []);
-                }
-                chapterFileGroups.get(chapterIdentifier)!.push({ file: file, sequence });
+            if (targetChapters.length === 0) {
+                console.warn(`No chapters found for identifier: ${chapterIdentifier}`);
+                continue;
             }
+
+            const targetLines: { line: ScriptLine; chapterId: string }[] = [];
+            for (const chapter of targetChapters) {
+                for (const line of chapter.scriptLines) {
+                    if (!nonAudioCharacterIds.includes(line.characterId || '')) {
+                        targetLines.push({ line, chapterId: chapter.id });
+                    }
+                }
+            }
+            
+            if (targetLines.length === 0) {
+                console.warn(`No lines found in chapters ${chapterIdentifier}`);
+                continue;
+            }
+
+            // 2. Parse audio markers
+            let metadata;
+            try {
+                metadata = await mm.parseBlob(file);
+            } catch (parseError) {
+                console.error(`Failed to parse metadata for ${file.name}:`, parseError);
+                totalMissedCount += targetLines.length;
+                continue;
+            }
+
+            let audioSegments: { startTime: number; endTime: number }[] = [];
+            const chapters = metadata.common.chapters || [];
+
+            if (chapters.length > 0) {
+                audioSegments = chapters.map(chapter => ({
+                    startTime: chapter.startTime / 1000,
+                    endTime: chapter.endTime / 1000,
+                }));
+            } else {
+                const audioDuration = metadata.format.duration || 0;
+                const xmpSegments = parseXmpCuePoints(metadata, audioDuration);
+                if (xmpSegments && xmpSegments.length > 0) {
+                    audioSegments = xmpSegments;
+                } else {
+                    totalMissedCount += targetLines.length;
+                    console.warn(`File ${file.name} has no chapter markers.`);
+                    continue;
+                }
+            }
+
+            // 3. Decode audio and split into blobs
+            const mainAudioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+            const limit = Math.min(targetLines.length, audioSegments.length);
+            
+            for (let i = 0; i < limit; i++) {
+                const segment = audioSegments[i];
+                const lineInfo = targetLines[i];
+                
+                const { startTime, endTime } = segment;
+                const duration = endTime - startTime;
+                if (duration <= 0) continue;
+
+                const startSample = Math.floor(startTime * mainAudioBuffer.sampleRate);
+                const endSample = Math.floor(endTime * mainAudioBuffer.sampleRate);
+                const numSamples = endSample - startSample;
+                
+                const segmentBuffer = audioContext.createBuffer(
+                    mainAudioBuffer.numberOfChannels,
+                    numSamples,
+                    mainAudioBuffer.sampleRate
+                );
+
+                for (let channel = 0; channel < mainAudioBuffer.numberOfChannels; channel++) {
+                    const channelData = mainAudioBuffer.getChannelData(channel);
+                    const segmentData = channelData.subarray(startSample, endSample);
+                    segmentBuffer.copyToChannel(segmentData, channel);
+                }
+
+                const segmentBlob = bufferToWav(segmentBuffer);
+
+                // 4. Assign split blob to line
+                await assignAudioToLine(currentProject.id, lineInfo.chapterId, lineInfo.line.id, segmentBlob);
+                totalMatchedCount++;
+            }
+            totalMissedCount += Math.abs(targetLines.length - audioSegments.length);
+
+        } catch (error) {
+            console.error(`Error processing file ${file.name}:`, error);
         }
     }
 
-    let matchedCount = 0;
-    let missedCount = 0;
-
-    for (const [chapterIdentifier, filesForGroup] of chapterFileGroups.entries()) {
-        const chapterMatchers = parseChapterIdentifier(chapterIdentifier);
-        if (chapterMatchers.length === 0) {
-            missedCount += filesForGroup.length;
-            continue;
-        }
-
-        const targetChapters = currentProject.chapters.filter((chapter, index) => {
-            const chapterNumber = index + 1;
-            return chapterMatchers.includes(chapterNumber);
-        });
-
-        if (targetChapters.length === 0) {
-            missedCount += filesForGroup.length;
-            continue;
-        }
-
-        const targetLines: { line: ScriptLine; chapterId: string }[] = [];
-        for (const chapter of targetChapters) {
-            for (const line of chapter.scriptLines) {
-                if (!nonAudioCharacterIds.includes(line.characterId || '')) {
-                    targetLines.push({ line, chapterId: chapter.id });
-                }
-            }
-        }
-        
-        const sortedFiles = filesForGroup.sort((a, b) => a.sequence - b.sequence);
-        
-        const limit = Math.min(targetLines.length, sortedFiles.length);
-        for (let i = 0; i < limit; i++) {
-            const { line, chapterId } = targetLines[i];
-            const { file } = sortedFiles[i];
-            await assignAudioToLine(currentProject.id, chapterId, line.id, file);
-            matchedCount++;
-        }
-        missedCount += sortedFiles.length - limit;
-    }
-
+    await audioContext.close();
     setIsChapterMatchLoading(false);
-    alert(`按章节匹配完成。\n成功匹配: ${matchedCount} 个文件\n未匹配: ${missedCount} 个文件`);
+    alert(`按章节匹配完成。\n成功匹配: ${totalMatchedCount} 条音轨\n未匹配/失败: ${totalMissedCount}`);
 
     if (event.target) {
         event.target.value = '';
