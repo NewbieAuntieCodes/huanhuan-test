@@ -9,11 +9,12 @@ import NumberInput from '../../../components/ui/NumberInput';
 
 interface AudioScriptLineProps {
     line: ScriptLine;
+    index: number;
     nextLine?: ScriptLine;
     character: Character | undefined;
     projectId: string;
     chapterId: string;
-    onRequestCalibration: (lineId: string, sourceAudioId: string, sourceAudioFilename: string) => void;
+    onRequestCalibration: (lineId: string, lineIndex: number, sourceAudioId: string, sourceAudioFilename: string) => void;
 }
 
 const getLineType = (line: ScriptLine | undefined, characters: Character[]): LineType => {
@@ -97,7 +98,7 @@ const SilenceEditor: React.FC<{
 }
 
 
-const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, nextLine, character, projectId, chapterId, onRequestCalibration }) => {
+const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, index, nextLine, character, projectId, chapterId, onRequestCalibration }) => {
     const { 
         assignAudioToLine, 
         updateLineAudio, 
@@ -323,7 +324,7 @@ const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, nextLine, chara
                         </button>
                         
                         <button
-                           onClick={() => audioInfo.sourceAudioId && audioInfo.sourceAudioFilename && onRequestCalibration(line.id, audioInfo.sourceAudioId, audioInfo.sourceAudioFilename)}
+                           onClick={() => audioInfo.sourceAudioId && audioInfo.sourceAudioFilename && onRequestCalibration(line.id, index, audioInfo.sourceAudioId, audioInfo.sourceAudioFilename)}
                            disabled={!audioInfo.sourceAudioId}
                            className="p-2 rounded-full bg-slate-600 hover:bg-teal-500 text-slate-200 hover:text-white transition-colors disabled:opacity-50"
                            title="校准音频标记"

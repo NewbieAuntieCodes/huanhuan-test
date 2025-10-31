@@ -369,6 +369,7 @@ const AudioAlignmentPage: React.FC = () => {
                                 <AudioScriptLine
                                     key={line.id}
                                     line={line}
+                                    index={index}
                                     nextLine={visibleScriptLines[index+1]}
                                     chapterId={selectedChapter.id}
                                     projectId={currentProject.id}
@@ -413,6 +414,7 @@ const AudioAlignmentPage: React.FC = () => {
             onClose={closeWaveformEditor}
             sourceAudioInfo={waveformEditorState.sourceAudioInfo}
             currentLineId={waveformEditorState.lineId}
+            currentLineIndex={waveformEditorState.lineIndex}
             onSave={handleCalibrationSave}
           />
        )}

@@ -48,6 +48,7 @@ export interface UiSlice {
   waveformEditor: {
     isOpen: boolean;
     lineId: string;
+    lineIndex: number;
     sourceAudioInfo: { id: string; filename: string; } | null;
   };
   isSettingsModalOpen: boolean;
@@ -76,7 +77,7 @@ export interface UiSlice {
   closeConfirmModal: () => void;
   openCharacterAndCvStyleModal: (character: Character | null) => void;
   closeCharacterAndCvStyleModal: () => void;
-  openWaveformEditor: (lineId: string, sourceAudioId: string, sourceAudioFilename: string) => void;
+  openWaveformEditor: (lineId: string, lineIndex: number, sourceAudioId: string, sourceAudioFilename: string) => void;
   closeWaveformEditor: () => void;
   openSettingsModal: () => void;
   closeSettingsModal: () => void;
@@ -96,7 +97,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   playingLineInfo: null,
   confirmModal: confirmModalInitState,
   characterAndCvStyleModal: { isOpen: false, characterToEdit: null },
-  waveformEditor: { isOpen: false, lineId: '', sourceAudioInfo: null },
+  waveformEditor: { isOpen: false, lineId: '', lineIndex: -1, sourceAudioInfo: null },
   isSettingsModalOpen: false,
   isShortcutSettingsModalOpen: false,
   apiSettings: {
@@ -173,14 +174,15 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   closeConfirmModal: () => set({ confirmModal: confirmModalInitState }),
   openCharacterAndCvStyleModal: (character) => set({ characterAndCvStyleModal: { isOpen: true, characterToEdit: character } }),
   closeCharacterAndCvStyleModal: () => set({ characterAndCvStyleModal: { isOpen: false, characterToEdit: null } }),
-  openWaveformEditor: (lineId, sourceAudioId, sourceAudioFilename) => set({ 
-    waveformEditor: { 
-      isOpen: true, 
+  openWaveformEditor: (lineId, lineIndex, sourceAudioId, sourceAudioFilename) => set({
+    waveformEditor: {
+      isOpen: true,
       lineId,
+      lineIndex,
       sourceAudioInfo: { id: sourceAudioId, filename: sourceAudioFilename }
     }
   }),
-  closeWaveformEditor: () => set({ waveformEditor: { isOpen: false, lineId: '', sourceAudioInfo: null } }),
+  closeWaveformEditor: () => set({ waveformEditor: { isOpen: false, lineId: '', lineIndex: -1, sourceAudioInfo: null } }),
   openSettingsModal: () => set({ isSettingsModalOpen: true }),
   closeSettingsModal: () => set({ isSettingsModalOpen: false }),
   openShortcutSettingsModal: () => set({ isShortcutSettingsModalOpen: true }),
