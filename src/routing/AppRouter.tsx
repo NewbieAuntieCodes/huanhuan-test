@@ -42,18 +42,6 @@ const AppRouter: React.FC = () => {
 
   const onNavigateToDashboard = () => navigateTo('dashboard');
 
-  const onDeleteChapters = (chapterIds: string[], undoableDelete: () => void) => {
-    openConfirmModal(
-      `删除 ${chapterIds.length} 个章节确认`,
-      `您确定要删除选中的章节吗？此操作可通过“撤销”恢复。`,
-      () => {
-        undoableDelete();
-      },
-      "删除",
-      "取消"
-    );
-  };
-
   switch (currentView) {
     case 'upload':
       return <UploadPage />;
@@ -70,7 +58,6 @@ const AppRouter: React.FC = () => {
           onProjectUpdate={updateProject}
           onAddCharacter={addCharacter}
           onDeleteCharacter={deleteCharacter}
-          onDeleteChapters={onDeleteChapters}
           onToggleCharacterStyleLock={toggleCharacterStyleLock}
           onBulkUpdateCharacterStylesForCV={bulkUpdateCharacterStylesForCV}
           onNavigateToDashboard={onNavigateToDashboard}

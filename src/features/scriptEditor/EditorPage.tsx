@@ -37,7 +37,6 @@ interface EditorPageProps {
   onProjectUpdate: (project: Project) => void;
   onAddCharacter: (characterData: Pick<Character, 'name' | 'color' | 'textColor' | 'cvName' | 'description' | 'isStyleLockedToCv'>, projectId: string) => Character;
   onDeleteCharacter: (characterId: string) => void;
-  onDeleteChapters: (chapterIds: string[], undoableDelete: () => void) => void;
   onToggleCharacterStyleLock: (characterId: string) => void;
   onBulkUpdateCharacterStylesForCV: (cvName: string, newBgColor: string, newTextColor: string) => void;
   onNavigateToDashboard: () => void;
@@ -53,13 +52,14 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
     onProjectUpdate,
     onAddCharacter,
     onDeleteCharacter,
-    onDeleteChapters,
     onToggleCharacterStyleLock,
     onBulkUpdateCharacterStylesForCV,
     onNavigateToDashboard,
     onOpenCharacterAndCvStyleModal,
     onEditCharacter,
   } = props;
+
+  const openConfirmModal = useStore(state => state.openConfirmModal);
 
   const coreLogic = useEnhancedEditorCoreLogic({
     projectId,
@@ -380,19 +380,34 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
     });
 };
 
-  const undoableDeleteChapters = (chapterIds: string[]) => {
+  const undoableDeleteChapters = useCallback((chapterIds: string[]) => {
     applyUndoableProjectUpdate(prev => {
-        const newSelectedChapterId = chapterIds.includes(selectedChapterId ?? '') ? null : selectedChapterId;
-        if(newSelectedChapterId !== selectedChapterId) {
+        const currentSelectedChapterId = selectedChapterId;
+        const newSelectedChapterId = chapterIds.includes(currentSelectedChapterId ?? '') ? null : currentSelectedChapterId;
+        
+        if (newSelectedChapterId !== currentSelectedChapterId) {
             coreLogic.setSelectedChapterId(newSelectedChapterId);
         }
         setMultiSelectedChapterIds(currentIds => currentIds.filter(id => !chapterIds.includes(id)));
+        
         return {
             ...prev,
             chapters: prev.chapters.filter(ch => !chapterIds.includes(ch.id)),
         };
     });
-  };
+  }, [applyUndoableProjectUpdate, selectedChapterId, coreLogic, setMultiSelectedChapterIds]);
+
+  const deleteChapters = useCallback((chapterIds: string[]) => {
+    openConfirmModal(
+      `删除 ${chapterIds.length} 个章节确认`,
+      `您确定要删除选中的章节吗？此操作可通过“撤销”恢复。`,
+      () => {
+        undoableDeleteChapters(chapterIds);
+      },
+      "删除",
+      "取消"
+    );
+  }, [openConfirmModal, undoableDeleteChapters]);
 
   const undoableMergeChapters = (chapterIds: string[], targetChapterId: string) => {
       applyUndoableProjectUpdate(prev => {
@@ -443,7 +458,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
     undoableParseProjectChapters: coreLogic.parseProjectChaptersAndUpdateHistory,
     undoableUpdateChapterTitle: coreLogic.updateChapterTitleInHistory,
     undoableUpdateChapterRawContent: coreLogic.undoableUpdateChapterRawContent,
-    deleteChapters: (ids: string[]) => onDeleteChapters(ids, () => undoableDeleteChapters(ids)),
+    deleteChapters: deleteChapters,
     mergeChapters: undoableMergeChapters,
     batchAddChapters: handleBatchAddChapters,
     isLoadingAiAnnotation,
@@ -466,7 +481,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
     addCustomSoundType: handleAddCustomSoundType,
     deleteCustomSoundType: handleDeleteCustomSoundType,
   }), [
-    coreLogic, projectCharacters, allCvNames, cvStyles, applyUndoableProjectUpdate, onDeleteChapters, handleBatchAddChapters,
+    coreLogic, projectCharacters, allCvNames, cvStyles, applyUndoableProjectUpdate, deleteChapters, undoableMergeChapters, handleBatchAddChapters,
     isLoadingAiAnnotation, isLoadingManualParse, isLoadingImportAnnotation,
     handleRunAiAnnotationForChapters, handleManualParseChapters, handleOpenImportModalTrigger,
     handleOpenCharacterSidePanel, onOpenCharacterAndCvStyleModal, handleOpenScriptImport,

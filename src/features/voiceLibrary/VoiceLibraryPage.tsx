@@ -212,13 +212,13 @@ const VoiceLibraryPage: React.FC = () => {
           ) : (
             rows.map(row => {
               const line = row.originalLineId ? lineMap.get(row.originalLineId) : null;
-              const characterForRow = line?.characterId ? characterMap.get(line.characterId) : null;
+              // FIX: Pass null instead of an empty object when a character is not found. This resolves a TypeScript error where an empty object doesn't match the `Character` type.
+              const characterForRow = line?.characterId ? (characterMap.get(line.characterId) || null) : null;
               return (
               <VoiceLibraryRow
                 key={row.id}
                 row={{ ...row, audioUrl: generatedAudioUrls[row.id] || null }}
-                // FIX: Pass null instead of an empty object when a character is not found. This resolves a TypeScript error where an empty object doesn't match the `Character` type.
-                character={characterForRow || null}
+                character={characterForRow}
                 isBatchGenerating={isGenerating}
                 onTextChange={(text) => handleTextChange(row.id, text)}
                 onFileUpload={(file) => handleUpload(row.id, file)}

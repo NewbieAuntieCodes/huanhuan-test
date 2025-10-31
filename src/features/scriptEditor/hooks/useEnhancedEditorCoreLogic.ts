@@ -35,13 +35,20 @@ export const useEnhancedEditorCoreLogic = ({
   useEffect(() => {
     if (currentProject) {
       setIsLoadingProject(false);
-      if (!selectedChapterId && currentProject.chapters.length > 0) {
-        setSelectedChapterId(currentProject.chapters[0].id);
+      
+      const isProjectSwitch = history.length === 0 || history[history.length - 1].id !== currentProject.id;
+      if (isProjectSwitch) {
+        setHistory([currentProject]);
+        setHistoryIndex(0);
+        setCvFilter(null); // Reset filter on project change
+        // NOTE: Initial chapter selection is now fully handled by the `setSelectedProjectId` action in the store,
+        // which correctly sets the last viewed chapter or the first chapter.
       }
-      if (history.length === 0 || history[history.length - 1].id !== currentProject.id) {
-          setHistory([currentProject]);
-          setHistoryIndex(0);
-          setCvFilter(null); // Reset filter on project change
+      
+      // If the selected chapter ID is no longer valid (e.g., deleted), clear it.
+      // This prevents the app from being in a broken state and fixes the page jump bug.
+      if (selectedChapterId && !currentProject.chapters.some(ch => ch.id === selectedChapterId)) {
+        setSelectedChapterId(null);
       }
     }
   }, [currentProject, selectedChapterId, history, setSelectedChapterId]);

@@ -403,7 +403,7 @@ const AudioAlignmentAssistantPage: React.FC = () => {
             }
         }
         
-        return finalStatus;
+        return finalMatchStatus;
     }, [scannedFiles, currentProject, projectCharacters, manualOverrides, chapterRanges, selectedChapterId]);
 
 

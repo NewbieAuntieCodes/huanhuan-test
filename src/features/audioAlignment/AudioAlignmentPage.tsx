@@ -107,7 +107,7 @@ const AudioAlignmentPage: React.FC = () => {
       multiSelectedChapterIds: [], // Not used here
       setMultiSelectedChapterIdsContext: () => {}, // Not used here
       onPageChangeSideEffects: () => {},
-      chaptersPerPage: 50,
+      chaptersPerPage: 100,
   });
 
 
