@@ -1,6 +1,6 @@
-import React, { useState, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
-import { ChevronLeftIcon, BookOpenIcon, UploadIcon, UserCircleIcon, ListBulletIcon, ArrowDownTrayIcon, SpeakerXMarkIcon, CogIcon } from '../../components/ui/icons';
+import { ChevronLeftIcon, BookOpenIcon, UploadIcon, UserCircleIcon, ListBulletIcon, ArrowDownTrayIcon, SpeakerXMarkIcon, CogIcon, MicrophoneIcon } from '../../components/ui/icons';
 import AudioScriptLine from './components/AudioScriptLine';
 import GlobalAudioPlayer from './components/GlobalAudioPlayer';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
@@ -23,22 +23,7 @@ const formatChapterNumber = (index: number) => {
 
 
 const AudioAlignmentPage: React.FC = () => {
-  const { 
-    projects, 
-    characters, 
-    selectedProjectId, 
-    selectedChapterId, 
-    setSelectedChapterId,
-    playingLineInfo,
-    assignAudioToLine,
-    resegmentAndRealignAudio,
-    navigateTo,
-    openConfirmModal,
-    clearAudioFromChapter,
-    waveformEditorState,
-    openWaveformEditor,
-    closeWaveformEditor,
-  } = useStore(state => ({
+  const store = useStore(state => ({
     projects: state.projects,
     characters: state.characters,
     selectedProjectId: state.selectedProjectId,
@@ -53,17 +38,43 @@ const AudioAlignmentPage: React.FC = () => {
     waveformEditorState: state.waveformEditor,
     openWaveformEditor: state.openWaveformEditor,
     closeWaveformEditor: state.closeWaveformEditor,
+    cvFilter: state.audioAlignmentCvFilter,
+    setCvFilter: state.setAudioAlignmentCvFilter,
+    characterFilter: state.audioAlignmentCharacterFilter,
+    setCharacterFilter: state.setAudioAlignmentCharacterFilter,
+    activeRecordingLineId: state.activeRecordingLineId,
+    setActiveRecordingLineId: state.setActiveRecordingLineId,
   }));
+
+  const {
+    projects, characters, selectedProjectId, selectedChapterId, setSelectedChapterId,
+    playingLineInfo, assignAudioToLine, resegmentAndRealignAudio, navigateTo,
+    openConfirmModal, clearAudioFromChapter, waveformEditorState, openWaveformEditor,
+    closeWaveformEditor, cvFilter, setCvFilter, characterFilter, setCharacterFilter,
+    activeRecordingLineId, setActiveRecordingLineId
+  } = store;
 
   const cvMatchFileInputRef = useRef<HTMLInputElement>(null);
   const characterMatchFileInputRef = useRef<HTMLInputElement>(null);
   const chapterMatchFileInputRef = useRef<HTMLInputElement>(null);
+  const lineRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isSilenceSettingsModalOpen, setIsSilenceSettingsModalOpen] = useState(false);
   
+  const [isRecordingMode, setIsRecordingMode] = useState(false);
+  
   const currentProject = projects.find(p => p.id === selectedProjectId);
+
+  useEffect(() => {
+    if (activeRecordingLineId) {
+      const lineElement = lineRefs.current.get(activeRecordingLineId);
+      if (lineElement) {
+        lineElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [activeRecordingLineId]);
   
   const {
     isCvMatchLoading,
@@ -77,6 +88,15 @@ const AudioAlignmentPage: React.FC = () => {
     characters,
     assignAudioToLine,
   });
+
+  const { projectCharacters, projectCvNames } = useMemo(() => {
+    if (!currentProject) {
+        return { projectCharacters: [], projectCvNames: [] };
+    }
+    const projChars = characters.filter(c => !c.projectId || c.projectId === selectedProjectId);
+    const cvs = [...new Set(projChars.map(c => c.cvName).filter((cv): cv is string => !!cv))].sort();
+    return { projectCharacters: projChars, projectCvNames: cvs };
+  }, [currentProject, characters, selectedProjectId]);
 
 
   const selectedChapter = currentProject?.chapters.find(c => c.id === selectedChapterId);
@@ -162,7 +182,6 @@ const AudioAlignmentPage: React.FC = () => {
             return;
         }
 
-        // FIX: Pass the `characters` array to `exportAudioWithMarkers` to match its updated signature.
         const waveBlob = await exportAudioWithMarkers(linesWithAudio, currentProject, characters);
         
         const url = URL.createObjectURL(waveBlob);
@@ -262,11 +281,11 @@ const AudioAlignmentPage: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col bg-slate-900 text-slate-100">
-      <header className="flex items-center justify-between p-4 border-b border-slate-800 flex-shrink-0">
+      <header className="flex items-center justify-between p-4 border-b border-slate-800 flex-shrink-0 flex-wrap gap-2">
         <h1 className="text-2xl font-bold text-sky-400 truncate pr-4">
           音频对轨: <span className="text-slate-200">{currentProject.name}</span>
         </h1>
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 flex-wrap justify-end gap-2">
             <input 
                 type="file" 
                 multiple 
@@ -291,6 +310,50 @@ const AudioAlignmentPage: React.FC = () => {
                 onChange={handleFileSelectionForCharacterMatch}
                 className="hidden"
             />
+            <button
+                onClick={() => setIsRecordingMode(!isRecordingMode)}
+                className={`flex items-center text-sm px-3 py-1.5 rounded-md transition-colors ${
+                    isRecordingMode 
+                    ? 'bg-red-600 text-white hover:bg-red-700 ring-2 ring-red-300' 
+                    : 'text-red-300 hover:text-red-100 bg-slate-700 hover:bg-slate-600'
+                }`}
+                aria-pressed={isRecordingMode}
+                title="切换录制模式"
+            >
+                <MicrophoneIcon className="w-4 h-4 mr-1.5" />
+                录制模式
+            </button>
+            {isRecordingMode && (
+                <>
+                    <div className="flex items-center bg-slate-700 rounded-md">
+                        <label htmlFor="cv-filter" className="text-sm text-slate-400 pl-3 pr-2 whitespace-nowrap">CV:</label>
+                        <select
+                            id="cv-filter"
+                            value={cvFilter}
+                            onChange={(e) => setCvFilter(e.target.value)}
+                            className="bg-slate-700 border-l border-slate-600 text-white text-sm rounded-r-md focus:ring-sky-500 focus:border-sky-500 p-1.5 max-w-[120px]"
+                        >
+                            <option value="">所有CV</option>
+                            {projectCvNames.map(cv => <option key={cv} value={cv}>{cv}</option>)}
+                        </select>
+                    </div>
+                    <div className="flex items-center bg-slate-700 rounded-md">
+                        <label htmlFor="char-filter" className="text-sm text-slate-400 pl-3 pr-2 whitespace-nowrap">角色:</label>
+                        <select
+                            id="char-filter"
+                            value={characterFilter}
+                            onChange={(e) => setCharacterFilter(e.target.value)}
+                            className="bg-slate-700 border-l border-slate-600 text-white text-sm rounded-r-md focus:ring-sky-500 focus:border-sky-500 p-1.5 max-w-[120px]"
+                        >
+                            <option value="">所有角色</option>
+                            {projectCharacters
+                                .filter(c => c.name !== '[静音]' && c.name !== '音效' && c.name !== 'Narrator')
+                                .sort((a,b) => a.name.localeCompare(b.name, 'zh-Hans-CN'))
+                                .map(char => <option key={char.id} value={char.id}>{char.name}</option>)}
+                        </select>
+                    </div>
+                </>
+            )}
             <button
                 onClick={() => setIsSilenceSettingsModalOpen(true)}
                 className="flex items-center text-sm text-sky-300 hover:text-sky-100 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md"
@@ -365,18 +428,40 @@ const AudioAlignmentPage: React.FC = () => {
                     <div>
                         <h3 className="text-xl font-bold text-sky-300 mb-4">{`${formatChapterNumber(selectedChapterIndex!)} ${selectedChapter.title}`}</h3>
                         <div className="space-y-3">
-                            {visibleScriptLines.map((line, index) => (
-                                <AudioScriptLine
-                                    key={line.id}
-                                    line={line}
-                                    index={index}
-                                    nextLine={visibleScriptLines[index+1]}
-                                    chapterId={selectedChapter.id}
-                                    projectId={currentProject.id}
-                                    character={characters.find(c => c.id === line.characterId)}
-                                    onRequestCalibration={openWaveformEditor}
-                                />
-                            ))}
+                            {visibleScriptLines.map((line, index) => {
+                                let isDimmed = false;
+                                if (isRecordingMode) {
+                                    const lineCharacter = characters.find(c => c.id === line.characterId);
+                                    const cvFilterActive = !!cvFilter;
+                                    const charFilterActive = !!characterFilter;
+                                    
+                                    if (cvFilterActive || charFilterActive) {
+                                        isDimmed = true; // Assume dimmed unless it matches
+                                        if (lineCharacter) {
+                                            const cvMatch = !cvFilterActive || (lineCharacter.cvName === cvFilter);
+                                            const charMatch = !charFilterActive || (lineCharacter.id === characterFilter);
+                                            if (cvMatch && charMatch) {
+                                                isDimmed = false;
+                                            }
+                                        }
+                                    }
+                                }
+                                return (
+                                <div key={line.id} ref={el => { if (el) lineRefs.current.set(line.id, el); else lineRefs.current.delete(line.id); }}>
+                                    <AudioScriptLine
+                                        line={line}
+                                        index={index}
+                                        nextLine={visibleScriptLines[index+1]}
+                                        chapterId={selectedChapter.id}
+                                        projectId={currentProject.id}
+                                        character={characters.find(c => c.id === line.characterId)}
+                                        onRequestCalibration={openWaveformEditor}
+                                        isDimmed={isDimmed}
+                                        isRecordingActive={isRecordingMode && line.id === activeRecordingLineId}
+                                        onLineClick={() => isRecordingMode && setActiveRecordingLineId(line.id)}
+                                    />
+                                </div>
+                            )})}
                         </div>
                     </div>
                 ) : (

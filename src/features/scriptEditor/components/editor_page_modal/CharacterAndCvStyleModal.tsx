@@ -323,11 +323,28 @@ const CharacterAndCvStyleModal: React.FC<CharacterAndCvStyleModalProps> = ({
             <div className="mt-3">
                 <label className="block text-sm font-medium text-slate-300 mb-1">CV 预设颜色 (全局)</label>
                 <div className="grid grid-cols-8 gap-1.5">
-                {cvColorPresets.map(p => (
-                    <button key={`cv-${p.name}`} type="button" onClick={() => handleCvPresetColorClick(p)}
-                    className={`h-8 rounded flex items-center justify-center ${p.bgColorClass} ${ (cvBgColorInput === p.bgColorClass && cvTextColorInput === p.textColorClass) ? 'ring-2 ring-offset-1 ring-offset-slate-800 ring-teal-400' : 'hover:opacity-80'}`}
-                    title={p.name}><span className={`text-xs font-bold ${p.textColorClass}`}>Aa</span></button>
-                ))}
+                {cvColorPresets.map((p, index) => {
+                    const bgIsHex = isHexColor(p.bgColorClass);
+                    const buttonStyle = bgIsHex ? { backgroundColor: p.bgColorClass } : {};
+                    const buttonClassName = bgIsHex ? '' : p.bgColorClass;
+
+                    const textIsHex = isHexColor(p.textColorClass);
+                    const spanStyle = textIsHex ? { color: p.textColorClass } : {};
+                    const spanClassName = textIsHex ? '' : p.textColorClass;
+
+                    if (bgIsHex && !textIsHex) {
+                        spanStyle.color = getContrastingTextColor(p.bgColorClass);
+                    }
+                    
+                    return (
+                        <button key={`cv-preset-${index}`} type="button" onClick={() => handleCvPresetColorClick(p)}
+                        className={`h-8 rounded flex items-center justify-center ${buttonClassName} ${ (cvBgColorInput === p.bgColorClass && cvTextColorInput === p.textColorClass) ? 'ring-2 ring-offset-1 ring-offset-slate-800 ring-teal-400' : 'hover:opacity-80'}`}
+                        style={buttonStyle}
+                        title={p.name}>
+                            <span className={`text-xs font-bold ${spanClassName}`} style={spanStyle}>Aa</span>
+                        </button>
+                    );
+                })}
                 </div>
             </div>
           </fieldset>
@@ -362,11 +379,28 @@ const CharacterAndCvStyleModal: React.FC<CharacterAndCvStyleModalProps> = ({
             <div className={`mt-3 ${!isCharStyleLocked ? 'opacity-60 pointer-events-none' : ''}`}>
                 <label className="block text-sm font-medium text-slate-300 mb-1">角色预设颜色</label>
                 <div className="grid grid-cols-8 gap-1.5">
-                {characterColorPresets.map(p => (
-                    <button key={`char-${p.name}`} type="button" onClick={() => handleCharPresetColorClick(p)}
-                    className={`h-8 rounded flex items-center justify-center ${p.bgColorClass} ${ (charBgColorInput === p.bgColorClass && charTextColorInput === p.textColorClass && isCharStyleLocked) ? 'ring-2 ring-offset-1 ring-offset-slate-800 ring-rose-400' : 'hover:opacity-80'}`}
-                    title={p.name} disabled={!isCharStyleLocked}><span className={`text-xs font-bold ${p.textColorClass}`}>Aa</span></button>
-                ))}
+                {characterColorPresets.map((p, index) => {
+                    const bgIsHex = isHexColor(p.bgColorClass);
+                    const buttonStyle = bgIsHex ? { backgroundColor: p.bgColorClass } : {};
+                    const buttonClassName = bgIsHex ? '' : p.bgColorClass;
+
+                    const textIsHex = isHexColor(p.textColorClass);
+                    const spanStyle = textIsHex ? { color: p.textColorClass } : {};
+                    const spanClassName = textIsHex ? '' : p.textColorClass;
+
+                    if (bgIsHex && !textIsHex) {
+                        spanStyle.color = getContrastingTextColor(p.bgColorClass);
+                    }
+                    
+                    return (
+                        <button key={`char-preset-${index}`} type="button" onClick={() => handleCharPresetColorClick(p)}
+                        className={`h-8 rounded flex items-center justify-center ${buttonClassName} ${ (charBgColorInput === p.bgColorClass && charTextColorInput === p.textColorClass && isCharStyleLocked) ? 'ring-2 ring-offset-1 ring-offset-slate-800 ring-rose-400' : 'hover:opacity-80'}`}
+                        style={buttonStyle}
+                        title={p.name} disabled={!isCharStyleLocked}>
+                            <span className={`text-xs font-bold ${spanClassName}`} style={spanStyle}>Aa</span>
+                        </button>
+                    );
+                })}
                 </div>
             </div>
              {!isCharStyleLocked && cvNameInput.trim() && (

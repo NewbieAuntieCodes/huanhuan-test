@@ -205,7 +205,7 @@ const AudioAlignmentAssistantPage: React.FC = () => {
             setDirectoryHandle(handle);
             await scanDirectory(handle, true);
         } catch (err) {
-            // FIX: Added type guard to safely access `err.name` and prevent a TypeScript error on `unknown`.
+            // FIX: The 'err' object in a catch block is of type 'unknown'. Added a type guard to check if it is a DOMException before accessing 'err.name'.
             if (err instanceof DOMException && err.name === 'AbortError') {
                 // User cancelled the picker, this is not an error to be logged.
             } else {

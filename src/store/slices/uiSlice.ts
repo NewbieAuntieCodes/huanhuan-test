@@ -1,5 +1,3 @@
-
-
 import { StateCreator } from 'zustand';
 import { AppState } from '../useStore'; // Import AppState for cross-slice type reference
 import { AppView, ScriptLine, Character } from '../../types';
@@ -56,6 +54,9 @@ export interface UiSlice {
   apiSettings: ApiSettings;
   selectedAiProvider: AiProvider;
   characterShortcuts: Record<string, string>; // key: keyboard key, value: characterId
+  audioAlignmentCvFilter: string;
+  audioAlignmentCharacterFilter: string;
+  activeRecordingLineId: string | null;
 
 
   navigateTo: (view: AppView) => void;
@@ -86,6 +87,10 @@ export interface UiSlice {
   setApiSettings: (settings: ApiSettings) => Promise<void>;
   setSelectedAiProvider: (provider: AiProvider) => Promise<void>;
   setCharacterShortcuts: (shortcuts: Record<string, string>) => Promise<void>;
+  setAudioAlignmentCvFilter: (filter: string) => void;
+  setAudioAlignmentCharacterFilter: (filter: string) => void;
+  setActiveRecordingLineId: (id: string | null) => void;
+  goToNextLine: () => Promise<void>;
 }
 
 export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get) => ({
@@ -108,6 +113,9 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   },
   selectedAiProvider: 'gemini',
   characterShortcuts: {},
+  audioAlignmentCvFilter: '',
+  audioAlignmentCharacterFilter: '',
+  activeRecordingLineId: null,
 
   navigateTo: (view) => set({ currentView: view }),
   setIsLoading: (loading) => set({ isLoading: loading }),
@@ -198,5 +206,69 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   setCharacterShortcuts: async (shortcuts) => {
     await db.misc.put({ key: 'characterShortcuts', value: shortcuts });
     set({ characterShortcuts: shortcuts });
+  },
+  setAudioAlignmentCvFilter: (filter) => set({ audioAlignmentCvFilter: filter }),
+  setAudioAlignmentCharacterFilter: (filter) => set({ audioAlignmentCharacterFilter: filter }),
+  setActiveRecordingLineId: (id) => set({ activeRecordingLineId: id }),
+  goToNextLine: async () => {
+    const {
+        projects, selectedProjectId, selectedChapterId, characters, activeRecordingLineId,
+        audioAlignmentCvFilter, audioAlignmentCharacterFilter, setSelectedChapterId,
+    } = get();
+
+    if (!selectedProjectId) return;
+    const project = projects.find(p => p.id === selectedProjectId);
+    if (!project) return;
+    
+    const nonAudioCharacterIds = characters
+        .filter(c => c.name === '[静音]' || c.name === '音效')
+        .map(c => c.id);
+
+    const isLineMatch = (line: ScriptLine): boolean => {
+        if (nonAudioCharacterIds.includes(line.characterId || '')) return false;
+        
+        const lineCharacter = characters.find(c => c.id === line.characterId);
+        if (!lineCharacter) return false;
+
+        const cvFilterActive = !!audioAlignmentCvFilter;
+        const charFilterActive = !!audioAlignmentCharacterFilter;
+        
+        if (!cvFilterActive && !charFilterActive) return true;
+        
+        const cvMatch = !cvFilterActive || (lineCharacter.cvName === audioAlignmentCvFilter);
+        const charMatch = !charFilterActive || (lineCharacter.id === audioAlignmentCharacterFilter);
+        
+        return cvMatch && charMatch;
+    };
+
+    let foundCurrent = !activeRecordingLineId;
+    let nextLine: (ScriptLine & { chapterId: string }) | null = null;
+
+    for (const chapter of project.chapters) {
+        for (const line of chapter.scriptLines) {
+            if (foundCurrent) {
+                if (isLineMatch(line)) {
+                    nextLine = { ...line, chapterId: chapter.id };
+                    break;
+                }
+            } else if (line.id === activeRecordingLineId) {
+                foundCurrent = true;
+            }
+        }
+        if (nextLine) {
+            break;
+        }
+    }
+    
+    if (!nextLine) {
+        // Reached the end of the entire project for this filter. Do nothing.
+        return; 
+    }
+
+    if (nextLine.chapterId !== selectedChapterId) {
+        await setSelectedChapterId(nextLine.chapterId);
+    }
+
+    set({ activeRecordingLineId: nextLine.id });
   },
 });

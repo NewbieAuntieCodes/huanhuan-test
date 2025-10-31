@@ -15,6 +15,9 @@ interface AudioScriptLineProps {
     projectId: string;
     chapterId: string;
     onRequestCalibration: (lineId: string, lineIndex: number, sourceAudioId: string, sourceAudioFilename: string) => void;
+    isDimmed: boolean;
+    isRecordingActive: boolean;
+    onLineClick: () => void;
 }
 
 const getLineType = (line: ScriptLine | undefined, characters: Character[]): LineType => {
@@ -98,7 +101,7 @@ const SilenceEditor: React.FC<{
 }
 
 
-const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, index, nextLine, character, projectId, chapterId, onRequestCalibration }) => {
+const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, index, nextLine, character, projectId, chapterId, onRequestCalibration, isDimmed, isRecordingActive, onLineClick }) => {
     const { 
         assignAudioToLine, 
         updateLineAudio, 
@@ -274,18 +277,20 @@ const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, index, nextLine
     const cvChipStyle = getCvChipStyle();
     
     const playingClass = isPlaying ? 'outline outline-4 outline-amber-400 shadow-[0_0_25px_15px_rgba(250,204,21,0.5)]' : 'border-slate-700';
+    const recordingActiveClass = isRecordingActive ? 'ring-2 ring-green-500' : '';
     const dragDropClasses = isDraggingOver ? 'border-sky-500 border-dashed bg-slate-600/50' : playingClass;
 
     return (
         <div 
-            className="relative"
+            className={`relative transition-opacity duration-300 ${isDimmed ? 'opacity-25' : ''}`}
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDragOver={handleDragOver}
             onDrop={handleDrop}
+            onClick={onLineClick}
         >
             <div className="flex items-center gap-x-2">
-                <div className={`p-3 rounded-lg border flex-grow flex items-center gap-x-2 transition-all duration-200 ${dragDropClasses} ${rowBgClass}`} style={rowBgStyle}>
+                <div className={`p-3 rounded-lg border flex-grow flex items-center gap-x-2 transition-all duration-200 ${dragDropClasses} ${rowBgClass} ${recordingActiveClass}`} style={rowBgStyle}>
                     <div className="w-20 flex-shrink-0 flex items-center justify-start">
                         {!isNarration && character && (
                             character.cvName ? (

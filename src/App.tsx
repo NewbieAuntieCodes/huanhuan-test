@@ -1,6 +1,4 @@
-
-
-import React, { useEffect, useCallback, useMemo } from 'react';
+import React, { useEffect, useCallback, useMemo, useRef } from 'react';
 import { useStore }  from './store/useStore';
 // FIX: Add CVStylesMap to imports for explicit typing of useMemo.
 import { Character, CVStylesMap } from './types';
@@ -29,10 +27,62 @@ const App: React.FC = () => {
     openSettingsModal,
     closeSettingsModal,
   } = useStore();
+
+  const socketRef = useRef<WebSocket | null>(null);
   
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
+
+  useEffect(() => {
+    const connectWebSocket = () => {
+      const socket = new WebSocket('ws://127.0.0.1:9002');
+      socketRef.current = socket;
+
+      socket.onopen = () => {
+        console.log('✅ 已连接到全局热键伴侣');
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.action === 'nextLine' && document.visibilityState === 'visible') {
+            useStore.getState().goToNextLine();
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+
+      socket.onerror = (event: Event) => {
+        // The error event itself is not very descriptive.
+        // The subsequent 'close' event will have more details.
+        console.error('WebSocket 连接时发生错误。');
+      };
+
+      socket.onclose = (event: CloseEvent) => {
+        if (event.wasClean) {
+          console.log(`WebSocket 连接已正常关闭。代码: ${event.code}, 原因: "${event.reason || '无'}"`);
+        } else {
+          // This is where connection errors (like server down) are typically reported.
+          console.error(`WebSocket 连接异常关闭。代码: ${event.code}, 原因: "${event.reason || '无'}"`);
+          if (event.code === 1006) { // Abnormal Closure
+            console.warn('无法连接到热键服务 (ws://127.0.0.1:9002)。请确保热键伴侣程序正在运行。');
+          }
+        }
+        console.log('连接已断开，5秒后重连...');
+        setTimeout(connectWebSocket, 5000);
+      };
+    };
+
+    connectWebSocket();
+
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.close();
+      }
+    };
+  }, []);
 
   // FIX: Added an explicit return type to `useMemo` to ensure TypeScript correctly infers `projectCvNames` as `string[]` instead of `unknown[]`.
   // FIX: Replaced `Array.from(new Set(...))` with a `reduce` operation to create the unique list of CV names. This approach is more robust for TypeScript's type inference.

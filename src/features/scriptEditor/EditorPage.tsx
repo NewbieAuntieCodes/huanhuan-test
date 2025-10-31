@@ -259,8 +259,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
         } catch (error) {
             console.error("读取或解析文件时出错:", error);
             
-            // FIX: The 'error' object in a catch block is of type 'unknown'. This refactors the logic
-            // to more explicitly guarantee the 'detailedMessage' variable is a string before use.
+            // FIX: The 'error' object is of type 'unknown'. Added a type guard to ensure it is an Error before accessing 'message', and converting to string as a fallback.
             let detailedMessage: string;
             if (error instanceof Error) {
                 detailedMessage = error.message;
