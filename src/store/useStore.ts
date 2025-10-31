@@ -160,10 +160,84 @@ export const useStore = create<AppState>((set, get, api) => ({
       return;
     }
 
-    // Since cvStyles is now per-project, this global preset update doesn't automatically propagate
-    // to character colors anymore. This simplifies the logic here significantly. We just save the presets.
-    await db.misc.put({ key: 'cvColorPresets', value: presets });
-    set({ cvColorPresets: presets });
+    const changes = new Map<string, { newBg: string; newText: string }>();
+    for (let i = 0; i < presets.length; i++) {
+      const oldP = oldPresets[i];
+      const newP = presets[i];
+      if (oldP.bgColorClass !== newP.bgColorClass || oldP.textColorClass !== newP.textColorClass) {
+        changes.set(`${oldP.bgColorClass}|${oldP.textColorClass}`, {
+          newBg: newP.bgColorClass,
+          newText: newP.textColorClass,
+        });
+      }
+    }
+
+    if (changes.size === 0) {
+      await db.misc.put({ key: 'cvColorPresets', value: presets });
+      set({ cvColorPresets: presets });
+      return;
+    }
+
+    const characterUpdates = new Map<string, Character>();
+    const projectsToUpdateInDb: Project[] = [];
+
+    const updatedProjects = state.projects.map(project => {
+      if (!project.cvStyles) return project;
+
+      let projectStylesChanged = false;
+      const newCvStyles = { ...project.cvStyles };
+
+      for (const cvName in newCvStyles) {
+        const currentStyle = newCvStyles[cvName];
+        const changeKey = `${currentStyle.bgColor}|${currentStyle.textColor}`;
+        
+        if (changes.has(changeKey)) {
+          const change = changes.get(changeKey)!;
+          newCvStyles[cvName] = {
+            bgColor: change.newBg,
+            textColor: change.newText,
+          };
+          projectStylesChanged = true;
+
+          state.characters.forEach(char => {
+            if (char.projectId === project.id && char.cvName === cvName && !char.isStyleLockedToCv) {
+              const updatedChar = {
+                ...char,
+                color: change.newBg,
+                textColor: change.newText,
+              };
+              characterUpdates.set(char.id, updatedChar);
+            }
+          });
+        }
+      }
+
+      if (projectStylesChanged) {
+        const updatedProject = { ...project, cvStyles: newCvStyles, lastModified: Date.now() };
+        projectsToUpdateInDb.push(updatedProject);
+        return updatedProject;
+      }
+      return project;
+    });
+    
+    const finalUpdatedCharacters = state.characters.map(char => characterUpdates.get(char.id) || char);
+    const charactersToUpdateInDb = Array.from(characterUpdates.values());
+
+    await db.transaction('rw', db.misc, db.projects, db.characters, async () => {
+        await db.misc.put({ key: 'cvColorPresets', value: presets });
+        if (projectsToUpdateInDb.length > 0) {
+            await db.projects.bulkPut(projectsToUpdateInDb);
+        }
+        if (charactersToUpdateInDb.length > 0) {
+            await db.characters.bulkPut(charactersToUpdateInDb);
+        }
+    });
+
+    set({
+      cvColorPresets: presets,
+      projects: updatedProjects,
+      characters: finalUpdatedCharacters,
+    });
   },
   updateCharacterColorPresets: async (presets: PresetColor[]) => {
     await db.misc.put({ key: 'characterColorPresets', value: presets });

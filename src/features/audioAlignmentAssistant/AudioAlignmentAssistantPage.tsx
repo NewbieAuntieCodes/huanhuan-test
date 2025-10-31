@@ -403,7 +403,8 @@ const AudioAlignmentAssistantPage: React.FC = () => {
             }
         }
         
-        return finalMatchStatus;
+        // FIX: Corrected a recursive return statement that was causing an infinite loop.
+        return finalStatus;
     }, [scannedFiles, currentProject, projectCharacters, manualOverrides, chapterRanges, selectedChapterId]);
 
 
