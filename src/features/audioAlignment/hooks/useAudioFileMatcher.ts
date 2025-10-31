@@ -180,8 +180,16 @@ export const useAudioFileMatcher = ({
     if (!currentProject) return { matched: 0, missed: 0 };
     
     const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
-    const parts = nameWithoutExt.split('_');
-    const chapterIdentifier = parts[0];
+    
+    // More flexible chapter identifier extraction.
+    // It will find the first sequence of digits in the filename.
+    const chapterMatch = nameWithoutExt.match(/\d+/);
+    const chapterIdentifier = chapterMatch ? chapterMatch[0] : null;
+
+    if (!chapterIdentifier) {
+        console.warn(`跳过格式不正确的文件: ${file.name}。无法从中提取章节编号。`);
+        return { matched: 0, missed: 0 };
+    }
 
     const sourceAudioId = `${currentProject.id}_${file.name}`;
 
@@ -229,7 +237,7 @@ export const useAudioFileMatcher = ({
         try {
             metadata = await mm.parseBlob(file);
         } catch (e) {
-            // FIX: Add type guard to safely handle unknown error type.
+            // FIX: Add type guard to safely handle unknown error type before accessing 'e.message'.
             const message = e instanceof Error ? e.message : String(e);
             console.error(`Metadata parsing failed for ${file.name}:`, message);
             return { matched: 0, missed: targetLines.length };
@@ -298,7 +306,7 @@ export const useAudioFileMatcher = ({
         return { matched: matchedCount, missed: targetLines.length - matchedCount };
 
     } catch (error) {
-        // FIX: Add type guard to safely handle unknown error type.
+        // FIX: Add type guard to safely handle unknown error type before accessing 'error.message'.
         const message = error instanceof Error ? error.message : String(error);
         console.error(`Error processing master audio file ${file.name}:`, message);
         return { matched: 0, missed: 0 };

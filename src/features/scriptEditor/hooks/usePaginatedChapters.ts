@@ -1,3 +1,4 @@
+// FIX: Added React import to provide the React namespace for Dispatch and SetStateAction types.
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Chapter } from '../../../types';
 

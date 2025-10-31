@@ -226,7 +226,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
                 style={cvButtonAppliedStyle.style}
                 aria-label={`编辑角色 ${character.name} 的CV与样式`}
             >
-                <UserCircleIcon className="w-3.5 h-3.5 mr-1 flex-shrink-0" />
+                <UserCircleIcon className="w-3.5 h-3.5 mr-1.5 flex-shrink-0" />
                 <span className="truncate">{cvButtonText}</span>
             </button>
           ) : (
@@ -238,7 +238,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
                 <button
                     onClick={() => onActivateShortcutMode(line.id)}
                     title="点击激活快捷键模式"
-                    className={`flex-grow p-2 text-sm text-left outline-none focus:z-10 flex items-center ${charSelectAppliedStyle.className}`}
+                    className={`flex-grow p-2 text-sm text-left outline-none focus:z-10 flex items-center min-w-0 ${charSelectAppliedStyle.className}`}
                     style={charSelectAppliedStyle.style}
                 >
                     <span className="truncate">

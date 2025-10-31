@@ -264,7 +264,8 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
             
             let errorMessage = `读取或解析文件时出错: ${detailedMessage}`;
 
-            if (detailedMessage.toLowerCase().includes('central directory')) {
+// FIX: Check if detailedMessage is a string before calling toLowerCase()
+            if (typeof detailedMessage === 'string' && detailedMessage.toLowerCase().includes('central directory')) {
                 errorMessage = '无法读取该 .docx 文件。文件可能已损坏，或者它是一个旧版 .doc 文件但扩展名被错误地改成了 .docx。';
             }
             alert(errorMessage);
