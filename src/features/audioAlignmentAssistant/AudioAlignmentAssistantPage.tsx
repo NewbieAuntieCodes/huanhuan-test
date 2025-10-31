@@ -63,7 +63,7 @@ const AudioAlignmentAssistantPage: React.FC = () => {
     const currentProject = useMemo(() => projects.find(p => p.id === selectedProjectId), [projects, selectedProjectId]);
     const { allCvNames, projectCharacters } = useMemo<{ allCvNames: string[], projectCharacters: Character[] }>(() => {
         if (!currentProject) return { allCvNames: [], projectCharacters: [] };
-        const projChars = characters.filter(c => c.projectId === currentProject.id || !c.projectId);
+        const projChars = characters.filter(c => (c.projectId === currentProject.id || !c.projectId) && c.status !== 'merged');
         const cvs = projChars.reduce<string[]>((acc, c) => {
             if (c.cvName && !acc.includes(c.cvName)) {
                 acc.push(c.cvName);

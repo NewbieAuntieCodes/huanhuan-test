@@ -83,7 +83,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
 
 
   const { projectCharacters, allCvNames, cvStyles } = useMemo(() => {
-    const projChars = characters.filter(c => !c.projectId || c.projectId === projectId);
+    const projChars = characters.filter(c => (!c.projectId || c.projectId === projectId) && c.status !== 'merged');
     const cvs = Array.from(new Set(projChars.map(c => c.cvName).filter((n): n is string => !!n))).sort();
     const styles = currentProject?.cvStyles || {};
     return { projectCharacters: projChars, allCvNames: cvs, cvStyles: styles };
@@ -269,8 +269,9 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
             
             let errorMessage = `读取或解析文件时出错: ${detailedMessage}`;
 
+            // FIX: The 'error' object in a catch block is of type 'unknown'. Added a type guard to check if it is an Error before accessing 'message', and converting to string as a fallback.
             if (detailedMessage.toLowerCase().includes('central directory')) {
-                errorMessage = '无法读取该 .docx 文件。文件可能已损坏，或者它是一个旧版 .doc 文件但扩展名被错误地改成了 .docx。请尝试在Word中打开并重新另存为 .docx 格式。';
+                errorMessage = '无法读取该 .docx 文件。文件可能已损坏，或者它是一个旧版 .doc 文件但扩展名被错误地改成了 .docx。';
             }
             alert(errorMessage);
             return;
@@ -550,7 +551,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
         <ShortcutSettingsModal
           isOpen={isShortcutSettingsModalOpen}
           onClose={closeShortcutSettingsModal}
-          allCharacters={characters}
+          allCharacters={characters.filter(c => c.status !== 'merged')}
           characterIdsInChapter={new Set()}
         />
       </div>

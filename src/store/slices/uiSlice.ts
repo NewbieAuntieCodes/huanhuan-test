@@ -5,6 +5,7 @@ import React from 'react';
 import { db } from '../../db';
 
 export type AiProvider = 'gemini' | 'openai' | 'moonshot' | 'deepseek';
+export type WebSocketStatus = 'connecting' | 'connected' | 'disconnected';
 
 export interface ApiSettings {
   gemini: { apiKey: string; baseUrl?: string };
@@ -57,6 +58,7 @@ export interface UiSlice {
   audioAlignmentCvFilter: string;
   audioAlignmentCharacterFilter: string;
   activeRecordingLineId: string | null;
+  webSocketStatus: WebSocketStatus;
 
 
   navigateTo: (view: AppView) => void;
@@ -90,6 +92,7 @@ export interface UiSlice {
   setAudioAlignmentCvFilter: (filter: string) => void;
   setAudioAlignmentCharacterFilter: (filter: string) => void;
   setActiveRecordingLineId: (id: string | null) => void;
+  setWebSocketStatus: (status: WebSocketStatus) => void;
   goToNextLine: () => Promise<void>;
 }
 
@@ -116,6 +119,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   audioAlignmentCvFilter: '',
   audioAlignmentCharacterFilter: '',
   activeRecordingLineId: null,
+  webSocketStatus: 'disconnected',
 
   navigateTo: (view) => set({ currentView: view }),
   setIsLoading: (loading) => set({ isLoading: loading }),
@@ -210,6 +214,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   setAudioAlignmentCvFilter: (filter) => set({ audioAlignmentCvFilter: filter }),
   setAudioAlignmentCharacterFilter: (filter) => set({ audioAlignmentCharacterFilter: filter }),
   setActiveRecordingLineId: (id) => set({ activeRecordingLineId: id }),
+  setWebSocketStatus: (status) => set({ webSocketStatus: status }),
   goToNextLine: async () => {
     const {
         projects, selectedProjectId, selectedChapterId, characters, activeRecordingLineId,

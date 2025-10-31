@@ -1,6 +1,6 @@
 import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
-import { ChevronLeftIcon, BookOpenIcon, UploadIcon, UserCircleIcon, ListBulletIcon, ArrowDownTrayIcon, SpeakerXMarkIcon, CogIcon, MicrophoneIcon } from '../../components/ui/icons';
+import { ChevronLeftIcon, BookOpenIcon, UploadIcon, UserCircleIcon, ListBulletIcon, ArrowDownTrayIcon, SpeakerXMarkIcon, CogIcon, MicrophoneIcon, CheckCircleIcon, XMarkIcon } from '../../components/ui/icons';
 import AudioScriptLine from './components/AudioScriptLine';
 import GlobalAudioPlayer from './components/GlobalAudioPlayer';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
@@ -14,6 +14,7 @@ import { usePaginatedChapters } from '../scriptEditor/hooks/usePaginatedChapters
 import ChapterPagination from '../scriptEditor/components/chapter_list_panel/ChapterPagination';
 import SilenceSettingsModal from './components/SilenceSettingsModal';
 import AudioWaveformEditor from './components/AudioWaveformEditor';
+import { WebSocketStatus } from '../../store/slices/uiSlice';
 
 const formatChapterNumber = (index: number) => {
   if (index < 0) return '';
@@ -44,6 +45,7 @@ const AudioAlignmentPage: React.FC = () => {
     setCharacterFilter: state.setAudioAlignmentCharacterFilter,
     activeRecordingLineId: state.activeRecordingLineId,
     setActiveRecordingLineId: state.setActiveRecordingLineId,
+    webSocketStatus: state.webSocketStatus,
   }));
 
   const {
@@ -51,7 +53,7 @@ const AudioAlignmentPage: React.FC = () => {
     playingLineInfo, assignAudioToLine, resegmentAndRealignAudio, navigateTo,
     openConfirmModal, clearAudioFromChapter, waveformEditorState, openWaveformEditor,
     closeWaveformEditor, cvFilter, setCvFilter, characterFilter, setCharacterFilter,
-    activeRecordingLineId, setActiveRecordingLineId
+    activeRecordingLineId, setActiveRecordingLineId, webSocketStatus
   } = store;
 
   const cvMatchFileInputRef = useRef<HTMLInputElement>(null);
@@ -227,6 +229,18 @@ const AudioAlignmentPage: React.FC = () => {
   const hasAudioInChapter = useMemo(() => {
     return selectedChapter?.scriptLines.some(l => l.audioBlobId) || false;
   }, [selectedChapter]);
+  
+  const StatusIndicator: React.FC<{ status: WebSocketStatus }> = ({ status }) => {
+    switch (status) {
+      case 'connected':
+        return <span className="flex items-center text-xs text-green-400"><CheckCircleIcon className="w-4 h-4 mr-1"/>热键服务已连接</span>;
+      case 'connecting':
+        return <span className="flex items-center text-xs text-yellow-400"><LoadingSpinner/>连接中...</span>;
+      case 'disconnected':
+      default:
+        return <span className="flex items-center text-xs text-red-400"><XMarkIcon className="w-4 h-4 mr-1"/>热键服务未连接</span>;
+    }
+  };
 
   if (!currentProject) {
     return (
@@ -282,9 +296,12 @@ const AudioAlignmentPage: React.FC = () => {
   return (
     <div className="h-full flex flex-col bg-slate-900 text-slate-100">
       <header className="flex items-center justify-between p-4 border-b border-slate-800 flex-shrink-0 flex-wrap gap-2">
-        <h1 className="text-2xl font-bold text-sky-400 truncate pr-4">
-          音频对轨: <span className="text-slate-200">{currentProject.name}</span>
-        </h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold text-sky-400 truncate pr-4">
+            音频对轨: <span className="text-slate-200">{currentProject.name}</span>
+          </h1>
+          <StatusIndicator status={webSocketStatus} />
+        </div>
         <div className="flex items-center space-x-2 flex-wrap justify-end gap-2">
             <input 
                 type="file" 

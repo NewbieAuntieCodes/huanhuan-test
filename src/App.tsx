@@ -26,9 +26,12 @@ const App: React.FC = () => {
     closeCharacterAndCvStyleModal,
     openSettingsModal,
     closeSettingsModal,
+    setWebSocketStatus,
   } = useStore();
 
   const socketRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+  const hasWarnedRef = useRef(false);
   
   useEffect(() => {
     loadInitialData();
@@ -36,11 +39,14 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const connectWebSocket = () => {
+      setWebSocketStatus('connecting');
       const socket = new WebSocket('ws://127.0.0.1:9002');
       socketRef.current = socket;
 
       socket.onopen = () => {
         console.log('✅ 已连接到全局热键伴侣');
+        setWebSocketStatus('connected');
+        hasWarnedRef.current = false; // Reset warning on successful connection
       };
 
       socket.onmessage = (event) => {
@@ -55,34 +61,40 @@ const App: React.FC = () => {
       };
 
       socket.onerror = (event: Event) => {
-        // The error event itself is not very descriptive.
-        // The subsequent 'close' event will have more details.
-        console.error('WebSocket 连接时发生错误。');
+        // This event is generic. The 'close' event provides more info.
+        // We set status to disconnected in onclose, so no need for extra state changes here.
       };
 
       socket.onclose = (event: CloseEvent) => {
+        setWebSocketStatus('disconnected');
         if (event.wasClean) {
-          console.log(`WebSocket 连接已正常关闭。代码: ${event.code}, 原因: "${event.reason || '无'}"`);
+          console.log(`WebSocket 连接已正常关闭。`);
         } else {
-          // This is where connection errors (like server down) are typically reported.
-          console.error(`WebSocket 连接异常关闭。代码: ${event.code}, 原因: "${event.reason || '无'}"`);
-          if (event.code === 1006) { // Abnormal Closure
-            console.warn('无法连接到热键服务 (ws://127.0.0.1:9002)。请确保热键伴侣程序正在运行。');
+          // Only show warning once to prevent console spam
+          if (!hasWarnedRef.current) {
+            console.warn('热键服务未连接。请确保热键伴侣程序正在运行。5秒后将尝试重连...');
+            hasWarnedRef.current = true;
           }
         }
-        console.log('连接已断开，5秒后重连...');
-        setTimeout(connectWebSocket, 5000);
+        // Set timeout and store its ID
+        reconnectTimeoutRef.current = window.setTimeout(connectWebSocket, 5000);
       };
     };
 
     connectWebSocket();
 
     return () => {
+      // Cleanup on component unmount
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
       if (socketRef.current) {
+        socketRef.current.onclose = null; // Prevent reconnect logic from firing on manual close
         socketRef.current.close();
       }
     };
-  }, []);
+  }, [setWebSocketStatus]);
+
 
   // FIX: Added an explicit return type to `useMemo` to ensure TypeScript correctly infers `projectCvNames` as `string[]` instead of `unknown[]`.
   // FIX: Replaced `Array.from(new Set(...))` with a `reduce` operation to create the unique list of CV names. This approach is more robust for TypeScript's type inference.
