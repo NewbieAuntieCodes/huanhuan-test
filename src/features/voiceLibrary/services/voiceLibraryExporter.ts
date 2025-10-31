@@ -78,10 +78,58 @@ export const exportCharacterClips = async (
         return;
     }
 
-    const zip = new JSZip();
     const lineIdMap = new Map<string, ScriptLine>();
     project.chapters.forEach(ch => ch.scriptLines.forEach(line => lineIdMap.set(line.id, line)));
     const characterMap = new Map(characters.map(c => [c.id, c]));
+
+    // --- New File System Access API Logic ---
+    if ('showDirectoryPicker' in window) {
+        try {
+            const dirHandle = await (window as any).showDirectoryPicker();
+            let filesSaved = 0;
+            
+            for (const row of rowsToExport) {
+                const lineId = row.originalLineId!;
+                const line = lineIdMap.get(lineId);
+
+                if (line?.audioBlobId) {
+                    const audioBlob = await db.audioBlobs.get(line.audioBlobId);
+                    if (audioBlob) {
+                        const character = line.characterId ? characterMap.get(line.characterId) : null;
+                        if (!character) continue;
+
+                        const baseName = character.cvName
+                            ? `【${character.cvName}-${character.name}】${line.text}`
+                            : `【${character.name}】${line.text}`;
+                        
+                        const filename = `${sanitizeFilename(baseName)}.mp3`;
+
+                        const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
+                        const writable = await fileHandle.createWritable();
+                        await writable.write(audioBlob.data);
+                        await writable.close();
+                        filesSaved++;
+                    }
+                }
+            }
+            alert(`成功导出 ${filesSaved} 个音频片段到您选择的文件夹。`);
+            return; // Success, exit function
+        } catch (err) {
+// FIX: The `err` object is of type `unknown`. Added a type guard to check if it is an Error before accessing `err.name`.
+            if (err instanceof Error && err.name === 'AbortError') {
+                console.log('用户取消了文件夹选择。');
+                return; // User cancelled, so we don't proceed to zip download.
+            }
+            console.error('使用 File System Access API 导出失败，将回退到 ZIP 压缩包下载:', err);
+            alert("直接保存到文件夹失败，将回退到 ZIP 压缩包下载。");
+        }
+    } else {
+        alert("您的浏览器不支持直接保存到文件夹。将为您创建一个 ZIP 压缩包。");
+    }
+
+
+    // --- Fallback to ZIP export (existing logic) ---
+    const zip = new JSZip();
 
     for (const row of rowsToExport) {
         const lineId = row.originalLineId!;
