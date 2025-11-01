@@ -257,14 +257,19 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
                 return;
             }
         } catch (error) {
+            // FIX: Refactored catch block to safely handle 'unknown' error type.
             console.error("读取或解析文件时出错:", error);
 
-            const detailedMessage = error instanceof Error ? error.message : String(error);
+            let detailedMessage: string;
+            if (error instanceof Error) {
+                detailedMessage = error.message;
+            } else {
+                detailedMessage = String(error);
+            }
             
             let errorMessage = `读取或解析文件时出错: ${detailedMessage}`;
 
-            // FIX: Ensure detailedMessage is a string before calling toLowerCase on it.
-            if (typeof detailedMessage === 'string' && detailedMessage.toLowerCase().includes('central directory')) {
+            if (detailedMessage.toLowerCase().includes('central directory')) {
                 errorMessage = '无法读取该 .docx 文件。文件可能已损坏，或者它是一个旧版 .doc 文件但扩展名被错误地改成了 .docx。';
             }
             alert(errorMessage);

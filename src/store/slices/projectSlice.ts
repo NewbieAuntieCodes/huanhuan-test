@@ -269,12 +269,13 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
         const masterAudio = await db.masterAudios.get(sourceAudioId);
         if (!masterAudio) throw new Error("母带音频未找到。");
 
-        const affectedLines: { line: ScriptLine, chapterId: string }[] = [];
-        const oldBlobIds = new Set<string>();
-
         const project = get().projects.find(p => p.id === projectId);
         if (!project) throw new Error("项目未找到。");
 
+        const affectedLines: { line: ScriptLine, chapterId: string }[] = [];
+        const oldBlobIds = new Set<string>();
+
+        // Find currently affected lines in script order
         for (const chapter of project.chapters) {
             for (const line of chapter.scriptLines) {
                 if (line.audioBlobId) {
@@ -285,10 +286,6 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
                     }
                 }
             }
-        }
-        
-        if(affectedLines.length === 0) {
-            throw new Error("在项目中未找到使用此母带音频的台词行。");
         }
         
         // Resegment audio
@@ -325,32 +322,67 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
         }
         audioContext.close();
 
-        // Realign
+        // Realign: Find all lines that need audio, including new ones.
+        let linesToRealign = [...affectedLines];
+
+        // If new segments > old lines, find the next available lines to fill.
+        if (newBlobs.length > affectedLines.length && affectedLines.length > 0) {
+            const linesToAddCount = newBlobs.length - affectedLines.length;
+            const lastAffected = affectedLines[affectedLines.length - 1];
+            
+            const allLinesWithChapter = project.chapters.flatMap(ch => ch.scriptLines.map(line => ({ line, chapterId: ch.id })));
+            const lastAffectedIndexInAll = allLinesWithChapter.findIndex(item => item.line.id === lastAffected.line.id);
+
+            if (lastAffectedIndexInAll !== -1) {
+                const nonAudioCharacterIds = get().characters
+                    .filter(c => c.name === '[静音]' || c.name === '音效')
+                    .map(c => c.id);
+
+                const potentialNextLines = allLinesWithChapter
+                    .slice(lastAffectedIndexInAll + 1)
+                    .filter(({ line }) => !line.audioBlobId && !nonAudioCharacterIds.includes(line.characterId || ''))
+                    .slice(0, linesToAddCount);
+                
+                linesToRealign.push(...potentialNextLines);
+            }
+        }
+
         let updatedProject = { ...project, lastModified: Date.now() };
-        let blobIndex = 0;
-        
-        affectedLines.forEach(({ line, chapterId }) => {
-            const newBlob = newBlobs[blobIndex];
+        const newBlobAssignments = new Map<string, string>();
+
+        linesToRealign.forEach((lineInfo, index) => {
+            const newBlob = newBlobs[index];
             if (newBlob) {
-                newBlob.lineId = line.id;
-                const chapterIdx = updatedProject.chapters.findIndex(c => c.id === chapterId);
-                const lineIdx = updatedProject.chapters[chapterIdx].scriptLines.findIndex(l => l.id === line.id);
-                updatedProject.chapters[chapterIdx].scriptLines[lineIdx].audioBlobId = newBlob.id;
-                blobIndex++;
-            } else {
-                 // Not enough segments for all lines, unassign audio
-                const chapterIdx = updatedProject.chapters.findIndex(c => c.id === chapterId);
-                const lineIdx = updatedProject.chapters[chapterIdx].scriptLines.findIndex(l => l.id === line.id);
-                updatedProject.chapters[chapterIdx].scriptLines[lineIdx].audioBlobId = undefined;
+                newBlob.lineId = lineInfo.line.id;
+                newBlobAssignments.set(lineInfo.line.id, newBlob.id);
             }
         });
+
+        updatedProject.chapters = updatedProject.chapters.map(ch => ({
+            ...ch,
+            scriptLines: ch.scriptLines.map(line => {
+                if (newBlobAssignments.has(line.id)) {
+                    return { ...line, audioBlobId: newBlobAssignments.get(line.id) };
+                }
+                // If the line previously had an audio from this source but no longer gets one
+                if (oldBlobIds.has(line.audioBlobId || '')) {
+                    return { ...line, audioBlobId: undefined };
+                }
+                return line;
+            })
+        }));
         
         // Persist changes
         await db.transaction('rw', db.projects, db.audioBlobs, async () => {
+            // Delete all old blobs from this source first
             await db.audioBlobs.bulkDelete(Array.from(oldBlobIds));
-            if (newBlobs.length > 0) {
-                await db.audioBlobs.bulkPut(newBlobs);
+            
+            // Put all the new blobs
+            const blobsToPut = newBlobs.filter(b => b.lineId); // Only put blobs that were assigned to a line
+            if (blobsToPut.length > 0) {
+                await db.audioBlobs.bulkPut(blobsToPut);
             }
+            
             await db.projects.put(updatedProject);
         });
         

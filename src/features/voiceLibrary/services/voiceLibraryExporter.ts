@@ -116,6 +116,7 @@ export const exportCharacterClips = async (
             return; // Success, exit function
         } catch (err) {
 // FIX: The `err` object is of type `unknown`. Added a type guard to check if it is an Error before accessing `err.name`.
+// FIX: The `err` object is of type `unknown`. Added a type guard to check if it is an Error before accessing `err.name`.
             if (err instanceof Error && err.name === 'AbortError') {
                 console.log('用户取消了文件夹选择。');
                 return; // User cancelled, so we don't proceed to zip download.

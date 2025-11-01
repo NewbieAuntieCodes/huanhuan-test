@@ -1,5 +1,3 @@
-
-
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { AiAnnotatedLine } from '../types';
 import { ApiSettings, AiProvider } from '../store/slices/uiSlice';
@@ -56,7 +54,9 @@ export const getAiAnnotatedScript = async (
   provider: AiProvider,
   settings: ApiSettings
 ): Promise<AiAnnotatedLine[]> => {
-  const prompt = `You are an assistant for a scriptwriting application. Your task is to analyze the provided script text (which may consist of concatenated content from multiple chapters of a novel) and break it down into distinct lines, assigning each to a speaker.
+  const prompt = `You are an assistant for a scriptwriting application. Your task is to analyze the provided script text and break it down into distinct lines, assigning each to a speaker.
+
+**CRITICAL RULE: NO MERGING.** Absolutely forbid merging consecutive dialogue lines, even if they are spoken by the same character. Every individual dialogue line from the original text MUST correspond to a separate object in the output JSON array.
 
 A critical requirement is to handle lines or paragraphs containing both narration (e.g., character actions, scene descriptions) and direct dialogue (speech enclosed in quotation marks like “...” or 「...」).
 When such a mixed text block is encountered:
@@ -88,13 +88,29 @@ Expected JSON Output:
   { "line_text": "窗外下着雨。", "suggested_character_name": "Narrator" }
 ]
 
+Example 4 (Handling Consecutive Dialogue):
+Input Text Block:
+"白瑶：“你好。”
+白瑶：“你怎么样？”"
+Correct JSON Output (Separate Objects):
+[
+  { "line_text": "你好。", "suggested_character_name": "白瑶" },
+  { "line_text": "你怎么样？", "suggested_character_name": "白瑶" }
+]
+Incorrect JSON Output (Merged):
+[
+  { "line_text": "你好。你怎么样？", "suggested_character_name": "白瑶" }
+]
+
+
 If a line is purely dialogue without an explicit character name in a tag (e.g., just “救命！”), try to infer the speaker from recent context or use 'Unknown Character' if the context is insufficient. If a line is purely narration, assign it to 'Narrator'.
 
 Format your response as a JSON array of objects. Each object MUST have exactly two keys:
 1. 'line_text': (string) The text of the narration or dialogue. For dialogue lines, 'line_text' should contain ONLY the spoken words, without any surrounding quotation marks (e.g., no "", 「」, '', etc.). The application will add appropriate quotation marks during display. For narration lines, 'line_text' should be the plain narration.
 2. 'suggested_character_name': (string) The name of the character speaking (e.g., "白瑶", "沈迹"), or 'Narrator'.
 
-Ensure valid JSON output. Prioritize accurate separation of narration and dialogue above all else. Each distinct piece of narration or dialogue should be its own object in the array. If you encounter chapter separators like '--- CHAPTER BREAK ---', continue processing the text as part of the continuous novel.
+Ensure valid JSON output. Prioritize accurate separation of narration and dialogue. Each distinct piece of narration or dialogue should be its own object in the array.
+Reiterate: Strictly maintain a one-to-one correspondence for dialogue lines, never merge.
 
 Here is the script text:
 ---
