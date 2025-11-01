@@ -56,7 +56,7 @@ const BatchModifyModal: React.FC<BatchModifyModalProps> = ({
             onClick={() => handleActionClick(onBatchMerge)} 
             disabled={!canMerge}
             className="w-full flex items-center justify-between text-left p-3 bg-indigo-800/80 hover:bg-indigo-700/90 rounded-md text-indigo-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title={canMerge ? "合并选中的章节" : "请选择2个或更多连续的章节进行合并"}
+            title={canMerge ? "合并选中的章节" : "请至少选择2个章节进行合并"}
           >
             <div className="flex items-center"><ArrowsRightLeftIcon className="w-5 h-5 mr-3" /> 合并章节</div>
             <span className="text-indigo-300 font-sans">&gt;</span>

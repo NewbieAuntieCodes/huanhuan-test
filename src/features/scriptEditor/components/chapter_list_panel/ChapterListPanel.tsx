@@ -155,27 +155,10 @@ const ChapterListPanel: React.FC = () => {
     }, [multiSelectedChapterIds, deleteChapters]);
 
     const canMerge = useMemo(() => {
-        if (!currentProject || multiSelectedChapterIds.length < 2) return false;
-    
-        // Get all chapter IDs in their correct order from the project
-        const allChapterIdsInOrder = currentProject.chapters.map(ch => ch.id);
-    
-        // Filter this ordered list to get only the selected chapter IDs, still in order
-        const selectedIdsInOrder = allChapterIdsInOrder.filter(id => multiSelectedChapterIds.includes(id));
-    
-        // If the number of selected chapters doesn't match the original selection, it means some selected IDs weren't in the project, which is an error state.
-        if (selectedIdsInOrder.length !== multiSelectedChapterIds.length) {
-            return false;
-        }
-    
-        // Now, find the first and last selected chapters in the full ordered list
-        const firstSelectedIndex = allChapterIdsInOrder.indexOf(selectedIdsInOrder[0]);
-        const lastSelectedIndex = allChapterIdsInOrder.indexOf(selectedIdsInOrder[selectedIdsInOrder.length - 1]);
-    
-        // The number of selected items must be equal to the distance between the first and last index + 1.
-        // This robustly proves they are a contiguous block without relying on sorting and numerical difference.
-        return selectedIdsInOrder.length === (lastSelectedIndex - firstSelectedIndex + 1);
-    }, [multiSelectedChapterIds, currentProject]);
+        // The underlying merge logic correctly sorts chapters by their original project order,
+        // so we can allow merging non-contiguous chapters. The only requirement is at least 2 chapters.
+        return multiSelectedChapterIds.length >= 2;
+    }, [multiSelectedChapterIds.length]);
 
     const chaptersToMerge = useMemo(() => {
         if (!currentProject) return [];
