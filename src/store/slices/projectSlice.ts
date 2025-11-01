@@ -22,7 +22,7 @@ export interface ProjectSlice {
   appendChaptersToProject: (projectId: string, newChapters: Chapter[]) => Promise<void>;
   updateLineAudio: (projectId: string, chapterId: string, lineId: string, audioBlobId: string | null) => Promise<void>;
   assignAudioToLine: (projectId: string, chapterId: string, lineId: string, audioBlob: Blob, sourceAudioId?: string, sourceAudioFilename?: string) => Promise<void>;
-  clearAudioFromChapter: (projectId: string, chapterId: string) => Promise<void>;
+  clearAudioFromChapters: (projectId: string, chapterIds: string[]) => Promise<void>;
   resegmentAndRealignAudio: (projectId: string, sourceAudioId: string, markers: number[]) => Promise<void>;
   addCustomSoundType: (projectId: string, soundType: string) => Promise<void>;
   deleteCustomSoundType: (projectId: string, soundType: string) => Promise<void>;
@@ -216,15 +216,16 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
     await db.audioBlobs.put(audioBlobEntry);
     await get().updateLineAudio(projectId, chapterId, lineId, newId);
   },
-  clearAudioFromChapter: async (projectId, chapterId) => {
+  clearAudioFromChapters: async (projectId, chapterIds) => {
     const state = get();
     const project = state.projects.find(p => p.id === projectId);
     if (!project) return;
 
-    const chapterToClear = project.chapters.find(ch => ch.id === chapterId);
-    if (!chapterToClear) return;
+    const chaptersToClear = project.chapters.filter(ch => chapterIds.includes(ch.id));
+    if (chaptersToClear.length === 0) return;
 
-    const blobIdsToDelete = chapterToClear.scriptLines
+    const blobIdsToDelete = chaptersToClear
+        .flatMap(ch => ch.scriptLines)
         .map(line => line.audioBlobId)
         .filter((id): id is string => !!id);
 
@@ -235,7 +236,7 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
     const updatedProject = {
       ...project,
       chapters: project.chapters.map(ch => {
-        if (ch.id === chapterId) {
+        if (chapterIds.includes(ch.id)) {
           return {
             ...ch,
             scriptLines: ch.scriptLines.map(line => ({ ...line, audioBlobId: undefined }))

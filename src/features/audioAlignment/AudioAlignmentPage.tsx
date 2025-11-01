@@ -35,7 +35,7 @@ const AudioAlignmentPage: React.FC = () => {
     resegmentAndRealignAudio: state.resegmentAndRealignAudio,
     navigateTo: state.navigateTo,
     openConfirmModal: state.openConfirmModal,
-    clearAudioFromChapter: state.clearAudioFromChapter,
+    clearAudioFromChapters: state.clearAudioFromChapters,
     waveformEditorState: state.waveformEditor,
     openWaveformEditor: state.openWaveformEditor,
     closeWaveformEditor: state.closeWaveformEditor,
@@ -46,14 +46,17 @@ const AudioAlignmentPage: React.FC = () => {
     activeRecordingLineId: state.activeRecordingLineId,
     setActiveRecordingLineId: state.setActiveRecordingLineId,
     webSocketStatus: state.webSocketStatus,
+    multiSelectedChapterIds: state.audioAlignmentMultiSelectedChapterIds,
+    setMultiSelectedChapterIds: state.setAudioAlignmentMultiSelectedChapterIds,
   }));
 
   const {
     projects, characters, selectedProjectId, selectedChapterId, setSelectedChapterId,
     playingLineInfo, assignAudioToLine, resegmentAndRealignAudio, navigateTo,
-    openConfirmModal, clearAudioFromChapter, waveformEditorState, openWaveformEditor,
+    openConfirmModal, clearAudioFromChapters, waveformEditorState, openWaveformEditor,
     closeWaveformEditor, cvFilter, setCvFilter, characterFilter, setCharacterFilter,
-    activeRecordingLineId, setActiveRecordingLineId, webSocketStatus
+    activeRecordingLineId, setActiveRecordingLineId, webSocketStatus,
+    multiSelectedChapterIds, setMultiSelectedChapterIds,
   } = store;
 
   const cvMatchFileInputRef = useRef<HTMLInputElement>(null);
@@ -64,6 +67,7 @@ const AudioAlignmentPage: React.FC = () => {
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isSilenceSettingsModalOpen, setIsSilenceSettingsModalOpen] = useState(false);
+  const [lastSelectedChapterForShiftClick, setLastSelectedChapterForShiftClick] = useState<string | null>(null);
   
   const [isRecordingMode, setIsRecordingMode] = useState(false);
   
@@ -126,9 +130,9 @@ const AudioAlignmentPage: React.FC = () => {
       projectId: currentProject?.id,
       initialSelectedChapterIdForViewing: selectedChapterId,
       onSelectChapterForViewing: setSelectedChapterId,
-      multiSelectedChapterIds: [], // Not used here
-      setMultiSelectedChapterIdsContext: () => {}, // Not used here
-      onPageChangeSideEffects: () => {},
+      multiSelectedChapterIds: multiSelectedChapterIds,
+      setMultiSelectedChapterIdsContext: setMultiSelectedChapterIds,
+      onPageChangeSideEffects: useCallback(() => setLastSelectedChapterForShiftClick(null), []),
       chaptersPerPage: 100,
   });
 
@@ -204,18 +208,36 @@ const AudioAlignmentPage: React.FC = () => {
     }
   };
 
-  const handleClearChapterAudio = () => {
-    if (currentProject && selectedChapter) {
-        openConfirmModal(
-          "清除章节音频确认",
-          <>您确定要清除章节 <strong className="text-sky-300">{selectedChapter.title}</strong> 的所有已对轨音频吗？<br/>此操作无法撤销。</>,
-          () => {
-            clearAudioFromChapter(currentProject.id, selectedChapter.id);
-          },
-          "全部清除",
-          "取消"
-        );
-    }
+  const multiSelectCount = multiSelectedChapterIds.length;
+  
+  const hasAudioInSelection = useMemo(() => {
+      if (!currentProject) return false;
+      if (multiSelectCount > 0) {
+          return currentProject.chapters
+              .filter(c => multiSelectedChapterIds.includes(c.id))
+              .some(c => c.scriptLines.some(l => l.audioBlobId));
+      }
+      return selectedChapter?.scriptLines.some(l => l.audioBlobId) || false;
+  }, [selectedChapter, multiSelectedChapterIds, currentProject, multiSelectCount]);
+
+
+  const handleClearAudio = () => {
+      if (!currentProject) return;
+      const idsToClear = multiSelectCount > 0 ? multiSelectedChapterIds : (selectedChapterId ? [selectedChapterId] : []);
+      if (idsToClear.length === 0) return;
+
+      const chaptersToClear = currentProject.chapters.filter(c => idsToClear.includes(c.id));
+      const chapterTitles = chaptersToClear.map(c => `"${c.title}"`).join(', ');
+
+      openConfirmModal(
+        "清除音频确认",
+        <>您确定要清除 {chaptersToClear.length > 1 ? `这 ${chaptersToClear.length} 个章节` : `章节`} <strong className="text-sky-300">{chapterTitles}</strong> 的所有已对轨音频吗？<br/>此操作无法撤销。</>,
+        () => {
+          clearAudioFromChapters(currentProject.id, idsToClear);
+        },
+        "全部清除",
+        "取消"
+      );
   };
 
   const handleCalibrationSave = async (sourceAudioId: string, markers: number[]) => {
@@ -225,10 +247,33 @@ const AudioAlignmentPage: React.FC = () => {
     closeWaveformEditor();
   };
 
+  const handleToggleMultiSelect = useCallback((chapterId: string, event: React.MouseEvent) => {
+    if (!currentProject) return;
 
-  const hasAudioInChapter = useMemo(() => {
-    return selectedChapter?.scriptLines.some(l => l.audioBlobId) || false;
-  }, [selectedChapter]);
+    if (event.shiftKey && lastSelectedChapterForShiftClick) {
+        const allChapterIds = currentProject.chapters.map(ch => ch.id);
+        const lastIndex = allChapterIds.indexOf(lastSelectedChapterForShiftClick);
+        const currentIndex = allChapterIds.indexOf(chapterId);
+
+        if (lastIndex !== -1 && currentIndex !== -1) {
+            const start = Math.min(lastIndex, currentIndex);
+            const end = Math.max(lastIndex, currentIndex);
+            const idsToSelect = allChapterIds.slice(start, end + 1);
+            
+            setMultiSelectedChapterIds(
+                Array.from(new Set([...multiSelectedChapterIds, ...idsToSelect]))
+            );
+            return;
+        }
+    }
+    
+    setMultiSelectedChapterIds(prev =>
+        prev.includes(chapterId)
+            ? prev.filter(id => id !== chapterId)
+            : [...prev, chapterId]
+    );
+    setLastSelectedChapterForShiftClick(chapterId);
+}, [lastSelectedChapterForShiftClick, currentProject, setMultiSelectedChapterIds, multiSelectedChapterIds]);
   
   const StatusIndicator: React.FC<{ status: WebSocketStatus }> = ({ status }) => {
     switch (status) {
@@ -267,19 +312,29 @@ const AudioAlignmentPage: React.FC = () => {
           {paginatedChapters.map(chapter => {
               const chapterIndex = currentProject.chapters.findIndex(c => c.id === chapter.id);
               const displayTitle = `${formatChapterNumber(chapterIndex)} ${chapter.title}`;
+              const isMultiSelected = multiSelectedChapterIds.includes(chapter.id);
               return (
-              <li key={chapter.id} className="list-none">
-                  <button
-                      onClick={() => setSelectedChapterId(chapter.id)}
-                      className={`w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                          selectedChapterId === chapter.id
-                          ? 'bg-sky-600 text-white font-semibold'
-                          : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
-                      }`}
-                  >
-                     {displayTitle}
-                  </button>
-              </li>
+                <li key={chapter.id} className="list-none flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      checked={isMultiSelected}
+                      onClick={(e) => handleToggleMultiSelect(chapter.id, e)}
+                      className="form-checkbox h-4 w-4 text-sky-500 bg-slate-700 border-slate-600 rounded focus:ring-sky-400 cursor-pointer flex-shrink-0"
+                      aria-label={`选择章节 ${displayTitle}`}
+                    />
+                    <button
+                        onClick={() => setSelectedChapterId(chapter.id)}
+                        className={`flex-grow text-left px-3 py-2 rounded-md text-sm transition-colors ${
+                            selectedChapterId === chapter.id
+                            ? 'bg-sky-600 text-white font-semibold'
+                            : isMultiSelected
+                            ? 'bg-sky-800 text-sky-100'
+                            : 'bg-slate-700 hover:bg-slate-600 text-slate-200'
+                        }`}
+                    >
+                       {displayTitle}
+                    </button>
+                </li>
           )})}
       </div>
 
@@ -416,13 +471,13 @@ const AudioAlignmentPage: React.FC = () => {
                 {isExporting ? '导出中...' : '导出音频'}
             </button>
             <button
-                onClick={handleClearChapterAudio}
-                disabled={!selectedChapter || !hasAudioInChapter || isExporting}
+                onClick={handleClearAudio}
+                disabled={!hasAudioInSelection || isExporting}
                 className="flex items-center text-sm text-red-400 hover:text-red-300 px-3 py-1.5 bg-red-900/50 hover:bg-red-800/50 rounded-md disabled:opacity-50"
                 aria-label="清除本章所有音频"
             >
                 <SpeakerXMarkIcon className="w-4 h-4 mr-1" />
-                清除本章音频
+                {multiSelectCount > 1 ? `清除所选音频 (${multiSelectCount})` : '清除本章音频'}
             </button>
             <button
                 onClick={onGoBack}

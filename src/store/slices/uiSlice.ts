@@ -57,6 +57,7 @@ export interface UiSlice {
   characterShortcuts: Record<string, string>; // key: keyboard key, value: characterId
   audioAlignmentCvFilter: string;
   audioAlignmentCharacterFilter: string;
+  audioAlignmentMultiSelectedChapterIds: string[];
   activeRecordingLineId: string | null;
   webSocketStatus: WebSocketStatus;
 
@@ -91,6 +92,7 @@ export interface UiSlice {
   setCharacterShortcuts: (shortcuts: Record<string, string>) => Promise<void>;
   setAudioAlignmentCvFilter: (filter: string) => void;
   setAudioAlignmentCharacterFilter: (filter: string) => void;
+  setAudioAlignmentMultiSelectedChapterIds: (ids: string[]) => void;
   setActiveRecordingLineId: (id: string | null) => void;
   setWebSocketStatus: (status: WebSocketStatus) => void;
   goToNextLine: () => Promise<void>;
@@ -118,6 +120,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   characterShortcuts: {},
   audioAlignmentCvFilter: '',
   audioAlignmentCharacterFilter: '',
+  audioAlignmentMultiSelectedChapterIds: [],
   activeRecordingLineId: null,
   webSocketStatus: 'disconnected',
 
@@ -213,6 +216,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   },
   setAudioAlignmentCvFilter: (filter) => set({ audioAlignmentCvFilter: filter }),
   setAudioAlignmentCharacterFilter: (filter) => set({ audioAlignmentCharacterFilter: filter }),
+  setAudioAlignmentMultiSelectedChapterIds: (ids) => set({ audioAlignmentMultiSelectedChapterIds: ids }),
   setActiveRecordingLineId: (id) => set({ activeRecordingLineId: id }),
   setWebSocketStatus: (status) => set({ webSocketStatus: status }),
   goToNextLine: async () => {

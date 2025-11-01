@@ -237,7 +237,7 @@ export const useAudioFileMatcher = ({
         try {
             metadata = await mm.parseBlob(file);
         } catch (e) {
-            // FIX: Add type guard to safely handle unknown error type before accessing 'e.message'.
+            // FIX: Safely access error message from unknown type.
             const message = e instanceof Error ? e.message : String(e);
             console.error(`Metadata parsing failed for ${file.name}:`, message);
             return { matched: 0, missed: targetLines.length };
@@ -306,7 +306,7 @@ export const useAudioFileMatcher = ({
         return { matched: matchedCount, missed: targetLines.length - matchedCount };
 
     } catch (error) {
-        // FIX: Add type guard to safely handle unknown error type before accessing 'error.message'.
+        // FIX: Safely access error message from unknown type.
         const message = error instanceof Error ? error.message : String(error);
         console.error(`Error processing master audio file ${file.name}:`, message);
         return { matched: 0, missed: 0 };
