@@ -257,7 +257,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
                 return;
             }
         } catch (error) {
-            // FIX: Refactored catch block to safely handle 'unknown' error type.
+            // FIX: The 'error' object in a catch block is of type 'unknown'. Added a type guard to ensure 'detailedMessage' is a string before calling '.toLowerCase()'.
             console.error("读取或解析文件时出错:", error);
 
             let detailedMessage: string;

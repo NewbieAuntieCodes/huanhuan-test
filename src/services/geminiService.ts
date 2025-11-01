@@ -3,8 +3,7 @@ import { AiAnnotatedLine } from '../types';
 import { ApiSettings, AiProvider } from '../store/slices/uiSlice';
 
 const getOpenAICompatibleResponse = async (provider: AiProvider, settings: ApiSettings, prompt: string): Promise<any> => {
-    // FIX: Add a type guard to ensure this function is not called for the 'gemini' provider.
-    // This narrows the type of 'config' to one that is guaranteed to have a 'model' property, resolving the TypeScript error.
+    // FIX: The 'gemini' provider config does not have a 'model' property. Added a type guard to ensure this function is not called for 'gemini', resolving the TypeScript error.
     if (provider === 'gemini') {
         throw new Error('getOpenAICompatibleResponse should not be called for the Gemini provider.');
     }

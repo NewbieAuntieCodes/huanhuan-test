@@ -115,8 +115,7 @@ export const exportCharacterClips = async (
             alert(`成功导出 ${filesSaved} 个音频片段到您选择的文件夹。`);
             return; // Success, exit function
         } catch (err) {
-// FIX: The `err` object is of type `unknown`. Added a type guard to check if it is an Error before accessing `err.name`.
-// FIX: The `err` object is of type `unknown`. Added a type guard to check if it is an Error before accessing `err.name`.
+            // FIX: The 'err' object is of type 'unknown'. Added a type guard to safely check 'err.name' before accessing it.
             if (err instanceof Error && err.name === 'AbortError') {
                 console.log('用户取消了文件夹选择。');
                 return; // User cancelled, so we don't proceed to zip download.

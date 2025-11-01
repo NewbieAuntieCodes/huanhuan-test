@@ -156,19 +156,25 @@ const ChapterListPanel: React.FC = () => {
 
     const canMerge = useMemo(() => {
         if (!currentProject || multiSelectedChapterIds.length < 2) return false;
-        const indices = multiSelectedChapterIds
-            .map(id => currentProject.chapters.findIndex(ch => ch.id === id))
-            .filter(index => index !== -1)
-            .sort((a, b) => a - b);
-
-        if (indices.length !== multiSelectedChapterIds.length) return false;
-
-        for (let i = 0; i < indices.length - 1; i++) {
-            if (indices[i + 1] - indices[i] !== 1) {
-                return false;
-            }
+    
+        // Get all chapter IDs in their correct order from the project
+        const allChapterIdsInOrder = currentProject.chapters.map(ch => ch.id);
+    
+        // Filter this ordered list to get only the selected chapter IDs, still in order
+        const selectedIdsInOrder = allChapterIdsInOrder.filter(id => multiSelectedChapterIds.includes(id));
+    
+        // If the number of selected chapters doesn't match the original selection, it means some selected IDs weren't in the project, which is an error state.
+        if (selectedIdsInOrder.length !== multiSelectedChapterIds.length) {
+            return false;
         }
-        return true;
+    
+        // Now, find the first and last selected chapters in the full ordered list
+        const firstSelectedIndex = allChapterIdsInOrder.indexOf(selectedIdsInOrder[0]);
+        const lastSelectedIndex = allChapterIdsInOrder.indexOf(selectedIdsInOrder[selectedIdsInOrder.length - 1]);
+    
+        // The number of selected items must be equal to the distance between the first and last index + 1.
+        // This robustly proves they are a contiguous block without relying on sorting and numerical difference.
+        return selectedIdsInOrder.length === (lastSelectedIndex - firstSelectedIndex + 1);
     }, [multiSelectedChapterIds, currentProject]);
 
     const chaptersToMerge = useMemo(() => {
