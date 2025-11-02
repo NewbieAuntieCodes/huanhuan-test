@@ -62,6 +62,7 @@ const ScriptEditorPanel: React.FC<ScriptEditorPanelProps> = ({
   const headerTitleInputRef = useRef<HTMLInputElement>(null);
   const [editableRawContent, setEditableRawContent] = useState('');
   const [isRawContentDirty, setIsRawContentDirty] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const selectedChapter = currentProject?.chapters.find(ch => ch.id === selectedChapterId);
   const selectedChapterIndex = currentProject?.chapters.findIndex(ch => ch.id === selectedChapterId);
@@ -82,6 +83,13 @@ const ScriptEditorPanel: React.FC<ScriptEditorPanelProps> = ({
       headerTitleInputRef.current.select();
     }
   }, [isEditingHeaderTitle]);
+
+  useEffect(() => {
+    // Scroll to top whenever the selected chapter changes
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = 0;
+    }
+  }, [selectedChapterId]);
 
 
   const characterIdsInChapter = useMemo(() => {
@@ -269,7 +277,7 @@ const ScriptEditorPanel: React.FC<ScriptEditorPanelProps> = ({
           </button>
         </div>
       </div>
-      <div className="flex-grow overflow-y-auto pt-3 pr-1">
+      <div ref={scrollContainerRef} className="flex-grow overflow-y-auto pt-3 pr-1">
         {isCurrentlyLoadingLines ? (
            <div className="flex flex-col items-center justify-center h-64">
                 <LoadingSpinner />
