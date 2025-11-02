@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Project, ScriptLine, CharacterFilterMode } from '../../../types';
 import { internalParseScriptToChapters } from '../../../lib/scriptParser';
@@ -54,13 +55,15 @@ export const useEnhancedEditorCoreLogic = ({
   }, [currentProject, selectedChapterId, history, setSelectedChapterId]);
 
   const applyUndoableProjectUpdate = useCallback((updater: (prevProject: Project) => Project) => {
-    if (!currentProject) return;
-    const newProject = updater(currentProject);
+    const projectToUpdate = history[historyIndex];
+    if (!projectToUpdate) return;
+
+    const newProject = updater(projectToUpdate);
     const newHistory = history.slice(0, historyIndex + 1);
     setHistory([...newHistory, newProject]);
     setHistoryIndex(newHistory.length);
     onProjectUpdate(newProject);
-  }, [currentProject, history, historyIndex, onProjectUpdate]);
+  }, [history, historyIndex, onProjectUpdate]);
 
   const undo = useCallback(() => {
     if (canUndo) {
