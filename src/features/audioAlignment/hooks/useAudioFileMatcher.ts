@@ -236,7 +236,7 @@ export const useAudioFileMatcher = ({
         let metadata;
         try {
             metadata = await mm.parseBlob(file);
-        // FIX: The 'e' object in a catch block is of type 'unknown'. Added a type guard to safely access its properties.
+        // FIX: The 'e' object in a catch block is of type 'unknown'. Added a type guard to safely access its properties before attempting to read a message from it.
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
             console.error(`Metadata parsing failed for ${file.name}:`, message);
@@ -305,7 +305,7 @@ export const useAudioFileMatcher = ({
         audioContext.close();
         return { matched: matchedCount, missed: targetLines.length - matchedCount };
 
-    // FIX: The 'error' object in a catch block is of type 'unknown'. Added a type guard to safely access its properties.
+    // FIX: The 'error' object in a catch block is of type 'unknown'. Added a type guard to safely access its properties before attempting to read a message from it.
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`Error processing master audio file ${file.name}:`, message);

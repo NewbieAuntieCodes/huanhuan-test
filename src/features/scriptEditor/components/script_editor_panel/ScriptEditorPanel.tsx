@@ -131,11 +131,21 @@ const ScriptEditorPanel: React.FC<ScriptEditorPanelProps> = ({
       }
     }
   };
+  
+  const handleSplitMouseDown = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    handleSplitClick();
+  };
 
   const handleSplitChapterClick = () => {
     if (selectedChapter && focusedScriptLineId) {
       onSplitChapterAtLine(selectedChapter.id, focusedScriptLineId);
     }
+  };
+  
+  const handleSplitChapterMouseDown = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    handleSplitChapterClick();
   };
   
   const isCurrentlyLoadingLines = (isLoadingAiAnnotation || isLoadingManualParse) && selectedChapter.scriptLines.length === 0;
@@ -240,7 +250,7 @@ const ScriptEditorPanel: React.FC<ScriptEditorPanelProps> = ({
             重做
           </button>
           <button
-            onClick={handleSplitClick}
+            onMouseDown={handleSplitMouseDown}
             disabled={!canSplitFocusedLine || isEditingHeaderTitle}
             title={canSplitFocusedLine ? "在光标位置拆分当前行" : "请先将光标置于要拆分的行内"}
             className="flex items-center px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-md text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -249,7 +259,7 @@ const ScriptEditorPanel: React.FC<ScriptEditorPanelProps> = ({
             拆分行
           </button>
           <button
-            onClick={handleSplitChapterClick}
+            onMouseDown={handleSplitChapterMouseDown}
             disabled={!canSplitFocusedLine || isEditingHeaderTitle}
             title={canSplitFocusedLine ? "从当前行开始拆分为新章节" : "请先将光标置于要作为新章节开头的行内"}
             className="flex items-center px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-md text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"

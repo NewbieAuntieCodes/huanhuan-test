@@ -1,5 +1,3 @@
-
-
 import { create } from 'zustand';
 // Fix: Import from types.ts to break circular dependency
 import { AppView, CVStylesMap, PresetColor } from '../types';
@@ -89,33 +87,9 @@ export const useStore = create<AppState>((set, get, api) => ({
         status: char.status || 'active',
       }));
 
-      // --- Project-specific default character migration ---
-      const charactersToCreate: Character[] = [];
-      projects.forEach(proj => {
-        const projectChars = processedCharacters.filter(c => c.projectId === proj.id);
-        for (const config of defaultCharConfigs) {
-          if (!projectChars.some(c => c.name === config.name)) {
-            const newChar: Character = {
-              id: Date.now().toString() + `_char_default_${proj.id}_` + Math.random(),
-              name: config.name,
-              projectId: proj.id,
-              color: config.color,
-              textColor: config.textColor,
-              description: config.description,
-              cvName: '',
-              isStyleLockedToCv: false,
-              status: 'active',
-            };
-            charactersToCreate.push(newChar);
-          }
-        }
-      });
-      
-      if (charactersToCreate.length > 0) {
-        await db.characters.bulkAdd(charactersToCreate);
-        processedCharacters.push(...charactersToCreate);
-      }
-      // --- End migration ---
+      // --- Faulty migration logic removed ---
+      // This block was causing duplicate default characters on every load.
+      // The correct logic for creating default characters is handled in `addProject`.
 
       let initialView: AppView = "dashboard";
       if (projects.length === 0) {

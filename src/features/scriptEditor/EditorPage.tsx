@@ -256,16 +256,11 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
                 alert("不支持的文件格式或文件内容无法识别。请上传 .txt, .docx, 或由本应用导出的画本文件。");
                 return;
             }
-        // FIX: The 'error' object in a catch block is of type 'unknown'. Added a type guard to ensure 'detailedMessage' is a string before calling '.toLowerCase()'.
+        // FIX: The 'error' object in a catch block is of type 'unknown'. Added a type guard to safely handle it.
         } catch (error) {
             console.error("读取或解析文件时出错:", error);
 
-            let detailedMessage: string;
-            if (error instanceof Error) {
-                detailedMessage = error.message;
-            } else {
-                detailedMessage = String(error);
-            }
+            const detailedMessage = error instanceof Error ? error.message : String(error);
             
             let errorMessage = `读取或解析文件时出错: ${detailedMessage}`;
 

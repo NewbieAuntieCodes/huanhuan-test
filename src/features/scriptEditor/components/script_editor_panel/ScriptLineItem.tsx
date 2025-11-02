@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
 import { ScriptLine, Character } from '../../../../types';
 import { UserCircleIcon, ChevronDownIcon, XMarkIcon } from '../../../../components/ui/icons';
 import { isHexColor, getContrastingTextColor } from '../../../../lib/colorUtils';
@@ -48,12 +48,22 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
 
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const contentEditableRef = useRef<HTMLDivElement>(null);
 
   const [isSoundTypeDropdownOpen, setIsSoundTypeDropdownOpen] = useState(false);
   const soundTypeDropdownRef = useRef<HTMLDivElement>(null);
   
   const defaultSoundOptions = ['清除', 'OS', '电话音', '系统音', '广播'];
   const soundOptions = [...defaultSoundOptions, ...customSoundTypes, '自定义'];
+  
+  useLayoutEffect(() => {
+    const element = contentEditableRef.current;
+    if (element && element.innerHTML !== line.text) {
+      if (document.activeElement !== element) {
+        element.innerHTML = line.text;
+      }
+    }
+  }, [line.text]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -142,19 +152,15 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   };
 
   const handleDivBlur = (e: React.FocusEvent<HTMLDivElement>) => {
-    const newText = e.currentTarget.innerText;
+    onFocusChange(null);
+    const newText = e.currentTarget.innerHTML; // Use innerHTML to preserve potential formatting
     
-    if (newText.trim() === '') {
+    // Check innerText for emptiness to correctly handle cases with empty tags like <br>
+    if (e.currentTarget.innerText.trim() === '') {
         onDelete(line.id);
     } else if (newText !== line.text) {
       onUpdateText(line.id, newText);
     }
-    
-    setTimeout(() => {
-        if (document.activeElement !== e.target) {
-             onFocusChange(null);
-        }
-    }, 150); 
   };
   
   const isNarrator = !character || character.name === 'Narrator';
@@ -279,13 +285,13 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
       </div>
 
       <div
+          ref={contentEditableRef}
           contentEditable
           suppressContentEditableWarning
           onFocus={handleDivFocus}
           onBlur={handleDivBlur}
           className={contentEditableClasses}
           style={contentEditableStyle}
-          dangerouslySetInnerHTML={{ __html: line.text }}
           aria-label={`脚本行文本: ${line.text.substring(0,50)}... ${character ? `角色: ${character.name}` : '未分配角色'}`}
       />
       
