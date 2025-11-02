@@ -46,4 +46,9 @@
     html.dark [contenteditable][placeholder]:empty:before {
       color: #64748b; /* slate-500 for dark */
     }
- 
+    
+    /* Force consistent text color inside contentEditable divs */
+    .force-text-color,
+    .force-text-color * {
+      color: inherit !important;
+    }

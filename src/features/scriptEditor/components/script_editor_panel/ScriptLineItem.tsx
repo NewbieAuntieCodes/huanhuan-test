@@ -290,7 +290,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
           suppressContentEditableWarning
           onFocus={handleDivFocus}
           onBlur={handleDivBlur}
-          className={contentEditableClasses}
+          className={`${contentEditableClasses} force-text-color`}
           style={contentEditableStyle}
           aria-label={`脚本行文本: ${line.text.substring(0,50)}... ${character ? `角色: ${character.name}` : '未分配角色'}`}
       />
