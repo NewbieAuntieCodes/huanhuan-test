@@ -36,6 +36,7 @@ const getChapterNumber = (title: string): number | null => {
     return numericMatch ? parseInt(numericMatch[1], 10) : null;
 };
 
+// FIX: Add MatchStatus interface to provide explicit types for finalStatus object, resolving index signature errors.
 interface MatchStatus {
     characters: Record<string, boolean>;
     chapters: Record<string, boolean>;
@@ -384,14 +385,16 @@ const AudioAlignmentAssistantPage: React.FC = () => {
                 const relevantFiles = fileCoverage.get(chapterNum) || [];
                 const charIdsInChapter = new Set(chapter.scriptLines.map(l => l.characterId).filter((id): id is string => !!id));
 
-                // FIX: Explicitly typed `charId` as `string` to resolve a TypeScript inference issue where it was being treated as 'unknown', which is not a valid index type.
-                charIdsInChapter.forEach((charId: string) => {
+                // FIX: Replaced forEach with a for...of loop for better TypeScript type inference, resolving the 'unknown index type' error.
+                for (const charId of charIdsInChapter) {
                     const character = projectCharacters.find(c => c.id === charId);
-                    if (!character) return;
+                    if (!character) {
+                        continue;
+                    }
                     
                     if (manualOverrides[charId] !== undefined) {
                         finalStatus.characters[charId] = manualOverrides[charId];
-                        return;
+                        continue;
                     }
 
                     const isCharFound = relevantFiles.some(file => 
@@ -399,7 +402,7 @@ const AudioAlignmentAssistantPage: React.FC = () => {
                         (file.cvName && file.cvName === character.cvName)
                     );
                     finalStatus.characters[charId] = isCharFound;
-                });
+                }
             }
         }
         

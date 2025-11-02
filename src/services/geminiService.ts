@@ -124,7 +124,7 @@ ${scriptText}
         const apiKey = settings.gemini.apiKey || process.env.API_KEY;
         if (!apiKey) throw new Error("Gemini API Key is not configured.");
         const ai = new GoogleGenAI({ apiKey });
-        const response: GenerateContentResponse = await ai.models.generateContent({
+        const stream = await ai.models.generateContentStream({
             model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
@@ -132,7 +132,13 @@ ${scriptText}
                 temperature: 0.2,
             },
         });
-        const jsonStr = response.text.trim();
+
+        let accumulatedText = '';
+        for await (const chunk of stream) {
+            accumulatedText += chunk.text;
+        }
+        
+        const jsonStr = accumulatedText.trim();
         const fenceRegex = /^```(\w*)?\s*\n?(.*?)\n?\s*```$/s;
         const match = jsonStr.match(fenceRegex);
         parsedData = JSON.parse(match ? match[2].trim() : jsonStr);

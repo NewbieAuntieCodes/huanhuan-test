@@ -6,13 +6,14 @@ import { Project, Character, MergeHistoryEntry } from '../types';
 // Import slice creators and their state/action types
 import { createUiSlice, UiSlice } from './slices/uiSlice';
 import { createProjectSlice, ProjectSlice } from './slices/projectSlice';
+import { createProjectAudioSlice, ProjectAudioSlice } from './slices/projectAudioSlice';
 import { createCharacterSlice, CharacterSlice } from './slices/characterSlice';
 import { createMergeSlice, MergeSlice } from './slices/mergeSlice';
 import { db } from '../db'; // Import the Dexie database instance
 import { defaultCvPresetColors, defaultCharacterPresetColors } from '../lib/colorPresets';
 
 // Define the combined state shape by extending all slice types
-export interface AppState extends UiSlice, ProjectSlice, CharacterSlice, MergeSlice {
+export interface AppState extends UiSlice, ProjectSlice, ProjectAudioSlice, CharacterSlice, MergeSlice {
   cvColorPresets: PresetColor[];
   characterColorPresets: PresetColor[];
   loadInitialData: () => Promise<void>;
@@ -31,6 +32,7 @@ export const useStore = create<AppState>((set, get, api) => ({
   // Spread slice creators, passing set, get, and api
   ...createUiSlice(set, get, api),
   ...createProjectSlice(set, get, api),
+  ...createProjectAudioSlice(set, get, api),
   ...createCharacterSlice(set, get, api),
   ...createMergeSlice(set, get, api),
 
