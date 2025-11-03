@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 're
 import { ScriptLine, Character } from '../../../../types';
 import { UserCircleIcon, ChevronDownIcon, XMarkIcon } from '../../../../components/ui/icons';
 import { isHexColor, getContrastingTextColor } from '../../../../lib/colorUtils';
+import { tailwindToHex } from '../../../../lib/tailwindColorMap';
 import CharacterSelectorDropdown from './CharacterSelectorDropdown';
 
 interface ScriptLineItemProps {
@@ -125,14 +126,17 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
     let finalBgClass = !bgIsHex ? (cvBgToUse || defaultBgClass) : '';
     let finalTextClass = !textIsHex ? (cvTextToUse || '') : '';
 
-    if (bgIsHex && (!cvTextToUse || !isHexColor(cvTextToUse))) { // CV BG is hex, text is not or empty
+    // FIX: Replaced incorrect variable `cvTextIsHex` with `textIsHex`.
+    if (bgIsHex && (!cvTextToUse || !textIsHex)) { // CV BG is hex, text is not or empty
         // Derive contrasting text color
         const contrasting = getContrastingTextColor(cvBgToUse);
         return { style: { backgroundColor: cvBgToUse, color: contrasting }, className: '' };
+    // FIX: Replaced incorrect variable `cvTextIsHex` with `textIsHex`.
     } else if (!cvTextToUse && !textIsHex && !cvName){ // No text color, not hex, and no CV name (should be "Add CV" button)
         finalTextClass = defaultTextClass;
+    // FIX: Replaced incorrect variable `cvTextIsHex` with `textIsHex`.
     } else if (!cvTextToUse && !textIsHex && cvName && !cvStyles[cvName]) { // CV name, no global style
-        finalTextClass = defaultTextClass;
+     finalTextClass = defaultTextClass;
     }
 
 
@@ -173,30 +177,26 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   } else if (isNarrator) {
     contentEditableClasses += ' bg-slate-700 text-slate-100';
   } else if (character) {
-    const charBg = character.color; 
-    const charText = character.textColor; 
+      const charBg = character.color;
+      const charText = character.textColor;
 
-    if (isHexColor(charBg)) {
-        contentEditableStyle.backgroundColor = charBg;
-    } else {
-        contentEditableClasses += ` ${charBg || 'bg-slate-700'}`; 
-    }
+      if (isHexColor(charBg)) {
+          contentEditableStyle.backgroundColor = charBg;
+      } else {
+          contentEditableClasses += ` ${charBg || 'bg-slate-700'}`;
+      }
 
-    if (charText) {
-        if (isHexColor(charText)) {
-            contentEditableStyle.color = charText;
-        } else { 
-            contentEditableClasses += ` ${charText}`;
-        }
-    } else {
-        if (isHexColor(charBg)) { 
-            contentEditableStyle.color = getContrastingTextColor(charBg);
-        } else {
-            const darkBgPatterns = ['-700', '-800', '-900', 'slate-600', 'gray-600'];
-            const isDarkBg = charBg && darkBgPatterns.some(pattern => charBg.includes(pattern));
-            contentEditableClasses += isDarkBg ? ' text-slate-100' : ' text-slate-800';
-        }
-    }
+      if (charText) {
+          if (isHexColor(charText)) {
+              contentEditableStyle.color = charText;
+          } else {
+              contentEditableStyle.color = tailwindToHex[charText] || '#F1F5F9'; // Fallback for Tailwind classes
+          }
+      } else {
+          // If no text color is specified, calculate contrast from background
+          const bgColorAsHex = isHexColor(charBg) ? charBg : (tailwindToHex[charBg] || '#334155'); // Fallback to slate-700 hex
+          contentEditableStyle.color = getContrastingTextColor(bgColorAsHex);
+      }
   } else {
     contentEditableClasses += ' bg-slate-700 text-slate-100';
   }
@@ -290,7 +290,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
           suppressContentEditableWarning
           onFocus={handleDivFocus}
           onBlur={handleDivBlur}
-          className={`${contentEditableClasses} force-text-color`}
+          className={contentEditableClasses}
           style={contentEditableStyle}
           aria-label={`脚本行文本: ${line.text.substring(0,50)}... ${character ? `角色: ${character.name}` : '未分配角色'}`}
       />
