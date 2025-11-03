@@ -199,6 +199,18 @@ export const useAudioFileMatcher = ({
     }
     
     const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
+    const sourceAudioId = `${currentProject.id}_${file.name}`;
+
+    // Clean up previous audio segments from the same source file before processing.
+    const oldBlobs = await db.audioBlobs.where('sourceAudioId').equals(sourceAudioId).toArray();
+    if (oldBlobs.length > 0) {
+        const oldBlobIds = oldBlobs.map(b => b.id);
+        console.log(`清理旧音频: 找到 ${oldBlobIds.length} 个来自文件 "${file.name}" 的旧音频片段，正在删除...`);
+        await db.audioBlobs.bulkDelete(oldBlobIds);
+        // Note: We don't need to manually clear audioBlobId from script lines in the project state.
+        // The subsequent `assignAudioToLine` will overwrite them. If a line is no longer matched,
+        // its old audioBlobId will point to nothing, which is handled gracefully by the UI.
+    }
     
     // Correctly extract the chapter identifier part (e.g., "405" or "405-410")
     const chapterIdentifier = nameWithoutExt.split('_')[0];
@@ -215,8 +227,6 @@ export const useAudioFileMatcher = ({
           errorMessage: errorMsg
         };
     }
-
-    const sourceAudioId = `${currentProject.id}_${file.name}`;
 
     try {
         // 1. Find target lines based on matchType (with intelligent fallback)
@@ -493,7 +503,7 @@ export const useAudioFileMatcher = ({
 
     setIsLoading(false);
 
-    // 生成详细报告
+    // 生成报告
     const successFiles = results.filter(r => r.success);
     const warningFiles = results.filter(r => !r.success && r.errorMessage?.includes('⚠️'));
     const errorFiles = results.filter(r => !r.success && !r.errorMessage?.includes('⚠️'));
@@ -503,43 +513,40 @@ export const useAudioFileMatcher = ({
     message += `✅ 成功: ${successFiles.length} 个文件\n`;
     message += `⚠️ 警告: ${warningFiles.length} 个文件\n`;
     message += `❌ 失败: ${errorFiles.length} 个文件\n`;
-    message += `📊 总共匹配: ${totalMatched} 条音轨\n\n`;
+    message += `📊 总共匹配: ${totalMatched} 条音轨\n`;
 
-    // 显示成功的文件
+    if (warningFiles.length > 0 || errorFiles.length > 0) {
+        message += `\n━━━━━━━━━━━━━━━━━━\n⚠️ 有问题的文件详情:\n`;
+        
+        if (warningFiles.length > 0) {
+            message += `\n--- 警告 ---\n`;
+            warningFiles.forEach(r => {
+                message += `\n📁 ${r.filename}\n`;
+                if (r.chapterRange) {
+                  message += `   章节: ${r.chapterRange} (${r.chapterCount}个章节)\n`;
+                }
+                message += `   匹配: ${r.matched}/${r.expected} 行 (片段数: ${r.foundSegments})\n`;
+                message += `   原因: ${r.errorMessage}\n`;
+            });
+        }
+        
+        if (errorFiles.length > 0) {
+            message += `\n--- 失败 ---\n`;
+            errorFiles.forEach(r => {
+                message += `\n📁 ${r.filename}\n`;
+                if (r.expected > 0) {
+                  message += `   需要片段: ${r.expected}\n`;
+                  message += `   找到片段: ${r.foundSegments}\n`;
+                }
+                message += `   原因: ${r.errorMessage}\n`;
+            });
+        }
+    }
+
     if (successFiles.length > 0) {
-      message += `━━━━━━━━━━━━━━━━━━\n✅ 成功的文件:\n`;
+      message += `\n━━━━━━━━━━━━━━━━━━\n✅ 成功的文件列表:\n`;
       successFiles.forEach(r => {
-        message += `\n📁 ${r.filename}\n`;
-        if (r.chapterRange) {
-          message += `   章节: ${r.chapterRange} (${r.chapterCount}个章节)\n`;
-        }
-        message += `   匹配: ${r.matched}/${r.expected} 行 (片段数: ${r.foundSegments})\n`;
-      });
-    }
-
-    // 显示警告的文件
-    if (warningFiles.length > 0) {
-      message += `\n━━━━━━━━━━━━━━━━━━\n⚠️ 有警告的文件:\n`;
-      warningFiles.forEach(r => {
-        message += `\n📁 ${r.filename}\n`;
-        if (r.chapterRange) {
-          message += `   章节: ${r.chapterRange} (${r.chapterCount}个章节)\n`;
-        }
-        message += `   匹配: ${r.matched}/${r.expected} 行 (片段数: ${r.foundSegments})\n`;
-        message += `   ${r.errorMessage}\n`;
-      });
-    }
-
-    // 显示失败的文件
-    if (errorFiles.length > 0) {
-      message += `\n━━━━━━━━━━━━━━━━━━\n❌ 失败的文件:\n`;
-      errorFiles.forEach(r => {
-        message += `\n📁 ${r.filename}\n`;
-        if (r.expected > 0) {
-          message += `   需要片段: ${r.expected}\n`;
-          message += `   找到片段: ${r.foundSegments}\n`;
-        }
-        message += `   错误: ${r.errorMessage}\n`;
+        message += `• ${r.filename}\n`;
       });
     }
 
