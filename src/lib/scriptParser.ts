@@ -20,8 +20,6 @@ export const internalParseScriptToChapters = (scriptText: string, bookName: stri
     if (currentChapterTitleCandidate) {
       // Remove potential list-like prefixes (e.g., "##1. ")
       titleToSave = currentChapterTitleCandidate.replace(/^##\d+\s*\.\s*/, '').trim();
-      // Remove trailing (number) or （number） for chapter titles
-      titleToSave = titleToSave.replace(/\s*[（(]\d+[）)]$/, '').trim();
     } else if (chapters.length === 0) { 
       // If no explicit title found for the first block
       titleToSave = isEndOfFile ? (bookName.replace(/\.txt$/i, '') || "Full Script") : "Prologue / Introduction";
