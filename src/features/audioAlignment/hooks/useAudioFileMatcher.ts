@@ -1,7 +1,7 @@
 // FIX: Changed React import from a named import to a default import to correctly resolve the React namespace for types like React.ChangeEvent.
 import React, { useState, useCallback, useMemo } from 'react';
-import { Project, Character, Chapter, ScriptLine, MasterAudio } from '../../../types';
 import * as mm from 'music-metadata-browser';
+import { Project, Character, Chapter, ScriptLine, MasterAudio } from '../../../types';
 import { bufferToWav } from '../../../lib/wavEncoder';
 import { db } from '../../../db';
 // FIX: Import `Buffer` to resolve "Cannot find name 'Buffer'" error.
@@ -156,13 +156,23 @@ const parseXmpCuePoints = (metadata: any, audioDuration: number): { startTime: n
     }
 };
 
+interface FileProcessResult {
+  filename: string;
+  success: boolean;
+  matched: number;
+  expected: number;
+  foundSegments: number;
+  chapterRange?: string;
+  chapterCount?: number;
+  errorMessage?: string;
+}
+
 export const useAudioFileMatcher = ({
   currentProject,
   characters,
   assignAudioToLine,
 }: UseAudioFileMatcherProps) => {
-  const [isCvMatchLoading, setIsCvMatchLoading] = useState(false);
-  const [isCharacterMatchLoading, setIsCharacterMatchLoading] = useState(false);
+  const [isSmartMatchLoading, setIsSmartMatchLoading] = useState(false);
   const [isChapterMatchLoading, setIsChapterMatchLoading] = useState(false);
 
   const nonAudioCharacterIds = useMemo(() => {
@@ -172,51 +182,102 @@ export const useAudioFileMatcher = ({
   }, [characters]);
 
   const processMasterAudioFile = useCallback(async (
-    file: File, 
+    file: File,
     identifier: string,
     matchType: 'cv' | 'character' | 'chapter',
     setIsLoading: (loading: boolean) => void
-  ) => {
-    if (!currentProject) return { matched: 0, missed: 0 };
+  ): Promise<FileProcessResult> => {
+    if (!currentProject) {
+      return {
+        filename: file.name,
+        success: false,
+        matched: 0,
+        expected: 0,
+        foundSegments: 0,
+        errorMessage: '未找到当前项目'
+      };
+    }
     
     const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
     
-    // More flexible chapter identifier extraction.
-    // It will find the first sequence of digits in the filename.
-    const chapterMatch = nameWithoutExt.match(/\d+/);
-    const chapterIdentifier = chapterMatch ? chapterMatch[0] : null;
+    // Correctly extract the chapter identifier part (e.g., "405" or "405-410")
+    const chapterIdentifier = nameWithoutExt.split('_')[0];
 
     if (!chapterIdentifier) {
-        console.warn(`跳过格式不正确的文件: ${file.name}。无法从中提取章节编号。`);
-        return { matched: 0, missed: 0 };
+        const errorMsg = '无法从文件名中提取章节编号';
+        console.warn(`跳过格式不正确的文件: ${file.name}。${errorMsg}`);
+        return {
+          filename: file.name,
+          success: false,
+          matched: 0,
+          expected: 0,
+          foundSegments: 0,
+          errorMessage: errorMsg
+        };
     }
 
     const sourceAudioId = `${currentProject.id}_${file.name}`;
 
     try {
-        // 1. Find target lines based on matchType
+        // 1. Find target lines based on matchType (with intelligent fallback)
         const targetCharacterIds = new Set<string>();
-        if (matchType === 'cv') {
-            const matchedChars = characters.filter(c => c.cvName === identifier && c.status !== 'merged');
-            matchedChars.forEach(c => targetCharacterIds.add(c.id));
-            console.log(`CV匹配 "${identifier}": 找到 ${matchedChars.length} 个角色`, matchedChars.map(c => c.name));
-            if (matchedChars.length === 0) {
-                const allCvs = [...new Set(characters.filter(c => c.cvName).map(c => c.cvName))];
-                console.warn(`未找到CV名称为 "${identifier}" 的角色。可用的CV名称:`, allCvs);
+        let matchMethod = '';
+
+        if (matchType === 'cv' || matchType === 'character') {
+            // Smart matching: try both CV name and character name
+            let matchedChars: Character[] = [];
+
+            if (matchType === 'cv') {
+                // First try to match by CV name
+                matchedChars = characters.filter(c => c.cvName === identifier && c.status !== 'merged');
+                if (matchedChars.length > 0) {
+                    matchMethod = `CV名 "${identifier}"`;
+                    console.log(`✓ CV匹配 "${identifier}": 找到 ${matchedChars.length} 个角色`, matchedChars.map(c => c.name));
+                } else {
+                    // Fallback: try to match by character name
+                    matchedChars = characters.filter(c => c.name === identifier && c.status !== 'merged');
+                    if (matchedChars.length > 0) {
+                        matchMethod = `角色名 "${identifier}" (CV名未匹配，降级为角色名匹配)`;
+                        console.log(`✓ CV匹配降级: 未找到CV名 "${identifier}"，但找到同名角色 ${matchedChars.length} 个`, matchedChars.map(c => c.name));
+                    }
+                }
+            } else if (matchType === 'character') {
+                // First try to match by character name
+                matchedChars = characters.filter(c => c.name === identifier && c.status !== 'merged');
+                if (matchedChars.length > 0) {
+                    matchMethod = `角色名 "${identifier}"`;
+                    console.log(`✓ 角色匹配 "${identifier}": 找到 ${matchedChars.length} 个角色`);
+                } else {
+                    // Fallback: try to match by CV name
+                    matchedChars = characters.filter(c => c.cvName === identifier && c.status !== 'merged');
+                    if (matchedChars.length > 0) {
+                        matchMethod = `CV名 "${identifier}" (角色名未匹配，降级为CV名匹配)`;
+                        console.log(`✓ 角色匹配降级: 未找到角色名 "${identifier}"，但找到同名CV ${matchedChars.length} 个角色`, matchedChars.map(c => c.name));
+                    }
+                }
             }
-        } else if (matchType === 'character') {
-            const matchedChars = characters.filter(c => c.name === identifier && c.status !== 'merged');
+
             matchedChars.forEach(c => targetCharacterIds.add(c.id));
-            console.log(`角色匹配 "${identifier}": 找到 ${matchedChars.length} 个角色`);
+
             if (matchedChars.length === 0) {
+                const allCvs = [...new Set(characters.filter(c => c.cvName && c.status !== 'merged').map(c => c.cvName))];
                 const allCharNames = characters.filter(c => c.status !== 'merged').map(c => c.name);
-                console.warn(`未找到名为 "${identifier}" 的角色。可用的角色名称:`, allCharNames);
+                console.warn(`❌ 未找到标识符 "${identifier}" - 既不是CV名也不是角色名`);
+                console.log(`可用的CV名称:`, allCvs);
+                console.log(`可用的角色名称:`, allCharNames);
             }
         }
 
         const chapterMatchers = parseChapterIdentifier(chapterIdentifier);
         const targetChapters = currentProject.chapters.filter((_, index) => chapterMatchers.includes(index + 1));
-        console.log(`章节匹配 "${chapterIdentifier}": 找到 ${targetChapters.length} 个章节`, chapterMatchers);
+
+        // 详细的章节匹配日志
+        if (chapterMatchers.length > 1) {
+            console.log(`📚 章节范围匹配: "${chapterIdentifier}" → 第${chapterMatchers[0]}章到第${chapterMatchers[chapterMatchers.length-1]}章 (共${chapterMatchers.length}个章节)`);
+        } else {
+            console.log(`📚 单章节匹配: 第${chapterMatchers[0]}章`);
+        }
+        console.log(`   找到 ${targetChapters.length} 个章节:`, targetChapters.map(ch => ch.title));
 
         const targetLines = targetChapters.flatMap(chapter =>
             chapter.scriptLines
@@ -226,12 +287,36 @@ export const useAudioFileMatcher = ({
         );
 
         if (targetLines.length === 0) {
-            console.warn(`文件 ${file.name}: 未找到目标行。匹配类型=${matchType}, 标识符="${identifier}", 章节="${chapterIdentifier}"`);
-            return { matched: 0, missed: 0 };
+            let errorMsg = '';
+            if (matchType === 'cv' || matchType === 'character') {
+                if (targetCharacterIds.size === 0) {
+                    // No characters matched at all
+                    const availableCvs = [...new Set(characters.filter(c => c.cvName && c.status !== 'merged').map(c => c.cvName))];
+                    const availableChars = characters.filter(c => c.status !== 'merged').map(c => c.name);
+                    errorMsg = `标识符 "${identifier}" 既不匹配任何CV名也不匹配任何角色名\n`;
+                    errorMsg += `可用的CV: ${availableCvs.length > 0 ? availableCvs.join(', ') : '无'}\n`;
+                    errorMsg += `可用的角色: ${availableChars.join(', ')}`;
+                } else {
+                    // Characters matched, but no lines in target chapters
+                    errorMsg = `虽然找到了匹配的角色，但在章节 ${chapterIdentifier} 中没有找到对应的文本行`;
+                }
+            } else {
+                errorMsg = `章节 ${chapterIdentifier} 中没有找到符合条件的文本行`;
+            }
+            console.warn(`文件 ${file.name}: 未找到目标行。${errorMsg}`);
+            return {
+              filename: file.name,
+              success: false,
+              matched: 0,
+              expected: 0,
+              foundSegments: 0,
+              errorMessage: errorMsg
+            };
         }
 
-        console.log(`找到 ${targetLines.length} 行待匹配`);
-        
+        console.log(`✓ 成功匹配 ${matchMethod}`);
+        console.log(`📊 匹配结果: ${targetChapters.length} 个章节，共 ${targetLines.length} 行文本`);
+
         // 2. Parse markers from audio
         let metadata;
         try {
@@ -240,8 +325,16 @@ export const useAudioFileMatcher = ({
         } catch (e) {
             // FIX: Safely access error message. Do not access 'e.name' directly on an 'unknown' type.
             const message = e instanceof Error ? e.message : String(e);
+            const errorMsg = `音频文件解析失败: ${message}`;
             console.error(`Metadata parsing failed for ${file.name}:`, message);
-            return { matched: 0, missed: targetLines.length };
+            return {
+              filename: file.name,
+              success: false,
+              matched: 0,
+              expected: targetLines.length,
+              foundSegments: 0,
+              errorMessage: errorMsg
+            };
         }
 
         let audioSegments: { startTime: number; endTime: number }[] = [];
@@ -254,20 +347,31 @@ export const useAudioFileMatcher = ({
             if (xmpSegments) {
                 audioSegments = xmpSegments;
             } else {
+                const errorMsg = `缺少音频标记（需要${targetLines.length}个片段，找到0个）\n请在Adobe Audition中添加CuePoint标记`;
                 console.error(`❌ 文件 ${file.name} 没有找到音频标记`);
                 console.log(`📝 该文件需要 ${targetLines.length} 个标记来匹配对应的文本行`);
                 console.log(`💡 解决方法：在Adobe Audition中打开音频文件，添加CuePoint标记后重新导出`);
-                alert(`❌ 文件 ${file.name} 缺少音频标记\n\n需要标记数量: ${targetLines.length}\n找到标记数量: 0\n\n请在Adobe Audition等软件中为音频添加标记点（CuePoint），然后重新尝试。`);
-                return { matched: 0, missed: targetLines.length };
+                return {
+                  filename: file.name,
+                  success: false,
+                  matched: 0,
+                  expected: targetLines.length,
+                  foundSegments: 0,
+                  errorMessage: errorMsg
+                };
             }
         }
 
         // 检查标记数量是否匹配
         console.log(`📊 标记数量: ${audioSegments.length}, 目标行数: ${targetLines.length}`);
+
+        let warningMessage = '';
         if (audioSegments.length < targetLines.length) {
+            warningMessage = `⚠️ 片段不足：找到${audioSegments.length}个片段，需要${targetLines.length}个`;
             console.warn(`⚠️ 警告：音频标记数量 (${audioSegments.length}) 少于目标行数 (${targetLines.length})`);
             console.warn(`⚠️ 部分文本行将无法匹配音频`);
         } else if (audioSegments.length > targetLines.length) {
+            warningMessage = `⚠️ 片段过多：找到${audioSegments.length}个片段，只需要${targetLines.length}个`;
             console.warn(`⚠️ 警告：音频标记数量 (${audioSegments.length}) 多于目标行数 (${targetLines.length})`);
             console.warn(`⚠️ 部分音频段落将被忽略`);
         }
@@ -302,16 +406,44 @@ export const useAudioFileMatcher = ({
             await assignAudioToLine(currentProject.id, lineInfo.chapterId, lineInfo.line.id, segmentBlob, sourceAudioId, file.name);
             matchedCount++;
         }
-        
+
         audioContext.close();
-        return { matched: matchedCount, missed: targetLines.length - matchedCount };
+
+        const success = matchedCount === targetLines.length && audioSegments.length === targetLines.length;
+
+        // 生成章节范围描述
+        let chapterRangeDesc = '';
+        if (chapterMatchers.length > 1) {
+            chapterRangeDesc = `第${chapterMatchers[0]}-${chapterMatchers[chapterMatchers.length-1]}章`;
+        } else if (chapterMatchers.length === 1) {
+            chapterRangeDesc = `第${chapterMatchers[0]}章`;
+        }
+
+        return {
+          filename: file.name,
+          success,
+          matched: matchedCount,
+          expected: targetLines.length,
+          foundSegments: audioSegments.length,
+          chapterRange: chapterRangeDesc,
+          chapterCount: targetChapters.length,
+          errorMessage: warningMessage || undefined
+        };
 
     // FIX: The 'error' object in a catch block is of type 'unknown'. Added a type guard to safely access its properties before attempting to read a message from it.
     } catch (error) {
         // FIX: Safely access error message. Do not access 'error.name' directly on an 'unknown' type.
         const message = error instanceof Error ? error.message : String(error);
+        const errorMsg = `处理失败: ${message}`;
         console.error(`Error processing master audio file ${file.name}:`, message);
-        return { matched: 0, missed: 0 };
+        return {
+          filename: file.name,
+          success: false,
+          matched: 0,
+          expected: 0,
+          foundSegments: 0,
+          errorMessage: errorMsg
+        };
     }
   }, [currentProject, characters, nonAudioCharacterIds, assignAudioToLine]);
 
@@ -325,11 +457,11 @@ export const useAudioFileMatcher = ({
     if (!files || files.length === 0 || !currentProject) return;
 
     setIsLoading(true);
-    let totalMatched = 0, totalMissed = 0;
+    const results: FileProcessResult[] = [];
 
     for (const file of Array.from(files)) {
       const nameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.'));
-      const parts = nameWithoutExt.split('_');
+      const parts = nameWithoutExt.split(/[_]/);
 
       let identifier: string | null = null;
       if (matchType === 'chapter') {
@@ -341,30 +473,86 @@ export const useAudioFileMatcher = ({
       }
 
       if (!identifier) {
-        console.warn(`跳过格式不正确的文件: ${file.name}。期望格式: "章节编号_${matchType === 'cv' ? 'CV名称' : '角色名称'}.mp3"`);
+        const errorMsg = `文件名格式不正确，期望格式: "章节编号_${matchType === 'cv' ? 'CV名称' : '角色名称'}.mp3"`;
+        console.warn(`跳过格式不正确的文件: ${file.name}。${errorMsg}`);
+        results.push({
+          filename: file.name,
+          success: false,
+          matched: 0,
+          expected: 0,
+          foundSegments: 0,
+          errorMessage: errorMsg
+        });
         continue;
       }
 
       console.log(`处理文件: ${file.name}, 匹配类型: ${matchType}, 识别符: ${identifier}`);
       const result = await processMasterAudioFile(file, identifier, matchType, setIsLoading);
-      totalMatched += result.matched;
-      totalMissed += result.missed;
+      results.push(result);
     }
 
     setIsLoading(false);
-    alert(`匹配完成。\n成功匹配: ${totalMatched} 条音轨\n未匹配/失败: ${totalMissed}`);
+
+    // 生成详细报告
+    const successFiles = results.filter(r => r.success);
+    const warningFiles = results.filter(r => !r.success && r.errorMessage?.includes('⚠️'));
+    const errorFiles = results.filter(r => !r.success && !r.errorMessage?.includes('⚠️'));
+    const totalMatched = results.reduce((sum, r) => sum + r.matched, 0);
+
+    let message = `🎯 匹配完成\n\n`;
+    message += `✅ 成功: ${successFiles.length} 个文件\n`;
+    message += `⚠️ 警告: ${warningFiles.length} 个文件\n`;
+    message += `❌ 失败: ${errorFiles.length} 个文件\n`;
+    message += `📊 总共匹配: ${totalMatched} 条音轨\n\n`;
+
+    // 显示成功的文件
+    if (successFiles.length > 0) {
+      message += `━━━━━━━━━━━━━━━━━━\n✅ 成功的文件:\n`;
+      successFiles.forEach(r => {
+        message += `\n📁 ${r.filename}\n`;
+        if (r.chapterRange) {
+          message += `   章节: ${r.chapterRange} (${r.chapterCount}个章节)\n`;
+        }
+        message += `   匹配: ${r.matched}/${r.expected} 行 (片段数: ${r.foundSegments})\n`;
+      });
+    }
+
+    // 显示警告的文件
+    if (warningFiles.length > 0) {
+      message += `\n━━━━━━━━━━━━━━━━━━\n⚠️ 有警告的文件:\n`;
+      warningFiles.forEach(r => {
+        message += `\n📁 ${r.filename}\n`;
+        if (r.chapterRange) {
+          message += `   章节: ${r.chapterRange} (${r.chapterCount}个章节)\n`;
+        }
+        message += `   匹配: ${r.matched}/${r.expected} 行 (片段数: ${r.foundSegments})\n`;
+        message += `   ${r.errorMessage}\n`;
+      });
+    }
+
+    // 显示失败的文件
+    if (errorFiles.length > 0) {
+      message += `\n━━━━━━━━━━━━━━━━━━\n❌ 失败的文件:\n`;
+      errorFiles.forEach(r => {
+        message += `\n📁 ${r.filename}\n`;
+        if (r.expected > 0) {
+          message += `   需要片段: ${r.expected}\n`;
+          message += `   找到片段: ${r.foundSegments}\n`;
+        }
+        message += `   错误: ${r.errorMessage}\n`;
+      });
+    }
+
+    alert(message);
     if (event.target) event.target.value = '';
   }, [currentProject, processMasterAudioFile]);
 
-  const handleFileSelectionForCvMatch = (e: React.ChangeEvent<HTMLInputElement>) => handleFileSelection(e, 'cv', setIsCvMatchLoading);
-  const handleFileSelectionForCharacterMatch = (e: React.ChangeEvent<HTMLInputElement>) => handleFileSelection(e, 'character', setIsCharacterMatchLoading);
+  const handleFileSelectionForSmartMatch = (e: React.ChangeEvent<HTMLInputElement>) => handleFileSelection(e, 'cv', setIsSmartMatchLoading);
   const handleFileSelectionForChapterMatch = (e: React.ChangeEvent<HTMLInputElement>) => handleFileSelection(e, 'chapter', setIsChapterMatchLoading);
 
   return {
-    isCvMatchLoading,
-    handleFileSelectionForCvMatch,
-    isCharacterMatchLoading,
-    handleFileSelectionForCharacterMatch,
+    isSmartMatchLoading,
+    handleFileSelectionForSmartMatch,
     isChapterMatchLoading,
     handleFileSelectionForChapterMatch,
   };

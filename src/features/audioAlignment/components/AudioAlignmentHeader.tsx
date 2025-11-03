@@ -27,8 +27,7 @@ interface AudioAlignmentHeaderProps {
   projectCharacters: Character[];
   projectCvNames: string[];
   onOpenSilenceSettings: () => void;
-  isCvMatchLoading: boolean;
-  isCharacterMatchLoading: boolean;
+  isSmartMatchLoading: boolean;
   isChapterMatchLoading: boolean;
   onOpenExportModal: () => void;
   isExporting: boolean;
@@ -36,8 +35,7 @@ interface AudioAlignmentHeaderProps {
   hasAudioInSelection: boolean;
   multiSelectCount: number;
   onGoBack: () => void;
-  onFileSelectionForCvMatch: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  onFileSelectionForCharacterMatch: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onFileSelectionForSmartMatch: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onFileSelectionForChapterMatch: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
@@ -65,8 +63,7 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
   projectCharacters,
   projectCvNames,
   onOpenSilenceSettings,
-  isCvMatchLoading,
-  isCharacterMatchLoading,
+  isSmartMatchLoading,
   isChapterMatchLoading,
   onOpenExportModal,
   isExporting,
@@ -74,17 +71,14 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
   hasAudioInSelection,
   multiSelectCount,
   onGoBack,
-  onFileSelectionForCvMatch,
-  onFileSelectionForCharacterMatch,
+  onFileSelectionForSmartMatch,
   onFileSelectionForChapterMatch,
 }) => {
     const chapterMatchFileInputRef = useRef<HTMLInputElement>(null);
-    const cvMatchFileInputRef = useRef<HTMLInputElement>(null);
-    const characterMatchFileInputRef = useRef<HTMLInputElement>(null);
+    const smartMatchFileInputRef = useRef<HTMLInputElement>(null);
 
     const handleChapterMatchClick = () => chapterMatchFileInputRef.current?.click();
-    const handleCvMatchClick = () => cvMatchFileInputRef.current?.click();
-    const handleCharacterMatchClick = () => characterMatchFileInputRef.current?.click();
+    const handleSmartMatchClick = () => smartMatchFileInputRef.current?.click();
 
   return (
     <header className="flex items-center justify-between p-4 border-b border-slate-800 flex-shrink-0 flex-wrap gap-2">
@@ -107,16 +101,8 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
               type="file"
               multiple
               accept="audio/*"
-              ref={cvMatchFileInputRef}
-              onChange={onFileSelectionForCvMatch}
-              className="hidden"
-          />
-          <input
-              type="file"
-              multiple
-              accept="audio/*"
-              ref={characterMatchFileInputRef}
-              onChange={onFileSelectionForCharacterMatch}
+              ref={smartMatchFileInputRef}
+              onChange={onFileSelectionForSmartMatch}
               className="hidden"
           />
           <button
@@ -172,22 +158,14 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
               间隔配置
           </button>
           <button
-              onClick={handleCvMatchClick}
-              disabled={isCvMatchLoading}
+              onClick={handleSmartMatchClick}
+              disabled={isSmartMatchLoading}
               className="flex items-center text-sm text-sky-300 hover:text-sky-100 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-50"
-              aria-label="按CV匹配批量上传"
+              aria-label="按CV/角色匹配批量上传"
+              title="智能匹配CV名或角色名"
           >
-              {isCvMatchLoading ? <LoadingSpinner /> : <UploadIcon className="w-4 h-4 mr-1" />}
-              {isCvMatchLoading ? '匹配中...' : '按CV匹配'}
-          </button>
-          <button
-              onClick={handleCharacterMatchClick}
-              disabled={isCharacterMatchLoading}
-              className="flex items-center text-sm text-sky-300 hover:text-sky-100 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-50"
-              aria-label="按角色匹配批量上传"
-          >
-              {isCharacterMatchLoading ? <LoadingSpinner /> : <UserCircleIcon className="w-4 h-4 mr-1" />}
-              {isCharacterMatchLoading ? '匹配中...' : '按角色匹配'}
+              {isSmartMatchLoading ? <LoadingSpinner /> : <UserCircleIcon className="w-4 h-4 mr-1" />}
+              {isSmartMatchLoading ? '匹配中...' : '按CV/角色匹配'}
           </button>
           <button
               onClick={handleChapterMatchClick}

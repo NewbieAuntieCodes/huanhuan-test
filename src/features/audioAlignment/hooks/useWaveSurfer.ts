@@ -18,6 +18,77 @@ const formatTime = (t: number) => {
   return `${sign}${m}:${s}.${ms}`;
 };
 
+/**
+ * Generate initial markers from existing audio segments
+ * by calculating cumulative durations of audio blobs that use this source audio
+ */
+const generateInitialMarkersFromSegments = async (sourceAudioId: string, projects: any[], selectedProjectId: string | null): Promise<number[]> => {
+  try {
+    // Find all audio blobs that use this source audio
+    const allBlobs = await db.audioBlobs.toArray();
+    const relevantBlobs = allBlobs.filter(blob => blob.sourceAudioId === sourceAudioId);
+
+    if (relevantBlobs.length === 0) {
+      return [];
+    }
+
+    // Get the project to determine the correct order of lines
+    const currentProject = projects.find(p => p.id === selectedProjectId);
+    if (!currentProject) {
+      return [];
+    }
+
+    // Build a map of lineId to their position in the project
+    const lineIdToPosition = new Map<string, number>();
+    let position = 0;
+    for (const chapter of currentProject.chapters) {
+      for (const line of chapter.scriptLines) {
+        lineIdToPosition.set(line.id, position++);
+      }
+    }
+
+    // Sort blobs by their line position in the project
+    relevantBlobs.sort((a, b) => {
+      const posA = lineIdToPosition.get(a.lineId) ?? Infinity;
+      const posB = lineIdToPosition.get(b.lineId) ?? Infinity;
+      return posA - posB;
+    });
+
+    // Create an audio context to decode audio durations
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+
+    try {
+      const markers: number[] = [];
+      let cumulativeTime = 0;
+
+      // Decode each blob and calculate cumulative timestamps
+      for (const blob of relevantBlobs) {
+        const arrayBuffer = await blob.data.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        const duration = audioBuffer.duration;
+
+        // Add marker at the end of this segment (which is the start of the next)
+        cumulativeTime += duration;
+        markers.push(cumulativeTime);
+      }
+
+      // Remove the last marker since it would be at the end of the audio
+      if (markers.length > 0) {
+        markers.pop();
+      }
+
+      return markers;
+    } finally {
+      if (audioContext.state !== 'closed') {
+        await audioContext.close();
+      }
+    }
+  } catch (error) {
+    console.error('Failed to generate initial markers:', error);
+    return [];
+  }
+};
+
 interface UseWaveSurferProps {
   isOpen: boolean;
   sourceAudioInfo: { id: string; filename: string };
@@ -146,15 +217,16 @@ export const useWaveSurfer = ({
             const masterAudio = await db.masterAudios.get(sourceAudioInfo.id);
             if (!masterAudio) throw new Error('母带音频未找到');
             void ws.loadBlob(masterAudio.data);
-    
+
             const customMarkers = await db.audioMarkers.get(sourceAudioInfo.id);
             if (customMarkers?.markers?.length > 0) {
                 setMarkerState(prev => ({...prev, markers: customMarkers.markers}));
                 setHistoryState({ history: [customMarkers.markers], index: 0, canUndo: false, canRedo: false });
             } else {
-              // Fallback logic for initial marker generation removed for brevity, assuming markers are either saved or added manually.
-              setMarkerState(prev => ({...prev, markers: []}));
-              setHistoryState({ history: [[]], index: 0, canUndo: false, canRedo: false });
+              // Generate initial markers from existing audio segments
+              const initialMarkers = await generateInitialMarkersFromSegments(sourceAudioInfo.id, projects, selectedProjectId);
+              setMarkerState(prev => ({...prev, markers: initialMarkers}));
+              setHistoryState({ history: [initialMarkers], index: 0, canUndo: false, canRedo: false });
             }
         } catch (e) {
             setError(e instanceof Error ? e.message : '加载音频失败');

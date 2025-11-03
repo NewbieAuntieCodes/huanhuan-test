@@ -72,10 +72,8 @@ const AudioAlignmentPage: React.FC = () => {
   }, [activeRecordingLineId]);
   
   const {
-    isCvMatchLoading,
-    handleFileSelectionForCvMatch,
-    isCharacterMatchLoading,
-    handleFileSelectionForCharacterMatch,
+    isSmartMatchLoading,
+    handleFileSelectionForSmartMatch,
     isChapterMatchLoading,
     handleFileSelectionForChapterMatch,
   } = useAudioFileMatcher({
@@ -118,6 +116,8 @@ const AudioAlignmentPage: React.FC = () => {
       totalPages,
       paginatedChapters,
       handlePageChange,
+      allVisibleChaptersSelected,
+      handleToggleSelectAllOnPage,
   } = usePaginatedChapters({
       chapters: currentProject?.chapters || [],
       projectId: currentProject?.id,
@@ -286,8 +286,7 @@ const AudioAlignmentPage: React.FC = () => {
             projectCharacters={projectCharacters}
             projectCvNames={projectCvNames}
             onOpenSilenceSettings={() => setIsSilenceSettingsModalOpen(true)}
-            isCvMatchLoading={isCvMatchLoading}
-            isCharacterMatchLoading={isCharacterMatchLoading}
+            isSmartMatchLoading={isSmartMatchLoading}
             isChapterMatchLoading={isChapterMatchLoading}
             onOpenExportModal={() => setIsExportModalOpen(true)}
             isExporting={isExporting}
@@ -295,8 +294,7 @@ const AudioAlignmentPage: React.FC = () => {
             hasAudioInSelection={hasAudioInSelection}
             multiSelectCount={multiSelectCount}
             onGoBack={onGoBack}
-            onFileSelectionForCvMatch={handleFileSelectionForCvMatch}
-            onFileSelectionForCharacterMatch={handleFileSelectionForCharacterMatch}
+            onFileSelectionForSmartMatch={handleFileSelectionForSmartMatch}
             onFileSelectionForChapterMatch={handleFileSelectionForChapterMatch}
         />
         <div className="flex flex-grow overflow-hidden">
@@ -312,6 +310,8 @@ const AudioAlignmentPage: React.FC = () => {
                     currentPage={currentPage}
                     totalPages={totalPages}
                     handlePageChange={handlePageChange}
+                    allVisibleChaptersSelected={allVisibleChaptersSelected}
+                    handleToggleSelectAllOnPage={handleToggleSelectAllOnPage}
                 />
             }
             rightPanel={

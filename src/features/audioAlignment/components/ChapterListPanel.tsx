@@ -12,6 +12,8 @@ interface ChapterListPanelProps {
     currentPage: number;
     totalPages: number;
     handlePageChange: (page: number) => void;
+    allVisibleChaptersSelected: boolean;
+    handleToggleSelectAllOnPage: () => void;
 }
 
 const formatChapterNumber = (index: number) => {
@@ -30,11 +32,27 @@ const ChapterListPanel: React.FC<ChapterListPanelProps> = ({
     currentPage,
     totalPages,
     handlePageChange,
+    allVisibleChaptersSelected,
+    handleToggleSelectAllOnPage,
 }) => {
   return (
     <div className="p-3 h-full flex flex-col bg-slate-800 text-slate-100">
       <h2 className="text-lg font-semibold text-slate-300 mb-3">章节列表 ({currentProjectChapters.length})</h2>
-      
+
+      <div className="flex items-center space-x-2 mb-2 pb-2 border-b border-slate-700">
+        <input
+          type="checkbox"
+          id="select-all-on-page"
+          checked={allVisibleChaptersSelected}
+          onChange={handleToggleSelectAllOnPage}
+          disabled={paginatedChapters.length === 0}
+          className="form-checkbox h-4 w-4 text-sky-500 bg-slate-700 border-slate-600 rounded focus:ring-sky-400 cursor-pointer disabled:opacity-50"
+        />
+        <label htmlFor="select-all-on-page" className="text-sm text-slate-300 select-none cursor-pointer">
+          全选当前页 ({multiSelectedChapterIds.length} / {currentProjectChapters.length})
+        </label>
+      </div>
+
       <div className="flex-grow overflow-y-auto space-y-1 pr-1 -mr-1">
           {paginatedChapters.map(chapter => {
               const chapterIndex = currentProjectChapters.findIndex(c => c.id === chapter.id);
