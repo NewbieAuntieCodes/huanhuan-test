@@ -315,8 +315,11 @@ const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, index, nextLine
                         {character?.name || '旁白'}
                     </div>
 
-                    <div className={`flex-grow ${rowTextStyle.className}`} style={rowTextStyle.style}>
-                        {line.text}
+                    <div
+                        className={`flex-grow ${rowTextStyle.className}`}
+                        style={rowTextStyle.style}
+                        dangerouslySetInnerHTML={{ __html: line.text }}
+                    >
                     </div>
                     <div className="flex-shrink-0 flex items-center space-x-2 z-10">
                         <button
