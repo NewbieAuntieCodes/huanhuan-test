@@ -20,7 +20,6 @@ export interface ProjectSlice {
   deleteProject: (projectId: string) => Promise<void>;
   addCollaboratorToProject: (projectId: string, username: string, role: 'reader' | 'editor') => Promise<void>;
   appendChaptersToProject: (projectId: string, newChapters: Chapter[]) => Promise<void>;
-  insertChapterAfter: (projectId: string, afterChapterId: string) => Promise<void>;
   addCustomSoundType: (projectId: string, soundType: string) => Promise<void>;
   deleteCustomSoundType: (projectId: string, soundType: string) => Promise<void>;
   batchAddChapters: (projectId: string, count: number) => Promise<void>;
@@ -169,38 +168,6 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
         return p;
       }).sort((a, b) => b.lastModified - a.lastModified),
     }));
-  },
-  insertChapterAfter: async (projectId, afterChapterId) => {
-    const state = get();
-    const project = state.projects.find(p => p.id === projectId);
-    if (!project) return;
-
-    const afterIndex = project.chapters.findIndex(c => c.id === afterChapterId);
-    if (afterIndex === -1) return;
-
-    const newChapter: Chapter = {
-        id: `ch_${Date.now()}_${Math.random()}`,
-        title: `新章节`,
-        rawContent: '',
-        scriptLines: [],
-    };
-
-    const newChapters = [...project.chapters];
-    newChapters.splice(afterIndex + 1, 0, newChapter);
-
-    const updatedProject = {
-        ...project,
-        chapters: newChapters,
-        lastModified: Date.now(),
-    };
-
-    await db.projects.put(updatedProject);
-    
-    set(state => ({
-        projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
-    }));
-    
-    await get().setSelectedChapterId(newChapter.id);
   },
   addCustomSoundType: async (projectId, soundType) => {
     const state = get();

@@ -1,6 +1,5 @@
-
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Project, ScriptLine, CharacterFilterMode } from '../../../types';
+import { Project, ScriptLine, CharacterFilterMode, Chapter } from '../../../types';
 import { internalParseScriptToChapters } from '../../../lib/scriptParser';
 import { useStore } from '../../../store/useStore';
 
@@ -103,6 +102,35 @@ export const useEnhancedEditorCoreLogic = ({
     }));
   }, [applyUndoableProjectUpdate]);
 
+  const insertChapterAfter = useCallback((afterChapterId: string) => {
+    const newChapter: Chapter = {
+        id: `ch_${Date.now()}_${Math.random()}`,
+        title: `新章节`,
+        rawContent: '',
+        scriptLines: [],
+    };
+    
+    applyUndoableProjectUpdate(prevProject => {
+      const afterIndex = prevProject.chapters.findIndex(c => c.id === afterChapterId);
+      if (afterIndex === -1) {
+        return {
+          ...prevProject,
+          chapters: [...prevProject.chapters, newChapter],
+        };
+      }
+
+      const newChapters = [...prevProject.chapters];
+      newChapters.splice(afterIndex + 1, 0, newChapter);
+
+      return {
+        ...prevProject,
+        chapters: newChapters,
+      };
+    });
+
+    setSelectedChapterId(newChapter.id);
+  }, [applyUndoableProjectUpdate, setSelectedChapterId]);
+
   return {
     currentProject,
     isLoadingProject,
@@ -126,5 +154,6 @@ export const useEnhancedEditorCoreLogic = ({
     redo,
     canUndo,
     canRedo,
+    insertChapterAfter,
   };
 };
