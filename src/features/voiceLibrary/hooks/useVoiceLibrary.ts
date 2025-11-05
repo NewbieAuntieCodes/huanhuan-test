@@ -239,10 +239,11 @@ export const useVoiceLibrary = () => {
             const results = await generateTtsBatch(ttsItems);
             for (let i = 0; i < results.length; i++) {
                 const item = results[i];
+                const row = rowsToProcess[i];
                 if (item.ok && item.audioUrl) {
-                    await processAndAssignAudio(rowsToProcess[i], item.audioUrl);
+                    await processAndAssignAudio(row, item.audioUrl);
                 } else {
-                    updateRow(rowsToProcess[i].id, { status: 'error', error: String(item.error || '生成失败') });
+                    updateRow(row.id, { status: 'error', error: String(item.error || '生成失败') });
                 }
             }
         } catch (err) {

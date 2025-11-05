@@ -42,7 +42,7 @@ export const useEnhancedEditorCoreLogic = ({
         setHistoryIndex(0);
         setCvFilter(null); // Reset filter on project change
         // NOTE: Initial chapter selection is now fully handled by the `setSelectedProjectId` action in the store,
-        // which correctly sets the last viewed chapter or the first chapter.
+        // which correctly restores the last viewed chapter or the first chapter.
       }
       
       // If the selected chapter ID is no longer valid (e.g., deleted), clear it.
@@ -54,7 +54,7 @@ export const useEnhancedEditorCoreLogic = ({
   }, [currentProject, selectedChapterId, history, setSelectedChapterId]);
 
   const applyUndoableProjectUpdate = useCallback((updater: (prevProject: Project) => Project) => {
-    const projectToUpdate = history[historyIndex];
+    const projectToUpdate = currentProject; // FIX: Use the up-to-date currentProject, not the stale one from history.
     if (!projectToUpdate) return;
 
     const newProject = updater(projectToUpdate);
@@ -62,7 +62,7 @@ export const useEnhancedEditorCoreLogic = ({
     setHistory([...newHistory, newProject]);
     setHistoryIndex(newHistory.length);
     onProjectUpdate(newProject);
-  }, [history, historyIndex, onProjectUpdate]);
+  }, [history, historyIndex, onProjectUpdate, currentProject]); // Add currentProject dependency
 
   const undo = useCallback(() => {
     if (canUndo) {

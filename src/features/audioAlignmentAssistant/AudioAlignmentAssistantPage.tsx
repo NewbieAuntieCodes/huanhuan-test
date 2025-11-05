@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
 import { Character, Chapter, ParsedFileInfo, AudioAssistantState } from '../../types';
@@ -209,7 +210,7 @@ const AudioAlignmentAssistantPage: React.FC = () => {
             setDirectoryHandle(handle);
             await scanDirectory(handle, true);
         } catch (err) {
-            // The 'err' object is of type 'unknown'. Added a type guard to safely check 'err.name' before accessing it.
+            // FIX: Add type guard for 'unknown' error object before accessing properties.
             if (err instanceof Error && err.name === 'AbortError') {
                 // User cancelled the picker, this is not an error to be logged.
             } else {
