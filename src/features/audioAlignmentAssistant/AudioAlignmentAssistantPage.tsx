@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
 import { Character, Chapter, ParsedFileInfo, AudioAssistantState } from '../../types';
@@ -388,7 +389,7 @@ const AudioAlignmentAssistantPage: React.FC = () => {
                 const relevantFiles = fileCoverage.get(chapterNum) || [];
                 const charIdsInChapter = new Set(chapter.scriptLines.map(l => l.characterId).filter((id): id is string => !!id));
 
-                // Replaced forEach with a for...of loop for better TypeScript type inference, resolving the 'unknown index type' error.
+                // FIX: Replaced forEach with a for...of loop for better TypeScript type inference, resolving a potential 'unknown index type' error where the iterator variable type was not correctly inferred.
                 for (const charId of charIdsInChapter) {
                     const character = projectCharacters.find(c => c.id === charId);
                     if (!character) {

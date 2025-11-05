@@ -166,16 +166,15 @@ export const useScriptLineEditor = (
   }, [applyUndoableProjectUpdate, characters, currentProject]);
 
 
-  const handleSplitScriptLine = useCallback((chapterId: string, lineId: string, splitIndex: number) => {
+  const handleSplitScriptLine = useCallback((chapterId: string, lineId: string, splitIndex: number, currentText: string) => {
     applyUndoableProjectUpdate(prevProject => {
         const newChapters = prevProject.chapters.map(ch => {
             if (ch.id === chapterId) {
                 const newScriptLines: ScriptLine[] = [];
                 ch.scriptLines.forEach(line => {
                     if (line.id === lineId) {
-                        const originalText = line.text;
-                        const part1 = originalText.substring(0, splitIndex).trim();
-                        const part2 = originalText.substring(splitIndex).trim();
+                        const part1 = currentText.substring(0, splitIndex);
+                        const part2 = currentText.substring(splitIndex);
 
                         if (part1) {
                             newScriptLines.push({

@@ -10,7 +10,7 @@ interface ScriptEditorPanelProps {
   // Callbacks for script line operations, passed directly from EditorPage's useScriptLineEditor hook
   onUpdateScriptLineText: (chapterId: string, lineId: string, newText: string) => void;
   onAssignCharacterToLine: (chapterId: string, lineId: string, characterId: string) => void;
-  onSplitScriptLine: (chapterId: string, lineId: string, splitIndex: number) => void;
+  onSplitScriptLine: (chapterId: string, lineId: string, splitIndex: number, currentText: string) => void;
   onMergeAdjacentLines: (chapterId: string, lineId: string) => void;
   onDeleteScriptLine: (chapterId: string, lineId: string) => void;
   // Callback for opening CV modal, passed from EditorPage's useEditorModals hook
@@ -117,25 +117,26 @@ const ScriptEditorPanel: React.FC<ScriptEditorPanelProps> = ({
       if (!selection || selection.rangeCount === 0) return;
 
       const range = selection.getRangeAt(0);
-      const container = range.startContainer;
       
-      let el = container.nodeType === 3 ? container.parentElement : container as HTMLElement;
+      let el: Node | null = range.startContainer;
       let contentEditableEl: HTMLElement | null = null;
       while(el) {
-          if (el.isContentEditable) {
-              contentEditableEl = el;
+          if (el.nodeType === Node.ELEMENT_NODE && (el as HTMLElement).isContentEditable) {
+              contentEditableEl = el as HTMLElement;
               break;
           }
           el = el.parentElement;
       }
       
       if (contentEditableEl) {
-          const preCaretRange = range.cloneRange();
+          const currentText = contentEditableEl.innerText;
+
+          const preCaretRange = document.createRange();
           preCaretRange.selectNodeContents(contentEditableEl);
-          preCaretRange.setEnd(range.endContainer, range.endOffset);
+          preCaretRange.setEnd(range.startContainer, range.startOffset);
           const splitIndex = preCaretRange.toString().length;
           
-          onSplitScriptLine(selectedChapter.id, focusedScriptLineId, splitIndex);
+          onSplitScriptLine(selectedChapter.id, focusedScriptLineId, splitIndex, currentText);
       }
     }
   };

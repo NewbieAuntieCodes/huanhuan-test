@@ -157,10 +157,9 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
 
   const handleDivBlur = (e: React.FocusEvent<HTMLDivElement>) => {
     onFocusChange(null);
-    const newText = e.currentTarget.innerHTML; // Use innerHTML to preserve potential formatting
+    const newText = e.currentTarget.innerText;
     
-    // Check innerText for emptiness to correctly handle cases with empty tags like <br>
-    if (e.currentTarget.innerText.trim() === '') {
+    if (newText.trim() === '') {
         onDelete(line.id);
     } else if (newText !== line.text) {
       onUpdateText(line.id, newText);
