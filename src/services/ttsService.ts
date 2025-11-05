@@ -27,7 +27,8 @@ export const uploadTtsPrompt = async (file: File): Promise<string> => {
     return data.filePath;
 };
 
-interface TtsBatchItem {
+// FIX: Export TtsBatchItem to make it available for import in other modules.
+export interface TtsBatchItem {
     promptAudio: string | null;
     text: string;
 }

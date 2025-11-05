@@ -1,94 +1,57 @@
-# 代码重构计划文档
-
-本文档旨在识别当前项目中存在的代码复杂性问题，并提供一个分阶段、可执行的重构计划，以提高代码质量、可维护性和可扩展性。
-
-## 一、 代码分析
-
-通过对项目文件的审查，我们识别出以下几个文件因代码行数过多（超过500行）和职责过重而成为潜在的维护瓶颈：
-
-1.  **`src/features/audioAlignment/components/AudioWaveformEditor.tsx` (~620行)**
-    *   **问题**: 这是一个典型的“上帝组件”（God Component）。它独自承担了UI渲染、复杂的状态管理（标记、历史记录、缩放、平移）、第三方库 `WaveSurfer.js` 的生命周期管理以及多种用户交互事件（键盘、鼠标）的监听。这导致组件内部逻辑高度耦合，难以理解、测试和修改。
-
-2.  **`src/features/audioAlignment/AudioAlignmentPage.tsx` (~580行)**
-    *   **问题**: 作为页面级组件，它整合了过多的子组件和功能入口，包括章节列表、脚本行、全局播放器和大量的顶部操作按钮。虽然部分逻辑已通过Hooks抽离，但组件本身仍然管理着复杂的UI布局、状态过滤、弹窗和事件处理，职责过于宽泛。
-
-3.  **`src/store/slices/projectSlice.ts` (~500行)**
-    *   **问题**: 这个 Zustand 状态管理文件几乎囊括了所有与项目数据相关的核心操作，从项目的基础增删改查到具体的音频分配、重分段等，职责边界模糊，导致文件体积庞大，后续难以维护。
-
-### 结论
-
-**项目亟需进行模块化和重构。**
-
-当前的代码虽然具备了良好的顶层目录结构，但在组件和状态管理的实现层面，已经出现了成为“屎山代码”的明显趋势。如果不加以控制，随着新功能的不断加入，维护成本将急剧上升。
-
----
-
-## 二、 重构计划
-
-本计划遵循“分阶段、低风险”的原则，旨在将大型、复杂的模块拆分为更小、更专注、更易于管理的单元。
-
-### **第一阶段：重构 `AudioWaveformEditor.tsx` (最高优先级)**
-
----
-**状态更新：** ✅ **此阶段已完成。**
-
-`AudioWaveformEditor.tsx` 已被重构。其核心状态和交互逻辑被抽离到了新的自定义 Hook `useWaveSurfer.ts` 中。UI部分也被拆分成了多个独立的子组件 (`WaveformToolbar.tsx`, `WaveformZoomControl.tsx`, `WaveformMarkers.tsx`, `WaveformHotkeysInfo.tsx`)。主组件现在作为一个清爽的视图层，负责组合这些模块化的部分。
----
-
-**原计划:**
-
-1.  **逻辑抽离 (自定义 Hooks):**
-    *   创建 **`useWaveformState.ts`**: 将所有与波形图UI状态相关的 `useState` 和 `useRef` (如 `markers`, `history`, `zoomLevel` 等) 及其更新函数迁移至此。
-    *   创建 **`useWaveSurfer.ts`**: 封装所有与 `WaveSurfer.js` 实例相关的逻辑，包括初始化、加载音频、事件监听和销毁。此 Hook 负责管理 `WaveSurfer` 的整个生命周期。
-    *   创建 **`useWaveformInteraction.ts`**: 抽离所有用户交互逻辑，包括键盘快捷键监听、鼠标滚轮缩放、中键拖动平移等。
-
-2.  **UI拆分 (子组件):**
-    *   创建 **`WaveformMarker.tsx`**: 封装渲染单个波形标记点（Marker）的逻辑。
-    *   创建 **`WaveformToolbar.tsx`**: 将顶部的工具栏（播放、撤销、重做、保存等按钮）拆分为独立组件。
-    *   创建 **`WaveformHotkeysInfo.tsx`**: 将底部的快捷键提示信息拆分为独立组件。
-
-**预期效果**: `AudioWaveformEditor.tsx` 将转变为一个轻量级的“容器组件”，其主要职责是组合上述 Hooks 和子组件，代码行数将大幅减少，逻辑清晰。
-
-### **第二阶段：重构 `AudioAlignmentPage.tsx` (中优先级)**
-
----
-**状态更新：** ✅ **UI拆分部分已完成。**
-
-`AudioAlignmentPage.tsx` 的 UI 结构已成功重构。为了降低其复杂性，页面已被拆分为三个独立的子组件：
-- **`AudioAlignmentHeader.tsx`**: 封装了顶部的操作栏。
-- **`ChapterListPanel.tsx`**: 封装了左侧的章节列表和分页逻辑。
-- **`ScriptLineList.tsx`**: 封装了右侧的脚本行渲染区域。
-
-主页面组件现在作为一个“协调器”，负责状态管理并将数据传递给子组件。这大大简化了主页面的结构，提高了可读性。下一步将继续本阶段的第二部分：将业务逻辑抽离到自定义 Hooks 中。
----
-
-**计划:**
-
-1.  **UI拆分 (子组件):** ✅ **已完成**
-    *   创建 **`AudioAlignmentHeader.tsx`**: 封装页面顶部的所有操作按钮和状态显示。
-    *   创建 **`ScriptLineList.tsx`**: 封装渲染脚本行列表的核心区域，使其独立于页面布局。
-    *   *(额外完成)*: 创建 **`ChapterListPanel.tsx`** 来管理左侧面板。
-
-2.  **逻辑抽离 (自定义 Hooks):** 🟡 **下一步**
-    *   创建 **`useAudioExport.ts`**: 将音频导出的复杂逻辑（包括弹窗状态）封装起来。
-    *   创建 **`useChapterSelection.ts`**: 将章节多选和 `Shift` 键范围选择的逻辑封装起来，提高复用性。
-
-**预期效果**: `AudioAlignmentPage.tsx` 将主要负责 `ResizablePanels` 的布局和高阶状态的传递，自身的业务逻辑代码将显著减少。
-
-### **第三阶段：审视并拆分 `projectSlice.ts` (长期规划)**
-
-解决状态管理文件过于臃肿的问题，为未来的功能扩展做准备。
-
-1.  **分析职责**: 当前 Slice 混合了项目结构、音频数据、用户设置等多个不同维度的状态。
-2.  **拆分方案 (可选):** 根据职责边界，可以考虑将其拆分为更小的 Slices，例如：
-    *   `projectStructureSlice.ts`: 管理项目的基本信息、章节的增删改。
-    *   `projectAudioSlice.ts`: 专职管理所有与项目中音频数据相关的操作。
-    *   `userSettingsSlice.ts`: 管理用户配置，如快捷键、API设置等。
-
-**注意**: 拆分 Zustand Store 会引入一些额外的集成样板代码。在当前阶段，可以优先完成前两个阶段的组件重构，将此步骤作为长期优化目标。
-
----
-
-## 三、 总结
-
-遵循此计划，我们可以系统性地改善代码库的健康状况，降低未来开发的复杂度和风险。建议从第一阶段开始，循序渐进地实施重构。
+1. src/features/voiceLibrary/hooks/useVoiceLibrary.ts (约 478 行)
+结论：是，强烈建议进行重构拆分。
+原因分析：
+这个自定义Hook（useVoiceLibrary）目前是一个典型的“上帝Hook”（God Hook），它承担了过多的职责，违反了单一职责原则。具体来说，它混合了以下几种完全不同的关注点：
+UI状态管理：管理页面上的行数据（rows）、加载状态（isGenerating）、筛选条件等。
+服务器API通信：封装了所有与本地TTS服务器的 fetch 请求，包括健康检查、文件上传和批量生成。
+数据同步与持久化：负责从Zustand store中加载台词，并将生成后的音频保存到IndexedDB（db）中。
+业务逻辑：包含了批量生成、单个生成、添加/删除行等具体的操作流程。
+数据导出：封装了两种复杂的音频导出逻辑（导出带标记的WAV和导出ZIP片段）。
+重构建议：
+可以将这个巨大的Hook拆分为多个更小、更专注的模块：
+useTtsApi.ts (自定义Hook): 专门负责与TTS服务器的所有API交互。它将包含 checkTtsServerHealth, uploadTtsPrompt, generateTtsBatch 等函数，并管理与API请求相关的加载和错误状态。
+voiceLibraryExporter.ts (服务/工具函数): 将 exportMarkedWav 和 exportCharacterClips 这两个复杂的导出函数移至一个独立的工具文件中。这些是纯粹的功能，不需要成为Hook的一部分。
+useVoiceLibraryData.ts (自定义Hook): 专门负责从 store 中根据筛选条件（角色、章节）加载和准备台词数据，并将其格式化为页面所需的 rows 结构。
+useVoiceLibrary.ts (主Hook - 重构后): 重构后的主Hook将变得非常轻量。它会调用上面拆分出的其他Hooks和服务，作为一个“协调器”来组合这些功能，管理顶层状态（如 activePlayerKey），并向UI组件提供最终的接口。
+好处：拆分后，每一部分的逻辑都更加清晰、内聚，易于单独测试和维护。例如，如果未来需要更换TTS服务或修改导出格式，只需修改对应的独立模块，而不会影响到其他部分。
+2. src/features/audioAlignment/hooks/useAudioFileMatcher.ts (约 463 行)
+结论：是，同样是重构的绝佳候选者。
+原因分析：
+这个Hook也存在职责过多的问题，它将高层的用户交互流程与底层的、复杂的、可复用的工具函数混合在一起。其主要职责包括：
+文件处理流程管理：处理文件选择事件，管理加载状态（isLoading）。
+文件名解析：根据 章节_角色名.wav 这种约定格式解析文件名。
+音频元数据解析：使用 music-metadata-browser 读取音频信息，特别是包含了非常具体且复杂的Adobe Audition XMP标记点的解析逻辑（parseXmpCuePoints）。
+音频处理：根据标记点在内存中对音频进行分段。
+状态更新与反馈：调用store中的action来分配音频，并生成最终的弹窗报告。
+重构建议：
+创建 utils/audioParsing.ts 或类似工具文件：
+将 parseChapterIdentifier（解析章节标识符）、parseXmpCuePoints（解析XMP标记）等纯粹的、无副作用的解析函数提取到这个文件中。这些函数是高度可复用且非常适合进行单元测试的。
+可以再创建一个 parseAudioFilename 函数，专门负责从文件名中提取章节和角色/CV标识。
+创建 utils/audioProcessing.ts 工具文件：
+可以创建一个 splitAudioBufferByMarkers 函数，它接收一个 AudioBuffer 和一组时间戳，返回切割后的多个 Blob。这能将音频处理逻辑与文件匹配流程分离。
+useAudioFileMatcher.ts (主Hook - 重构后): 重构后的Hook将专注于协调整个流程。它会调用上述工具函数来解析文件名和元数据，然后调用音频处理工具来分段，最后调用 store 的 action 来保存数据，并管理整个过程的 isLoading 状态和最终的报告。
+好处：将复杂的、底层的解析和处理逻辑抽离为纯函数，使得主Hook的逻辑变得非常线性、清晰：接收文件 -> 解析信息 -> 处理音频 -> 更新状态。这极大地提高了代码的可读性和可维护性。
+3. src/features/audioAlignmentAssistant/AudioAlignmentAssistantPage.tsx (约 413 行)
+结论：是，建议重构，但优先级可能低于前两个Hook。
+原因分析：
+这个文件是一个页面级组件，而不是一个Hook。对于组件来说，400多行也偏长。它的问题在于混合了大量的业务逻辑、状态管理和UI渲染。
+复杂的业务逻辑：
+包含了完整的文件系统扫描逻辑（scanDirectory），这涉及到与浏览器原生API（File System Access API）的深度交互。
+核心的对比逻辑（finalMatchStatus中的useMemo）非常庞大，它负责将扫描到的文件与项目脚本进行比对，计算完成度。
+过多的本地状态：使用多个 useState 来管理UI状态（directoryName, isLoading, scannedFiles, manualOverrides, selectedRangeIndex, selectedChapterId）。
+UI渲染：负责渲染三栏布局、列表、状态图标等所有UI元素。
+重构建议：
+遵循“智能Hook，傻瓜组件”（Smart Hooks, Dumb Components）的最佳实践。
+创建 useAudioAlignmentAssistant.ts (自定义Hook):
+将所有的 useState, useRef, useMemo（特别是复杂的 finalMatchStatus 计算）以及所有相关的函数（如 scanDirectory, handleSelectDirectory, handleRescan, handleToggleCharacter）全部移动到这个新的Hook中。
+这个Hook将负责所有的数据获取、处理和状态管理，并向外暴露简洁的状态和操作函数（例如：isLoading, directoryName, ranges, chapters, characters, selectRange, selectChapter, toggleCharacterOverride）。
+拆分UI组件：
+将三栏布局中的每一栏都拆分为独立的、纯粹的展示组件，例如：
+RangeList.tsx
+ChapterList.tsx
+CharacterStatusGrid.tsx
+这些子组件只负责接收数据（props）并渲染UI，以及调用从父组件传递下来的回调函数。
+AudioAlignmentAssistantPage.tsx (页面组件 - 重构后): 重构后的页面组件将变得非常简洁。它只需要：
+调用 useAudioAlignmentAssistant() Hook获取所有数据和逻辑。
+将这些数据和函数作为 props 传递给上面拆分出的各个UI子组件，完成布局。
+好处：逻辑和视图完全分离。页面组件只关心“长什么样”，而Hook关心“如何工作”。这使得两部分都可以独立开发和测试，也符合React的现代开发范式。

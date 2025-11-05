@@ -1,85 +1,38 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useStore } from '../../../store/useStore';
-import { Character, Chapter, ScriptLine } from '../../../types';
 import { db } from '../../../db';
-import { checkTtsServerHealth, uploadTtsPrompt, generateTtsBatch, TTS_SERVER_ORIGIN } from '../../../services/ttsService';
+import { TTS_SERVER_ORIGIN } from '../../../services/ttsService';
 import { exportMarkedWav, exportCharacterClips } from '../services/voiceLibraryExporter';
+import { useTtsApi } from './useTtsApi';
+import { useVoiceLibraryData, VoiceLibraryRowState } from './useVoiceLibraryData';
 
-
-type RowStatus = 'idle' | 'uploading' | 'generating' | 'done' | 'error';
-type ServerHealth = 'checking' | 'ok' | 'error' | 'unknown';
-
-export interface VoiceLibraryRowState {
-  id: string;
-  promptFilePath: string | null;
-  promptAudioUrl: string | null;
-  promptFileName: string | null;
-  text: string;
-  status: RowStatus;
-  audioUrl: string | null;
-  error: string | null;
-  originalLineId?: string;
-}
+export type { VoiceLibraryRowState }; // Re-export for other components
 
 // --- Main Hook ---
 export const useVoiceLibrary = () => {
-    const { projects, characters, selectedProjectId, assignAudioToLine, selectedChapterId } = useStore(state => ({
-        projects: state.projects,
-        characters: state.characters,
+    const { selectedProjectId, assignAudioToLine, selectedChapterId, characters } = useStore(state => ({
         selectedProjectId: state.selectedProjectId,
         assignAudioToLine: state.assignAudioToLine,
         selectedChapterId: state.selectedChapterId,
+        characters: state.characters, // needed for exporter
     }));
 
-    const [rows, setRows] = useState<VoiceLibraryRowState[]>([]);
-    const [isGenerating, setIsGenerating] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
-    const [serverHealth, setServerHealth] = useState<ServerHealth>('unknown');
     const [selectedCharacterId, setSelectedCharacterId] = useState<string>('');
     const [chapterFilter, setChapterFilter] = useState('');
     const [generatedAudioUrls, setGeneratedAudioUrls] = useState<Record<string, string>>({});
-
+    
     const objectUrlsRef = useRef<Record<string, string>>({});
     const syncedChapterIdRef = useRef<string | null>(null);
 
-    // Cleanup object URLs on unmount
-    useEffect(() => {
-        const promptUrls = Object.values(objectUrlsRef.current);
-        const genUrls = Object.values(generatedAudioUrls);
-        return () => {
-            promptUrls.forEach(URL.revokeObjectURL);
-            genUrls.forEach(URL.revokeObjectURL);
-        };
-    }, [generatedAudioUrls]);
+    // Using new hooks
+    const { isGenerating, serverHealth, checkServerHealth, uploadTtsPrompt, generateTtsBatch } = useTtsApi();
+    const { rows, setRows, currentProject, charactersInProject } = useVoiceLibraryData({
+        selectedCharacterId,
+        chapterFilter
+    });
 
-    const currentProject = useMemo(() => projects.find(p => p.id === selectedProjectId), [projects, selectedProjectId]);
-    
-    const charactersInProject = useMemo(() => {
-        if (!selectedProjectId) {
-            return characters.filter(c => !c.projectId && c.status !== 'merged' && c.name !== '[静音]' && c.name !== '音效' && c.name !== 'Narrator');
-        }
-        return characters.filter(c =>
-            (c.projectId === selectedProjectId || !c.projectId) &&
-            c.status !== 'merged' && 
-            c.name !== '[静音]' && 
-            c.name !== '音效' &&
-            c.name !== 'Narrator'
-        );
-    }, [characters, selectedProjectId]);
-
-    const selectedCharacter = useMemo(() => characters.find(c => c.id === selectedCharacterId), [characters, selectedCharacterId]);
-
-    const updateRow = useCallback((id: string, updates: Partial<VoiceLibraryRowState>) => {
-        setRows(prevRows => prevRows.map(row => row.id === id ? { ...row, ...updates } : row));
-    }, []);
-    
-    const handleCheckServerHealth = useCallback(async () => {
-        setServerHealth('checking');
-        const isOk = await checkTtsServerHealth();
-        setServerHealth(isOk ? 'ok' : 'error');
-    }, []);
-
-    useEffect(() => { handleCheckServerHealth(); }, [handleCheckServerHealth]);
+    const selectedCharacter = useMemo(() => charactersInProject.find(c => c.id === selectedCharacterId), [charactersInProject, selectedCharacterId]);
 
     // Effect to sync chapter selection from other pages
     useEffect(() => {
@@ -92,6 +45,24 @@ export const useVoiceLibrary = () => {
             }
         }
     }, [selectedChapterId, currentProject]);
+
+    const updateRow = useCallback((id: string, updates: Partial<VoiceLibraryRowState>) => {
+        setRows(prevRows => prevRows.map(row => row.id === id ? { ...row, ...updates } : row));
+    }, [setRows]);
+
+    // Check server health on mount
+    useEffect(() => { checkServerHealth(); }, [checkServerHealth]);
+
+    // --- Audio URL management ---
+    // Cleanup object URLs on unmount
+    useEffect(() => {
+        const promptUrls = Object.values(objectUrlsRef.current);
+        const genUrls = Object.values(generatedAudioUrls);
+        return () => {
+            promptUrls.forEach(URL.revokeObjectURL);
+            genUrls.forEach(URL.revokeObjectURL);
+        };
+    }, [generatedAudioUrls]);
 
     // Effect to create/revoke Object URLs for generated audio from DB
     useEffect(() => {
@@ -142,63 +113,8 @@ export const useVoiceLibrary = () => {
         syncAudioUrls();
     }, [rows, currentProject, generatedAudioUrls]);
 
-    // Effect to populate rows based on filters
-    useEffect(() => {
-        if (!currentProject) {
-            setRows([]);
-            return;
-        }
-        const chapterMatchesFilter = (chapter: Chapter, index: number): boolean => {
-            const filter = chapterFilter.trim();
-            if (!filter) return false;
-            
-            const chapterNum = index + 1; // Use 1-based index
 
-            const rangeMatch = filter.match(/^(\d+)-(\d+)$/);
-            if (rangeMatch) {
-                const start = parseInt(rangeMatch[1], 10);
-                const end = parseInt(rangeMatch[2], 10);
-                return chapterNum >= start && chapterNum <= end;
-            }
-            
-            const singleNumMatch = filter.match(/^\d+$/);
-            if (singleNumMatch) {
-                return chapterNum === parseInt(filter, 10);
-            }
-
-            // Fallback to text search for non-numeric input
-            return chapter.title.includes(filter);
-        };
-        
-        const nonAudioCharacterIds = characters
-            .filter(c => c.name === '[静音]' || c.name === '音效')
-            .map(c => c.id);
-
-        const scriptLines = currentProject.chapters.flatMap((chapter, index) => {
-             if (chapterMatchesFilter(chapter, index)) {
-                let linesInChapter = chapter.scriptLines;
-                
-                // Filter out non-audio lines first
-                linesInChapter = linesInChapter.filter(line => !nonAudioCharacterIds.includes(line.characterId || ''));
-
-                if (selectedCharacterId) {
-                    // Then filter by character if one is selected
-                    return linesInChapter.filter(line => line.characterId === selectedCharacterId);
-                }
-                // No character selected, return all (already filtered) lines from the chapter
-                return linesInChapter;
-            }
-            return [];
-        });
-
-        setRows(scriptLines.map(line => ({
-            id: `row_${line.id}_${Math.random()}`,
-            promptFilePath: null, promptAudioUrl: null, promptFileName: null,
-            text: line.text, status: 'idle', audioUrl: null, error: null,
-            originalLineId: line.id,
-        })));
-    }, [selectedCharacterId, chapterFilter, currentProject, characters]);
-    
+    // --- Core Logic (Orchestration) ---
     const processAndAssignAudio = async (row: VoiceLibraryRowState, audioPath: string) => {
         if (!row.originalLineId || !selectedProjectId || !currentProject) return;
         
@@ -226,12 +142,10 @@ export const useVoiceLibrary = () => {
             alert('没有可生成的行 (确保已上传参考音频并填写了台词)。');
             return;
         }
-
-        setIsGenerating(true);
+        
         rowsToProcess.forEach(r => updateRow(r.id, { status: 'generating', error: null }));
 
         try {
-            // FIX: Mapped rowsToProcess to match the TtsBatchItem interface required by generateTtsBatch.
             const ttsItems = rowsToProcess.map(r => ({
                 promptAudio: r.promptFilePath,
                 text: r.text
@@ -249,10 +163,8 @@ export const useVoiceLibrary = () => {
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : '未知错误';
             rowsToProcess.forEach(r => updateRow(r.id, { status: 'error', error: errorMsg }));
-        } finally {
-            setIsGenerating(false);
         }
-    }, [rows, updateRow, processAndAssignAudio]);
+    }, [rows, updateRow, generateTtsBatch, processAndAssignAudio]);
     
     const handleGenerateSingle = useCallback(async (rowId: string) => {
         const row = rows.find(r => r.id === rowId);
@@ -267,7 +179,6 @@ export const useVoiceLibrary = () => {
 
         updateRow(rowId, { status: 'generating', error: null });
         try {
-            // FIX: Created an object matching the TtsBatchItem interface before calling generateTtsBatch.
             const ttsItem = {
                 promptAudio: row.promptFilePath,
                 text: row.text,
@@ -282,7 +193,7 @@ export const useVoiceLibrary = () => {
         } catch (err) {
             updateRow(rowId, { status: 'error', error: err instanceof Error ? err.message : '未知错误' });
         }
-    }, [rows, updateRow, processAndAssignAudio]);
+    }, [rows, updateRow, generateTtsBatch, processAndAssignAudio]);
 
     const handleUpload = useCallback(async (rowId: string, file: File) => {
         if (objectUrlsRef.current[rowId]) URL.revokeObjectURL(objectUrlsRef.current[rowId]);
@@ -296,7 +207,7 @@ export const useVoiceLibrary = () => {
         } catch (err) {
             updateRow(rowId, { status: 'error', error: err instanceof Error ? err.message : '未知上传错误', promptFilePath: null });
         }
-    }, [updateRow]);
+    }, [updateRow, uploadTtsPrompt]);
     
     const handleDeleteGeneratedAudio = useCallback(async (rowId: string) => {
         const row = rows.find(r => r.id === rowId);
@@ -307,7 +218,6 @@ export const useVoiceLibrary = () => {
 
         if (chapter && line?.audioBlobId) {
             await db.audioBlobs.delete(line.audioBlobId);
-            // This implicitly triggers a state update via useStore, which will cause the useEffect to clean up the URL
             await useStore.getState().updateLineAudio(selectedProjectId, chapter.id, line.id, null);
         }
     }, [rows, selectedProjectId, currentProject]);
@@ -347,8 +257,7 @@ export const useVoiceLibrary = () => {
         if (!currentProject || !selectedCharacter) return;
         setIsExporting(true);
         try {
-            // FIX: Pass `charactersInProject` to `exportMarkedWav` to satisfy its updated signature.
-            await exportMarkedWav(rows, currentProject, selectedCharacter, generatedAudioUrls, charactersInProject);
+            await exportMarkedWav(rows, currentProject, selectedCharacter, generatedAudioUrls, characters); // Pass all characters
         } catch (error) {
             alert(`导出失败: ${error instanceof Error ? error.message : '未知错误'}`);
         } finally {
@@ -380,7 +289,7 @@ export const useVoiceLibrary = () => {
         setChapterFilter,
         selectedCharacterId,
         handleSelectCharacter: setSelectedCharacterId,
-        checkServerHealth: handleCheckServerHealth,
+        checkServerHealth,
         handleBatchGenerate,
         handleGenerateSingle,
         handleUpload,
