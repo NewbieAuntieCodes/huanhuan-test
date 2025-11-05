@@ -1,14 +1,14 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Chapter } from '../../../../types';
-import { PencilIcon } from '../../../../components/ui/icons';
-import { useStore } from '../../../../store/useStore'; // Import useStore
+import { PencilIcon, EllipsisVerticalIcon, PlusIcon } from '../../../../components/ui/icons';
+import { useStore } from '../../../../store/useStore';
 
 interface ChapterListItemProps {
   chapter: Chapter;
   chapterIndex: number;
   isSelectedForViewing: boolean;
   isMultiSelected: boolean;
-  isAnyOperationLoading: boolean; // General loading state
+  isAnyOperationLoading: boolean;
   onToggleMultiSelect: (event: React.MouseEvent<HTMLInputElement>) => void;
   onSelectForViewing: () => void;
   
@@ -18,6 +18,7 @@ interface ChapterListItemProps {
   onTitleInputChange: (newTitle: string) => void;
   onSaveTitle: () => void; 
   onCancelEditTitle: () => void;
+  onInsertChapterAfter: () => void;
 }
 
 const formatChapterNumber = (index: number) => {
@@ -40,10 +41,13 @@ const ChapterListItem: React.FC<ChapterListItemProps> = ({
   onTitleInputChange,
   onSaveTitle,
   onCancelEditTitle,
+  onInsertChapterAfter,
 }) => {
   const titleInputRef = useRef<HTMLInputElement>(null);
   const aiProcessingChapterIds = useStore(state => state.aiProcessingChapterIds);
   const isProcessingThisChapter = aiProcessingChapterIds.includes(chapter.id);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isEditingThisItem && titleInputRef.current) {
@@ -51,6 +55,20 @@ const ChapterListItem: React.FC<ChapterListItemProps> = ({
       titleInputRef.current.select();
     }
   }, [isEditingThisItem]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    if (isMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMenuOpen]);
 
   const handleTitleInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -98,7 +116,7 @@ const ChapterListItem: React.FC<ChapterListItemProps> = ({
       ) : (
         <button
           onClick={onSelectForViewing}
-          disabled={isAnyOperationLoading || isProcessingThisChapter} // Explicitly disable if processing this chapter
+          disabled={isAnyOperationLoading || isProcessingThisChapter}
           className={`flex-grow text-left px-3 py-2 rounded-md text-sm transition-colors disabled:opacity-50 flex justify-between items-center 
                       ${isProcessingThisChapter ? 'cursor-not-allowed' : 'cursor-pointer'}
                       ${isSelectedForViewing && !isProcessingThisChapter
@@ -112,27 +130,50 @@ const ChapterListItem: React.FC<ChapterListItemProps> = ({
             {isProcessingThisChapter && <span className="ml-1 text-xs text-sky-200">(处理中...)</span>}
           </span>
           {!isProcessingThisChapter && (
-            <span
-              role="button"
-              tabIndex={0}
-              aria-label={`Edit title for ${chapter.title}`}
-              onClick={(e) => { 
-                if (isProcessingThisChapter) return;
-                e.stopPropagation(); 
-                onStartEditTitle(); 
-              }}
-              onKeyDown={(e) => {
-                if (isProcessingThisChapter) return;
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
+            <div className="relative flex-shrink-0" ref={menuRef}>
+              <button
+                aria-label={`更多操作 for ${chapter.title}`}
+                onClick={(e) => { 
                   e.stopPropagation();
-                  onStartEditTitle();
-                }
-              }}
-              className="inline-flex items-center justify-center ml-2 flex-shrink-0 cursor-pointer"
-            >
-              <PencilIcon className="w-3.5 h-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity hover:text-sky-300" />
-            </span>
+                  setIsMenuOpen(prev => !prev);
+                }}
+                className="p-1 rounded-full text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-slate-500/50 focus:opacity-100"
+              >
+                <EllipsisVerticalIcon className="w-4 h-4" />
+              </button>
+              {isMenuOpen && (
+                <div className="absolute right-0 top-full mt-1 w-48 bg-slate-900 border border-slate-700 rounded-md shadow-lg z-20">
+                  <ul className="p-1 text-sm text-slate-200">
+                    <li>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onInsertChapterAfter();
+                          setIsMenuOpen(false);
+                        }}
+                        className="w-full text-left flex items-center px-3 py-1.5 hover:bg-slate-700 rounded"
+                      >
+                        <PlusIcon className="w-4 h-4 mr-2" />
+                        在此后插入新章节
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onStartEditTitle();
+                          setIsMenuOpen(false);
+                        }}
+                        className="w-full text-left flex items-center px-3 py-1.5 hover:bg-slate-700 rounded"
+                      >
+                        <PencilIcon className="w-4 h-4 mr-2" />
+                        重命名
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              )}
+            </div>
           )}
         </button>
       )}

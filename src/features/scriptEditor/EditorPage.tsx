@@ -80,6 +80,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
   const isShortcutSettingsModalOpen = useStore(state => state.isShortcutSettingsModalOpen);
   const openShortcutSettingsModal = useStore(state => state.openShortcutSettingsModal);
   const closeShortcutSettingsModal = useStore(state => state.closeShortcutSettingsModal);
+  const { insertChapterAfter } = useStore();
 
 
   const { projectCharacters, allCvNames, cvStyles } = useMemo(() => {
@@ -443,6 +444,12 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
       }
   }, [projectId, batchAddChapters]);
 
+  const handleInsertChapterAfter = useCallback(async (afterChapterId: string) => {
+    if (projectId) {
+        await insertChapterAfter(projectId, afterChapterId);
+    }
+  }, [projectId, insertChapterAfter]);
+
   const contextValue = useMemo(() => ({
     ...coreLogic,
     characters: projectCharacters,
@@ -454,6 +461,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
     undoableUpdateChapterRawContent: coreLogic.undoableUpdateChapterRawContent,
     deleteChapters: deleteChapters,
     mergeChapters: undoableMergeChapters,
+    insertChapterAfter: handleInsertChapterAfter,
     batchAddChapters: handleBatchAddChapters,
     isLoadingAiAnnotation,
     isLoadingManualParse,
@@ -475,7 +483,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
     addCustomSoundType: handleAddCustomSoundType,
     deleteCustomSoundType: handleDeleteCustomSoundType,
   }), [
-    coreLogic, projectCharacters, allCvNames, cvStyles, applyUndoableProjectUpdate, deleteChapters, undoableMergeChapters, handleBatchAddChapters,
+    coreLogic, projectCharacters, allCvNames, cvStyles, applyUndoableProjectUpdate, deleteChapters, undoableMergeChapters, handleBatchAddChapters, handleInsertChapterAfter,
     isLoadingAiAnnotation, isLoadingManualParse, isLoadingImportAnnotation,
     handleRunAiAnnotationForChapters, handleManualParseChapters, handleOpenImportModalTrigger,
     handleOpenCharacterSidePanel, onOpenCharacterAndCvStyleModal, handleOpenScriptImport,

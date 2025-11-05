@@ -128,7 +128,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
 
     // FIX: Replaced incorrect variable `cvTextIsHex` with `textIsHex`.
     if (bgIsHex && (!cvTextToUse || !textIsHex)) { // CV BG is hex, text is not or empty
-        // Derive contrasting text color
+        // FIX: Calculate contrasting text color based on background color, not text color.
         const contrasting = getContrastingTextColor(cvBgToUse);
         return { style: { backgroundColor: cvBgToUse, color: contrasting }, className: '' };
     // FIX: Replaced incorrect variable `cvTextIsHex` with `textIsHex`.

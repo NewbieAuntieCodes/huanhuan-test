@@ -36,6 +36,7 @@ const ChapterListPanel: React.FC = () => {
         openImportModal,
         cvFilter,
         batchAddChapters,
+        insertChapterAfter,
     } = useEditorContext();
 
     const [isBatchModifyModalOpen, setIsBatchModifyModalOpen] = useState(false);
@@ -273,6 +274,7 @@ const ChapterListPanel: React.FC = () => {
                         onTitleInputChange={handleEditingTitleInputChange}
                         onSaveTitle={() => handleSaveChapterTitle(chapter.id)}
                         onCancelEditTitle={handleCancelEditChapterTitle}
+                        onInsertChapterAfter={() => insertChapterAfter(chapter.id)}
                     />
                 )})}
             </div>
