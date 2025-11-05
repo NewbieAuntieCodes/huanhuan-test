@@ -2,6 +2,8 @@
 
 
 
+
+
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
 import { Character, Chapter, ParsedFileInfo, AudioAssistantState } from '../../types';
@@ -209,6 +211,7 @@ const AudioAlignmentAssistantPage: React.FC = () => {
             await db.directoryHandles.put({ projectId: currentProject.id, handle });
             setDirectoryHandle(handle);
             await scanDirectory(handle, true);
+// FIX: The 'err' object in a catch block is of type 'unknown'. Use a type guard to safely access its properties before attempting to read a name from it.
         } catch (err) {
             // FIX: Add type guard for 'unknown' error object before accessing properties.
             if (err instanceof Error && err.name === 'AbortError') {

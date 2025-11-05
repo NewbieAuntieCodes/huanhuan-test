@@ -55,16 +55,23 @@ const ChapterListPanel: React.FC = () => {
             .filter(c => c.cvName === cvFilter && c.status !== 'merged')
             .map(c => c.id);
         
-        if (characterIdsForCv.length === 0) {
-            return [];
+        const filterFn = (chapter: Chapter) => {
+            // If the chapter is the one being viewed, always keep it.
+            if (chapter.id === selectedChapterId) {
+                return true;
+            }
+            // If no characters match the CV, then only the selected chapter can be shown.
+            if (characterIdsForCv.length === 0) {
+                return false;
+            }
+            // Otherwise, check if the chapter contains lines from the filtered CV.
+            return chapter.scriptLines.some(line => 
+                line.characterId && characterIdsForCv.includes(line.characterId)
+            );
         }
 
-        return currentProject.chapters.filter(chapter => 
-            chapter.scriptLines.some(line => 
-                line.characterId && characterIdsForCv.includes(line.characterId)
-            )
-        );
-    }, [currentProject, cvFilter, characters]);
+        return currentProject.chapters.filter(filterFn);
+    }, [currentProject, cvFilter, characters, selectedChapterId]);
 
     const {
         currentPage,
