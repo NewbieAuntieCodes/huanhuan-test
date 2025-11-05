@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+// FIX: Import the 'React' namespace to correctly type 'React.ChangeEvent'.
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useStore } from '../../../store/useStore';
 import { Character, ParsedFileInfo, AudioAssistantState } from '../../../types';
 import { db } from '../../../db';

@@ -462,7 +462,6 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
     undoableUpdateChapterTitle: coreLogic.updateChapterTitleInHistory,
     undoableUpdateChapterRawContent: coreLogic.undoableUpdateChapterRawContent,
     deleteChapters: deleteChapters,
-    mergeChapters: undoableMergeChapters,
     insertChapterAfter: coreLogic.insertChapterAfter,
     batchAddChapters: handleBatchAddChapters,
     isLoadingAiAnnotation,
@@ -480,16 +479,14 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
     openShortcutSettingsModal: openShortcutSettingsModal,
     shortcutActiveLineId,
     setShortcutActiveLineId,
-    cvFilter: coreLogic.cvFilter,
-    setCvFilter: coreLogic.setCvFilter,
     addCustomSoundType: handleAddCustomSoundType,
     deleteCustomSoundType: handleDeleteCustomSoundType,
   }), [
-    coreLogic, projectCharacters, allCvNames, cvStyles, applyUndoableProjectUpdate, deleteChapters, undoableMergeChapters, handleBatchAddChapters,
-    isLoadingAiAnnotation, isLoadingManualParse, isLoadingImportAnnotation,
+    coreLogic, projectCharacters, allCvNames, cvStyles, applyUndoableProjectUpdate, deleteChapters,
+    handleBatchAddChapters, isLoadingAiAnnotation, isLoadingManualParse, isLoadingImportAnnotation,
     handleRunAiAnnotationForChapters, handleManualParseChapters, handleOpenImportModalTrigger,
-    handleOpenCharacterSidePanel, onOpenCharacterAndCvStyleModal, handleOpenScriptImport,
-    openShortcutSettingsModal, shortcutActiveLineId,
+    handleOpenScriptImport, handleSaveNewChapters, handleOpenCharacterSidePanel,
+    onOpenCharacterAndCvStyleModal, openShortcutSettingsModal, shortcutActiveLineId,
     handleAddCustomSoundType, handleDeleteCustomSoundType
   ]);
 

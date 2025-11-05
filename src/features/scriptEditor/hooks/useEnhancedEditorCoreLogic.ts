@@ -131,6 +131,32 @@ export const useEnhancedEditorCoreLogic = ({
     setSelectedChapterId(newChapter.id);
   }, [applyUndoableProjectUpdate, setSelectedChapterId]);
 
+  const mergeChapters = useCallback((chapterIds: string[], targetChapterId: string) => {
+    applyUndoableProjectUpdate(prevProject => {
+      const targetChapter = prevProject.chapters.find(ch => ch.id === targetChapterId);
+      if (!targetChapter) return prevProject;
+
+      const chaptersToMerge = prevProject.chapters
+        .filter(ch => chapterIds.includes(ch.id))
+        .sort((a,b) => prevProject.chapters.findIndex(c => c.id === a.id) - prevProject.chapters.findIndex(c => c.id === b.id));
+
+      let mergedRawContent = '';
+      let mergedScriptLines: ScriptLine[] = [];
+      chaptersToMerge.forEach(ch => {
+        mergedRawContent += ch.rawContent + '\n\n';
+        mergedScriptLines = mergedScriptLines.concat(ch.scriptLines);
+      });
+      
+      const newChapters = prevProject.chapters
+        .map(ch => ch.id === targetChapterId ? { ...ch, rawContent: mergedRawContent.trim(), scriptLines: mergedScriptLines } : ch)
+        .filter(ch => !chapterIds.includes(ch.id) || ch.id === targetChapterId);
+
+      return { ...prevProject, chapters: newChapters };
+    });
+    setSelectedChapterId(targetChapterId);
+    setMultiSelectedChapterIds([]);
+  }, [applyUndoableProjectUpdate, setSelectedChapterId, setMultiSelectedChapterIds]);
+
   return {
     currentProject,
     isLoadingProject,
@@ -155,5 +181,6 @@ export const useEnhancedEditorCoreLogic = ({
     canUndo,
     canRedo,
     insertChapterAfter,
+    mergeChapters,
   };
 };
