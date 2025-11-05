@@ -331,9 +331,9 @@ export const useAudioFileMatcher = ({
         let metadata;
         try {
             metadata = await mm.parseBlob(file);
-        // FIX: The 'e' object in a catch block is of type 'unknown'. Added a type guard to safely access its properties before attempting to read a message from it.
+        // The 'e' object in a catch block is of type 'unknown'. Added a type guard to safely access its properties before attempting to read a message from it.
         } catch (e) {
-            // FIX: Safely access error message. Do not access 'e.name' directly on an 'unknown' type.
+            // Safely access error message. Do not access 'e.name' directly on an 'unknown' type.
             const message = e instanceof Error ? e.message : String(e);
             const errorMsg = `音频文件解析失败: ${message}`;
             console.error(`Metadata parsing failed for ${file.name}:`, message);
@@ -440,9 +440,9 @@ export const useAudioFileMatcher = ({
           errorMessage: warningMessage || undefined
         };
 
-    // FIX: The 'error' object in a catch block is of type 'unknown'. Added a type guard to safely access its properties before attempting to read a message from it.
+    // The 'error' object in a catch block is of type 'unknown'. Added a type guard to safely access its properties before attempting to read a message from it.
     } catch (error) {
-        // FIX: Safely access error message. Do not access 'error.name' directly on an 'unknown' type.
+        // Safely access error message. Do not access 'error.name' directly on an 'unknown' type.
         const message = error instanceof Error ? error.message : String(error);
         const errorMsg = `处理失败: ${message}`;
         console.error(`Error processing master audio file ${file.name}:`, message);
@@ -477,7 +477,7 @@ export const useAudioFileMatcher = ({
       if (matchType === 'chapter') {
           identifier = parts[0];
       } else if (parts.length >= 2) {
-          // FIX: Changed from 'parts.length === 2' to 'parts.length >= 2' to support filenames with more than 2 parts
+          // Changed from 'parts.length === 2' to 'parts.length >= 2' to support filenames with more than 2 parts
           // This allows files like "405-434_凌玄逆_v2.mp3" to work correctly
           identifier = parts[1]; // cvName or characterName
       }

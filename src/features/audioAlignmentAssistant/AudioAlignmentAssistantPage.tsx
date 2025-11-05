@@ -1,3 +1,5 @@
+
+
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
 import { Character, Chapter, ParsedFileInfo, AudioAssistantState } from '../../types';
@@ -36,7 +38,7 @@ const getChapterNumber = (title: string): number | null => {
     return numericMatch ? parseInt(numericMatch[1], 10) : null;
 };
 
-// FIX: Add MatchStatus interface to provide explicit types for finalStatus object, resolving index signature errors.
+// Add MatchStatus interface to provide explicit types for finalStatus object, resolving index signature errors.
 interface MatchStatus {
     characters: Record<string, boolean>;
     chapters: Record<string, boolean>;
@@ -84,7 +86,7 @@ const AudioAlignmentAssistantPage: React.FC = () => {
         try {
             const parsedFiles: ParsedFileInfo[] = [];
             for await (const entry of handle.values()) {
-                // FIX: `kind` and `getFile` are not on the base `FileSystemHandle` type. Cast to `any` to access them after checking the kind.
+                // `kind` and `getFile` are not on the base `FileSystemHandle` type. Cast to `any` to access them after checking the kind.
                 if ((entry as any).kind === 'file') {
                     const file = await (entry as any).getFile();
                     if (file.name.endsWith('.mp3') || file.name.endsWith('.wav')) {
@@ -145,7 +147,7 @@ const AudioAlignmentAssistantPage: React.FC = () => {
                         const handleEntry = await db.directoryHandles.get(currentProject.id);
                         if (handleEntry) {
                             const handle = handleEntry.handle;
-                            // FIX: `queryPermission` is not in the default type. Cast to 'any' to use.
+                            // `queryPermission` is not in the default type. Cast to 'any' to use.
                             const permission = await (handle as any).queryPermission({ mode: 'read' });
                             setDirectoryHandle(handle);
                             if (permission === 'granted') {
@@ -195,9 +197,9 @@ const AudioAlignmentAssistantPage: React.FC = () => {
     const handleSelectDirectory = async () => {
         if (!currentProject) return;
         try {
-            // FIX: 'showDirectoryPicker' is not in the default 'window' type definition. Cast to 'any' to use this API.
+            // 'showDirectoryPicker' is not in the default 'window' type definition. Cast to 'any' to use this API.
             const handle = await (window as any).showDirectoryPicker();
-            // FIX: 'requestPermission' is not in the default 'FileSystemDirectoryHandle' type. Cast to 'any' to use it.
+            // 'requestPermission' is not in the default 'FileSystemDirectoryHandle' type. Cast to 'any' to use it.
             if ((await (handle as any).requestPermission({ mode: 'read' })) !== 'granted') {
                 alert("需要文件夹读取权限才能继续。");
                 return;
@@ -206,7 +208,7 @@ const AudioAlignmentAssistantPage: React.FC = () => {
             setDirectoryHandle(handle);
             await scanDirectory(handle, true);
         } catch (err) {
-            // FIX: The 'err' object is of type 'unknown'. Added a type guard to safely check 'err.name' before accessing it.
+            // The 'err' object is of type 'unknown'. Added a type guard to safely check 'err.name' before accessing it.
             if (err instanceof Error && err.name === 'AbortError') {
                 // User cancelled the picker, this is not an error to be logged.
             } else {
@@ -217,7 +219,7 @@ const AudioAlignmentAssistantPage: React.FC = () => {
     
     const handleRescan = async () => {
         if (directoryHandle) {
-            // FIX: 'requestPermission' is not in the default 'FileSystemDirectoryHandle' type. Cast to 'any' to use it.
+            // 'requestPermission' is not in the default 'FileSystemDirectoryHandle' type. Cast to 'any' to use it.
             if ((await (directoryHandle as any).requestPermission({ mode: 'read' })) === 'granted') {
                 await scanDirectory(directoryHandle, true);
             } else {
@@ -231,7 +233,7 @@ const AudioAlignmentAssistantPage: React.FC = () => {
         directoryInputRef.current?.click();
     };
 
-    // FIX: Set the non-standard 'webkitdirectory' attribute via a useEffect hook to avoid TypeScript prop errors.
+    // Set the non-standard 'webkitdirectory' attribute via a useEffect hook to avoid TypeScript prop errors.
     useEffect(() => {
         if (directoryInputRef.current) {
             directoryInputRef.current.setAttribute('webkitdirectory', '');
@@ -331,10 +333,11 @@ const AudioAlignmentAssistantPage: React.FC = () => {
         return ranges;
     }, [currentProject]);
 
-    const finalMatchStatus = useMemo(() => {
+    // Added an explicit return type to `useMemo` to help TypeScript correctly infer the shape of `finalMatchStatus`, fixing subsequent indexing errors.
+    const finalMatchStatus = useMemo<MatchStatus | null>(() => {
         if (scannedFiles.length === 0 || !currentProject) return null;
 
-        // FIX: Explicitly type `finalStatus` to `MatchStatus` to resolve indexing errors where keys were inferred as `unknown`.
+        // Explicitly type `finalStatus` to `MatchStatus` to resolve indexing errors where keys were inferred as `unknown`.
         const finalStatus: MatchStatus = { characters: {}, chapters: {}, ranges: {} };
 
         const fileCoverage = new Map<number, ParsedFileInfo[]>();
@@ -385,7 +388,7 @@ const AudioAlignmentAssistantPage: React.FC = () => {
                 const relevantFiles = fileCoverage.get(chapterNum) || [];
                 const charIdsInChapter = new Set(chapter.scriptLines.map(l => l.characterId).filter((id): id is string => !!id));
 
-                // FIX: Replaced forEach with a for...of loop for better TypeScript type inference, resolving the 'unknown index type' error.
+                // Replaced forEach with a for...of loop for better TypeScript type inference, resolving the 'unknown index type' error.
                 for (const charId of charIdsInChapter) {
                     const character = projectCharacters.find(c => c.id === charId);
                     if (!character) {
@@ -406,7 +409,6 @@ const AudioAlignmentAssistantPage: React.FC = () => {
             }
         }
         
-        // FIX: Corrected a recursive return statement that was causing an infinite loop.
         return finalStatus;
     }, [scannedFiles, currentProject, projectCharacters, manualOverrides, chapterRanges, selectedChapterId]);
 

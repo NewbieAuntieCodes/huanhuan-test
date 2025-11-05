@@ -82,55 +82,8 @@ export const exportCharacterClips = async (
     project.chapters.forEach(ch => ch.scriptLines.forEach(line => lineIdMap.set(line.id, line)));
     const characterMap = new Map(characters.map(c => [c.id, c]));
 
-    // --- New File System Access API Logic ---
-    if ('showDirectoryPicker' in window) {
-        try {
-            const dirHandle = await (window as any).showDirectoryPicker();
-            let filesSaved = 0;
-            
-            for (const row of rowsToExport) {
-                const lineId = row.originalLineId!;
-                const line = lineIdMap.get(lineId);
-
-                if (line?.audioBlobId) {
-                    const audioBlob = await db.audioBlobs.get(line.audioBlobId);
-                    if (audioBlob) {
-                        const character = line.characterId ? characterMap.get(line.characterId) : null;
-                        if (!character) continue;
-
-                        const baseName = character.cvName
-                            ? `【${character.cvName}-${character.name}】${line.text}`
-                            : `【${character.name}】${line.text}`;
-                        
-                        const filename = `${sanitizeFilename(baseName)}.mp3`;
-
-                        const fileHandle = await dirHandle.getFileHandle(filename, { create: true });
-                        const writable = await fileHandle.createWritable();
-                        await writable.write(audioBlob.data);
-                        await writable.close();
-                        filesSaved++;
-                    }
-                }
-            }
-            alert(`成功导出 ${filesSaved} 个音频片段到您选择的文件夹。`);
-            return; // Success, exit function
-        } catch (err) {
-            // FIX: The 'err' object is of type 'unknown'. Added a type guard to safely check 'err.name' before accessing it.
-            if (err instanceof Error && err.name === 'AbortError') {
-                console.log('用户取消了文件夹选择。');
-                return; // User cancelled, so we don't proceed to zip download.
-            }
-            console.error('使用 File System Access API 导出失败，将回退到 ZIP 压缩包下载:', err);
-            alert("直接保存到文件夹失败，将回退到 ZIP 压缩包下载。");
-        }
-    } else {
-        alert("您的浏览器不支持直接保存到文件夹。将为您创建一个 ZIP 压缩包。");
-    }
-
-
-    // --- Fallback to ZIP export (existing logic) ---
+    // --- Generate ZIP first, as it's now the primary method ---
     const zip = new JSZip();
-
     for (const row of rowsToExport) {
         const lineId = row.originalLineId!;
         const line = lineIdMap.get(lineId);
@@ -150,12 +103,41 @@ export const exportCharacterClips = async (
     }
 
     const zipBlob = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(zipBlob);
-    const a = document.createElement('a');
-    a.href = url;
     const filename = selectedCharacter
         ? `${sanitizeFilename(`${project.name}_${selectedCharacter.name}_片段`)}.zip`
         : `${sanitizeFilename(`${project.name}_所有角色片段`)}.zip`;
+
+    // --- Try to save using modern File System Access API (showSaveFilePicker) ---
+    if ('showSaveFilePicker' in window) {
+        try {
+            const handle = await (window as any).showSaveFilePicker({
+                suggestedName: filename,
+                types: [{
+                    description: 'ZIP压缩文件',
+                    accept: { 'application/zip': ['.zip'] },
+                }],
+            });
+            const writable = await handle.createWritable();
+            await writable.write(zipBlob);
+            await writable.close();
+            alert(`成功导出 ${rowsToExport.length} 个音频片段到 ${filename}`);
+            return; // Success, exit function
+        } catch (err) {
+            if (err instanceof Error && err.name === 'AbortError') {
+                console.log('用户取消了保存文件。');
+                return; // User cancelled, do nothing.
+            }
+            console.error('使用 showSaveFilePicker 失败，将回退到传统下载:', err);
+            alert("保存文件失败，将回退到传统下载方式。");
+        }
+    } else {
+        console.log("浏览器不支持 showSaveFilePicker，使用传统下载方式。");
+    }
+
+    // --- Fallback to traditional download (for older browsers or if API fails) ---
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement('a');
+    a.href = url;
     a.download = filename;
     document.body.appendChild(a);
     a.click();

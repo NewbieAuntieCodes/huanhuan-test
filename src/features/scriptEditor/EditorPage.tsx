@@ -256,7 +256,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
                 alert("不支持的文件格式或文件内容无法识别。请上传 .txt, .docx, 或由本应用导出的画本文件。");
                 return;
             }
-        // FIX: The 'error' object in a catch block is of type 'unknown'. Added a type guard to safely handle it.
+        // The 'error' object in a catch block is of type 'unknown'. Added a type guard to safely handle it.
         } catch (error) {
             console.error("读取或解析文件时出错:", error);
 
@@ -264,7 +264,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
             
             let errorMessage = `读取或解析文件时出错: ${detailedMessage}`;
 
-            // FIX: The 'error' object is of type 'unknown'. Use the safely extracted 'detailedMessage' string for the check instead.
+            // The 'error' object is of type 'unknown'. Use the safely extracted 'detailedMessage' string for the check instead.
             if (detailedMessage.toLowerCase().includes('central directory')) {
                 errorMessage = '无法读取该 .docx 文件。文件可能已损坏，或者它是一个旧版 .doc 文件但扩展名被错误地改成了 .docx。';
             }
