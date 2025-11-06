@@ -43,6 +43,7 @@ const CharacterAndCvStyleModal: React.FC<CharacterAndCvStyleModalProps> = ({
   const [customCharTextInputText, setCustomCharTextInputText] = useState(defaultCharPreset.textColorClass);
 
   const [cvNameInput, setCvNameInput] = useState('');
+  const [isComposingCv, setIsComposingCv] = useState(false);
   const [cvBgColorInput, setCvBgColorInput] = useState(DEFAULT_CV_BG_CLASS);
   const [cvTextColorInput, setCvTextColorInput] = useState(DEFAULT_CV_TEXT_CLASS);
   const [customCvBgInputText, setCustomCvBgInputText] = useState(DEFAULT_CV_BG_CLASS);
@@ -160,6 +161,7 @@ const CharacterAndCvStyleModal: React.FC<CharacterAndCvStyleModalProps> = ({
   const handleCvNameChange = (e: FormEvent<HTMLInputElement>) => {
     const newNameRaw = e.currentTarget.value;
     setCvNameInput(newNameRaw);
+    if (isComposingCv) return; // 组合输入过程中不联动样式，避免闪烁
     const newNameTrimmed = newNameRaw.trim();
     if (newNameTrimmed && cvStyles[newNameTrimmed]) {
       setCvBgColorInput(cvStyles[newNameTrimmed].bgColor);
@@ -300,8 +302,7 @@ const CharacterAndCvStyleModal: React.FC<CharacterAndCvStyleModalProps> = ({
             <legend className="text-lg font-medium text-teal-400 px-2">CV (配音) 信息与全局样式</legend>
             <div className="mb-4">
               <label htmlFor="cvNameInput" className="block text-sm font-medium text-slate-300 mb-1">CV 名称</label>
-              <input type="text" id="cvNameInput" list={cvDatalistId} value={cvNameInput} onChange={handleCvNameChange}
-                className="w-full p-2 bg-slate-700 text-slate-100 rounded-md border border-slate-600 focus:ring-sky-500" placeholder="输入或选择CV名称"/>
+              <input type="text" id="cvNameInput" list={cvDatalistId} value={cvNameInput} onChange={handleCvNameChange} onCompositionStart={() => setIsComposingCv(true)} onCompositionEnd={(e) => { setIsComposingCv(false); handleCvNameChange(e as any); }} autoComplete="off" className="w-full p-2 bg-slate-700 text-slate-100 rounded-md border border-slate-600 focus:ring-sky-500" placeholder="输入或选择CV名称"/>
               {allCvNames.length > 0 && <datalist id={cvDatalistId}>{allCvNames.map(name => <option key={name} value={name} />)}</datalist>}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-3">

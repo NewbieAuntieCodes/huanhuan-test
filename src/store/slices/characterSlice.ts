@@ -2,6 +2,7 @@ import { StateCreator } from 'zustand';
 import { AppState } from '../useStore';
 import { Character, Project } from '../../types';
 import { db } from '../../db';
+import { characterRepository, projectRepository } from '../../repositories';
 
 export interface CharacterSlice {
   characters: Character[];
@@ -17,32 +18,55 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
   characters: [],
   addCharacter: (characterToAdd, projectId) => {
     const state = get();
-    
-    // Check for existing character within the same project.
-    const existingByName = state.characters.find(c => 
-      c.name.toLowerCase() === characterToAdd.name.toLowerCase() && 
-      c.projectId === projectId &&
-      c.status !== 'merged'
+    const nameLc = characterToAdd.name.toLowerCase();
+
+    // 1) 优先复用同项目下已存在的同名角色（避免重复并保留样式/描述）
+    const existingInProject = state.characters.find(c =>
+      c.name.toLowerCase() === nameLc && c.projectId === projectId && c.status !== 'merged'
     );
-    if (existingByName) {
-        return existingByName;
-    }
-    
+    if (existingInProject) return existingInProject;
+
+    // 2) 若只存在“全局角色”（projectId 为空），复制其样式/描述作为本项目的默认值
+    const globalTemplate = state.characters.find(c =>
+      c.name.toLowerCase() === nameLc && !c.projectId && c.status !== 'merged'
+    );
+
+    // 3) 根据项目的 CV 样式进行覆盖（若提供了 cvName 且角色未锁定样式）
+    const project = state.projects.find(p => p.id === projectId);
+    const cvNameTrimmed = (characterToAdd.cvName || '').trim();
+    const projectCvStyle = project?.cvStyles && cvNameTrimmed ? project.cvStyles[cvNameTrimmed] : undefined;
+
+    const isLocked = characterToAdd.isStyleLockedToCv ?? false;
+
+    const colorFromCv = projectCvStyle && !isLocked ? projectCvStyle.bgColor : undefined;
+    const textFromCv = projectCvStyle && !isLocked ? projectCvStyle.textColor : undefined;
+
     const finalCharacter: Character = {
-        id: Date.now().toString() + "_char_" + Math.random().toString(36).substr(2, 9),
-        name: characterToAdd.name,
-        projectId: projectId, // Associate with the project
-        color: characterToAdd.color,
-        textColor: characterToAdd.textColor || '',
-        cvName: characterToAdd.cvName || '',
-        description: characterToAdd.description || '',
-        isStyleLockedToCv: characterToAdd.isStyleLockedToCv === undefined ? false : characterToAdd.isStyleLockedToCv,
-        status: 'active' as const,
+      id: `${Date.now()}_char_${Math.random().toString(36).substr(2, 9)}`,
+      name: characterToAdd.name,
+      projectId: projectId,
+      color: colorFromCv || characterToAdd.color || globalTemplate?.color || 'bg-slate-600',
+      textColor: textFromCv || characterToAdd.textColor || globalTemplate?.textColor || 'text-slate-100',
+      cvName: cvNameTrimmed || globalTemplate?.cvName || '',
+      description: (characterToAdd.description ?? globalTemplate?.description ?? ''),
+      isStyleLockedToCv: isLocked,
+      status: 'active',
     };
 
-    db.characters.add(finalCharacter).catch(err => console.error("DB: Failed to add character", err));
+    // Save to database asynchronously
+    characterRepository.create({
+      name: finalCharacter.name,
+      projectId: finalCharacter.projectId!,
+      color: finalCharacter.color,
+      textColor: finalCharacter.textColor,
+      cvName: finalCharacter.cvName,
+      description: finalCharacter.description,
+      isStyleLockedToCv: finalCharacter.isStyleLockedToCv,
+    }).catch(err => console.error("Failed to add character:", err));
+
+    // Update state optimistically
     set(s => ({ characters: [...s.characters, finalCharacter] }));
-    
+
     return finalCharacter;
   },
   editCharacter: async (characterBeingEdited, updatedCvNameFromModalProp, updatedCvBgColorFromModalProp, updatedCvTextColorFromModalProp) => {
@@ -74,10 +98,10 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
         finalCharacterDataForDb.textColor = newProjectCvStylesForDb[trimmedCvName].textColor;
     }
   
-    // Perform DB operations.
+    // Perform DB operations using repositories
     await db.transaction('rw', db.projects, db.characters, async () => {
-        await db.projects.put(updatedProjectForDb);
-        await db.characters.put(finalCharacterDataForDb);
+        await projectRepository.update(updatedProjectForDb);
+        await characterRepository.update(finalCharacterDataForDb);
     });
     
     // Update state using a functional update to prevent race conditions from stale state.
@@ -144,12 +168,13 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
     }
 
     await db.transaction('rw', db.characters, db.projects, async () => {
-        await db.characters.delete(characterId);
+        await characterRepository.delete(characterId);
         if (needsProjectUpdate) {
-            await db.projects.bulkPut(updatedProjects.filter(p => {
+            const projectsToUpdate = updatedProjects.filter(p => {
                 const charProject = charToDelete ? charToDelete.projectId : null;
                 return p.id === charProject;
-            }));
+            });
+            await projectRepository.bulkUpdate(projectsToUpdate);
         }
     });
 
@@ -192,9 +217,10 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
     });
 
     await db.transaction('rw', db.characters, db.projects, async () => {
-        await db.characters.bulkDelete(characterIds);
+        await characterRepository.bulkDelete(characterIds);
         if (projectsHadChanges) {
-            await db.projects.bulkPut(updatedProjects.filter(p => projectIdsAffected.has(p.id)));
+            const projectsToUpdate = updatedProjects.filter(p => projectIdsAffected.has(p.id));
+            await projectRepository.bulkUpdate(projectsToUpdate);
         }
     });
 
@@ -219,7 +245,7 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
         updatedChar.textColor = projectCvStyles[updatedChar.cvName].textColor;
     }
     
-    await db.characters.put(updatedChar);
+    await characterRepository.update(updatedChar);
 
     set({ characters: characters.map(c => c.id === characterId ? updatedChar : c) });
   },
@@ -245,9 +271,9 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
     });
 
     await db.transaction('rw', db.projects, db.characters, async () => {
-        await db.projects.put(updatedProject);
+        await projectRepository.update(updatedProject);
         if (charactersToUpdateInDb.length > 0) {
-            await db.characters.bulkPut(charactersToUpdateInDb);
+            await characterRepository.bulkUpdate(charactersToUpdateInDb);
         }
     });
 

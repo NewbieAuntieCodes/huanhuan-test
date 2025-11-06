@@ -173,8 +173,15 @@ export const useScriptLineEditor = (
                 const newScriptLines: ScriptLine[] = [];
                 ch.scriptLines.forEach(line => {
                     if (line.id === lineId) {
-                        const part1 = currentText.substring(0, splitIndex);
-                        const part2 = currentText.substring(splitIndex);
+                        // Split at caret, and trim a single boundary newline on each side
+                        // to avoid introducing an empty first line or a leading blank line
+                        // in the second part when the caret is at a line break.
+                        let part1 = currentText.substring(0, splitIndex);
+                        let part2 = currentText.substring(splitIndex);
+
+                        // Remove trailing newline from left side and leading newline from right side
+                        part1 = part1.replace(/\r?\n$/, '');
+                        part2 = part2.replace(/^\r?\n/, '');
 
                         if (part1) {
                             newScriptLines.push({

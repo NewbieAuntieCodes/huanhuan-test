@@ -164,7 +164,7 @@ const ChapterListActions: React.FC<ChapterListActionsProps> = ({
       </div>
 
       <div className="flex items-center space-x-2">
-        <label htmlFor="cv-filter-select" className="text-sm text-slate-400 flex-shrink-0">筛选CV:</label>
+        <label htmlFor="cv-filter-select" className="text-sm text-slate-400 flex-shrink-0">按CV筛选:</label>
         <div className="relative flex-grow">
             <select
                 id="cv-filter-select"
@@ -173,7 +173,7 @@ const ChapterListActions: React.FC<ChapterListActionsProps> = ({
                 className="w-full appearance-none p-2 pr-8 bg-slate-700 rounded-md text-sm text-slate-200 cursor-pointer hover:bg-slate-600 focus:ring-1 focus:ring-sky-500 focus:border-sky-500 outline-none"
                 title="筛选包含所选CV台词的章节"
             >
-                <option value="">显示所有章节</option>
+                                <option value="" disabled>选择CV…</option>
                 {allCvNames.map(name => (
                     <option key={name} value={name}>{name}</option>
                 ))}
@@ -182,9 +182,19 @@ const ChapterListActions: React.FC<ChapterListActionsProps> = ({
                 <UserCircleIcon className="w-5 h-5" />
             </div>
         </div>
+        <button
+          type="button"
+          onClick={() => setCvFilter(null)}
+          disabled={!cvFilter}
+          className="flex-shrink-0 px-3 py-2 bg-slate-600 hover:bg-slate-500 text-slate-100 rounded-md text-sm disabled:opacity-50"
+          title="清除CV筛选，显示所有章节"
+        >
+          显示所有章节
+        </button>
       </div>
     </>
   );
 };
 
 export default ChapterListActions;
+

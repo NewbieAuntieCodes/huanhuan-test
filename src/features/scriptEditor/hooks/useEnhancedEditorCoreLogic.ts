@@ -103,6 +103,8 @@ export const useEnhancedEditorCoreLogic = ({
   }, [applyUndoableProjectUpdate]);
 
   const insertChapterAfter = useCallback((afterChapterId: string) => {
+    // 先清空 CV 筛选，确保新插入章节立即可见
+    setCvFilter(null);
     const newChapter: Chapter = {
         id: `ch_${Date.now()}_${Math.random()}`,
         title: `新章节`,
@@ -128,8 +130,12 @@ export const useEnhancedEditorCoreLogic = ({
       };
     });
 
-    setSelectedChapterId(newChapter.id);
-  }, [applyUndoableProjectUpdate, setSelectedChapterId]);
+    // 选中新插入的章节。为避免在项目异步更新落库前被“无效选中”逻辑清空，这里稍作延迟。
+    setTimeout(() => setSelectedChapterId(newChapter.id), 50);
+    // 如果当前应用了 CV 过滤，新建章节通常没有行会被过滤掉；
+    // 选中章节已经会被强制保留，但为了更直观，这里同时清空一次 CV 过滤。
+    setCvFilter(null);
+  }, [applyUndoableProjectUpdate, setSelectedChapterId, setCvFilter]);
 
   const mergeChapters = useCallback((chapterIds: string[], targetChapterId: string) => {
     applyUndoableProjectUpdate(prevProject => {
@@ -140,15 +146,24 @@ export const useEnhancedEditorCoreLogic = ({
         .filter(ch => chapterIds.includes(ch.id))
         .sort((a,b) => prevProject.chapters.findIndex(c => c.id === a.id) - prevProject.chapters.findIndex(c => c.id === b.id));
 
-      let mergedRawContent = '';
+      // Fallback: 如果章节的 rawContent 为空，则用台词文本拼接，避免“看起来没变化”的问题
+      const getSafeRawContent = (ch: Chapter): string => {
+        const trimmed = (ch.rawContent || '').trim();
+        if (trimmed.length > 0) return trimmed;
+        return (ch.scriptLines || []).map(l => l.text).join('\n');
+      };
+
+      let mergedRawContentParts: string[] = [];
       let mergedScriptLines: ScriptLine[] = [];
       chaptersToMerge.forEach(ch => {
-        mergedRawContent += ch.rawContent + '\n\n';
+        mergedRawContentParts.push(getSafeRawContent(ch));
         mergedScriptLines = mergedScriptLines.concat(ch.scriptLines);
       });
+
+      const mergedRawContent = mergedRawContentParts.join('\n\n').trim();
       
       const newChapters = prevProject.chapters
-        .map(ch => ch.id === targetChapterId ? { ...ch, rawContent: mergedRawContent.trim(), scriptLines: mergedScriptLines } : ch)
+        .map(ch => ch.id === targetChapterId ? { ...ch, rawContent: mergedRawContent, scriptLines: mergedScriptLines } : ch)
         .filter(ch => !chapterIds.includes(ch.id) || ch.id === targetChapterId);
 
       return { ...prevProject, chapters: newChapters };
@@ -184,3 +199,4 @@ export const useEnhancedEditorCoreLogic = ({
     mergeChapters,
   };
 };
+

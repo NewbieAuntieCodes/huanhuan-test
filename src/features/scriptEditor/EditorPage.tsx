@@ -285,8 +285,10 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
         if (characterDescriptions && characterDescriptions.size > 0) {
             const currentCharacters = useStore.getState().characters;
             let descriptionsUpdatedCount = 0;
+            const projId = currentProject.id;
             for (const [name, description] of characterDescriptions.entries()) {
-                const charToUpdate = currentCharacters.find(c => c.name === name);
+                const charToUpdate = currentCharacters.find(c => c.name === name && c.projectId === projId)
+                    || currentCharacters.find(c => c.name === name);
                 if (charToUpdate && charToUpdate.description !== description) {
                     const updatedCharacterData = { ...charToUpdate, description };
                     await onEditCharacter(updatedCharacterData, updatedCharacterData.cvName, undefined, undefined);
@@ -318,10 +320,14 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
   const handleSaveNewChapters = (pastedText: string) => {
     const { newChapters } = parseImportedScriptToChapters(pastedText, handleAddCharacterForProject);
     if (newChapters.length > 0) {
+      // 先清空 CV 筛选，确保新增章节立即可见
+      coreLogic.setCvFilter(null);
       applyUndoableProjectUpdate(prev => ({
         ...prev,
         chapters: [...prev.chapters, ...newChapters],
       }));
+      // 新增章节后，自动显示所有章节（清空CV筛选）
+      coreLogic.setCvFilter(null);
     }
     setIsAddChaptersModalOpen(false);
   };
@@ -374,6 +380,39 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
 };
 
   const undoableDeleteChapters = useCallback((chapterIds: string[]) => {
+    // 1) 在实际删除前，基于“即将被删除的章节”和“将被保留的章节”计算孤立角色（方案A：差集 + 一次线性聚合）
+    const orphanCandidateIds = new Set<string>();
+    const stillUsedIds = new Set<string>();
+
+    if (currentProject) {
+      // 将被删除的章节中出现过的角色集合
+      const deletingChapters = currentProject.chapters.filter(ch => chapterIds.includes(ch.id));
+      for (const ch of deletingChapters) {
+        for (const line of ch.scriptLines) {
+          if (line.characterId) {
+            orphanCandidateIds.add(line.characterId);
+          }
+        }
+      }
+
+      if (orphanCandidateIds.size > 0) {
+        // 将被保留的章节中，若仍出现上述任何角色，则标记为仍在使用
+        const remainingChapters = currentProject.chapters.filter(ch => !chapterIds.includes(ch.id));
+        for (const ch of remainingChapters) {
+          for (const line of ch.scriptLines) {
+            const cid = line.characterId;
+            if (cid && orphanCandidateIds.has(cid)) {
+              stillUsedIds.add(cid);
+              // 早停优化：当候选集合都被证实仍在使用时可提前结束
+              if (stillUsedIds.size === orphanCandidateIds.size) break;
+            }
+          }
+          if (stillUsedIds.size === orphanCandidateIds.size) break;
+        }
+      }
+    }
+
+    // 2) 执行章节删除（保持原有行为）
     applyUndoableProjectUpdate(prev => {
         const currentSelectedChapterId = selectedChapterId;
         const newSelectedChapterId = chapterIds.includes(currentSelectedChapterId ?? '') ? null : currentSelectedChapterId;
@@ -388,7 +427,31 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
             chapters: prev.chapters.filter(ch => !chapterIds.includes(ch.id)),
         };
     });
-  }, [applyUndoableProjectUpdate, selectedChapterId, coreLogic, setMultiSelectedChapterIds]);
+
+    // 3) 基于差集删除“孤立角色”（排除保护角色）
+    if (orphanCandidateIds.size > 0) {
+      const candidateMinusStillUsed = Array.from(orphanCandidateIds).filter(id => !stillUsedIds.has(id));
+      if (candidateMinusStillUsed.length > 0) {
+        const charMap = new Map(characters.map(c => [c.id, c]));
+        const PROTECTED_NAMES = new Set<string>(['[静音]', '音效', '未识别角色', 'Narrator']);
+        const toDelete = candidateMinusStillUsed.filter(id => {
+          const ch = charMap.get(id);
+          if (!ch) return false;
+          // 仅删除当前项目下且不在保护名单中的角色
+          if (ch.projectId !== currentProject?.id) return false;
+          return !PROTECTED_NAMES.has(ch.name);
+        });
+
+        if (toDelete.length > 0) {
+          try {
+            useStore.getState().deleteCharacters(toDelete);
+          } catch (e) {
+            console.error('Failed to prune orphan characters:', e);
+          }
+        }
+      }
+    }
+  }, [applyUndoableProjectUpdate, selectedChapterId, coreLogic, setMultiSelectedChapterIds, currentProject, characters]);
 
   const deleteChapters = useCallback((chapterIds: string[]) => {
     openConfirmModal(
@@ -561,3 +624,4 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
 };
 
 export default EditorPage;
+

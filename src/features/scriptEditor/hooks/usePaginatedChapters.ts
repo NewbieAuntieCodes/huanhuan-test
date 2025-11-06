@@ -30,18 +30,18 @@ export const usePaginatedChapters = ({
 
   // This effect handles jumping to the correct page ONLY when the user actively selects a new chapter.
   // It no longer depends on `chapters`, preventing jumps when the chapter data is refreshed.
+  // 当用户切换选中的章节，或章节列表结构发生变化时，确保跳转到包含该章节的页面。
+  // 通过对比当前页是否已包含选中章节来避免不必要的跳页。
   useEffect(() => {
-    if (initialSelectedChapterIdForViewing) {
-      const chapterIndex = chapters.findIndex(c => c.id === initialSelectedChapterIdForViewing);
-      if (chapterIndex !== -1) {
-        const pageNumber = Math.floor(chapterIndex / chaptersPerPage) + 1;
-        if (pageNumber !== currentPage) {
-          setCurrentPage(pageNumber);
-        }
-      }
+    if (!initialSelectedChapterIdForViewing) return;
+    const idx = chapters.findIndex(c => c.id === initialSelectedChapterIdForViewing);
+    if (idx === -1) return; // 选中的章节尚未在可见列表中（例如数据仍在刷新中）
+
+    const pageNumber = Math.floor(idx / chaptersPerPage) + 1;
+    if (pageNumber !== currentPage) {
+      setCurrentPage(pageNumber);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialSelectedChapterIdForViewing]);
+  }, [initialSelectedChapterIdForViewing, chapters, chaptersPerPage, currentPage]);
   
   // This effect now handles resetting the page when the project changes,
   // and correcting the page number if it becomes invalid (e.g., due to filtering).

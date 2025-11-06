@@ -9,21 +9,30 @@ export const parseImportedScriptToChapters = (
   const lines = rawText.split(/\r?\n/);
   const newChapters: Chapter[] = [];
   let currentChapterContent: ScriptLine[] = [];
-  let currentChapterTitle = "导入的章节 1";
+  let currentChapterTitle = "������½� 1";
   let chapterCounter = 1;
 
-  const chapterTitleLineRegex = /^(?:##\d+\s*\.\s*)?(Chapter\s+\d+|Part\s+\d+|第\s*[一二三四五六七八九十百千万零\d]+\s*[章章节回卷篇部]|楔子|序章|引子|尾声|Prologue|Epilogue|前言|后记)/i;
-  const scriptLineRegex = /^【(.*?)】([\s\S]*)/;
+  const chapterTitleLineRegex = /^(?:##\d+\s*\.\s*)?(Chapter\s+\d+|Part\s+\d+|��\s*[һ�����������߰˾�ʮ��ǧ����\d]+\s*[���½ڻؾ�ƪ��]|Ш��|����|����|β��|Prologue|Epilogue|ǰ��|���)/i;
+  // 支持方括号记名格式：
+  // 【CV-角色】台词 或 【角色】台词（台词中的引号属于文本本身，不参与说话人解析）
 
   const tempCharacterMap = new Map<string, Character>();
   const charactersWithCvToUpdate = new Map<string, string>(); // Map of characterId -> cvName
 
+  const isNoise = (t: string) => {
+    const s = (t || '').trim();
+    if (!s) return true;
+    if (/^【?待识别角色】?$/.test(s)) return true;
+    if (/^[\u2026\.。·！？!?,，、;；：:…\s]+$/.test(s)) return true;
+    return false;
+  };
+
   const getCharacter = (nameAndCv: string): Character => {
-    let charName = nameAndCv;
+    let charName = nameAndCv.trim();
     let cvName: string | undefined = undefined;
 
     // Split "CVName-CharacterName" format. Handles various hyphen types.
-    const parts = nameAndCv.split(/[-－–—]/);
+    const parts = nameAndCv.split(/[-\u2013\u2014\u2212\uFF0D]/);
     if (parts.length > 1) {
       const potentialCv = parts[0].trim();
       const potentialCharName = parts.slice(1).join('-').trim();
@@ -31,6 +40,16 @@ export const parseImportedScriptToChapters = (
         cvName = potentialCv;
         charName = potentialCharName;
       }
+    }
+
+    // Normalize reserved special roles
+    const normalized = charName.replace(/^[\[【]\s*|[\]】]\s*$/g, '').trim();
+    if (/^(静音|silence|mute)$/i.test(normalized)) {
+      charName = '[静音]';
+      cvName = undefined; // 静音不跟随CV
+    } else if (/^(音效|sfx|fx|音效描述)$/i.test(normalized)) {
+      charName = '音效';
+      cvName = undefined; // 音效不跟随CV
     }
 
     const lowerName = charName.toLowerCase();
@@ -46,13 +65,18 @@ export const parseImportedScriptToChapters = (
     const availableTextColors = ['text-red-100', 'text-blue-100', 'text-green-100', 'text-yellow-800', 'text-purple-100', 'text-pink-100', 'text-indigo-100', 'text-teal-100'];
     const colorIndex = tempCharacterMap.size % availableColors.length;
 
+    // Defaults for reserved roles
+    const isNarrator = charName.toLowerCase() === 'narrator';
+    const isSilence = charName === '[静音]';
+    const isSfx = charName === '音效';
+
     const newChar = onAddCharacter({
       name: charName,
-      color: charName.toLowerCase() === 'narrator' ? 'bg-slate-500' : availableColors[colorIndex],
-      textColor: charName.toLowerCase() === 'narrator' ? 'text-slate-100' : availableTextColors[colorIndex],
-      description: '',
-      cvName: cvName, // Pass initial CV name
-      isStyleLockedToCv: false,
+      color: isNarrator ? 'bg-slate-500' : isSilence ? 'bg-slate-700' : isSfx ? 'bg-transparent' : availableColors[colorIndex],
+      textColor: isNarrator ? 'text-slate-100' : isSilence ? 'text-slate-400' : isSfx ? 'text-red-500' : availableTextColors[colorIndex],
+      description: isSilence ? '用于标记无需录制的旁白提示' : isSfx ? '用于标记音效的文字描述' : '',
+      cvName: isSilence || isSfx ? '' : cvName, // reserved roles do not follow CV
+      isStyleLockedToCv: isSilence || isSfx ? true : false,
       status: 'active'
     });
     
@@ -70,7 +94,7 @@ export const parseImportedScriptToChapters = (
       const rawContent = currentChapterContent.map(line => {
         const character = allCharacters.find(c => c.id === line.characterId);
         if (character && character.name.toLowerCase() !== 'narrator') {
-            return `【${character.name}】${line.text}`;
+            return `��${character.name}��${line.text}`;
         }
         return line.text;
       }).join('\n');
@@ -84,13 +108,13 @@ export const parseImportedScriptToChapters = (
 
       currentChapterContent = [];
       chapterCounter++;
-      currentChapterTitle = `导入的章节 ${chapterCounter}`;
+      currentChapterTitle = `������½� ${chapterCounter}`;
     }
   };
 
   for (const line of lines) {
-    const trimmedLine = line.trim();
-    if (!trimmedLine) continue;
+    const trimmedLine = (line || '').replace(/\uFEFF/g, '').replace(/\u00A0/g, ' ').replace(/\u200B/g, '').trim();
+    if (!trimmedLine || isNoise(trimmedLine)) continue;
 
     if (chapterTitleLineRegex.test(trimmedLine)) {
       saveCurrentChapter();
@@ -98,18 +122,20 @@ export const parseImportedScriptToChapters = (
       continue;
     }
 
-    const match = trimmedLine.match(scriptLineRegex);
+    const bracketMatch = trimmedLine.match(/^\s*[\u3010\[](.+?)[\u3011\]]\s*([\s\S]*)/);
     let character: Character;
     let text: string;
 
-    if (match) {
-      const charName = match[1].trim();
-      text = match[2].trim();
+    if (bracketMatch) {
+      const charName = bracketMatch[1].trim();
+      text = bracketMatch[2].trim();
       character = getCharacter(charName);
     } else {
       text = trimmedLine;
       character = getCharacter('Narrator');
     }
+
+    if (isNoise(text)) continue;
 
     const scriptLine: ScriptLine = {
       id: `imported_line_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,

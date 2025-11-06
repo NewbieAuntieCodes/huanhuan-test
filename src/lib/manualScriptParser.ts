@@ -151,5 +151,29 @@ export const parseRawTextToScriptLinesByRules = (
     }
   }
 
-  return scriptLines;
+  // Merge consecutive unknown-speaker dialogue lines to reduce noise
+  const UNKNOWN_SPEAKER_NAME_LOCAL = "��ʶ���ɫ";
+  const unknownChar = tempCharacterMap.get(UNKNOWN_SPEAKER_NAME_LOCAL.toLowerCase())
+    || existingCharacters.find(c => c.name === UNKNOWN_SPEAKER_NAME_LOCAL);
+  if (!unknownChar) {
+    return scriptLines;
+  }
+
+  const merged: ScriptLine[] = [];
+  for (const ln of scriptLines) {
+    const last = merged[merged.length - 1];
+    if (
+      last &&
+      last.characterId === unknownChar.id &&
+      ln.characterId === unknownChar.id
+    ) {
+      last.text = `${last.text}\n${ln.text}`;
+      if (last.originalText && ln.originalText) {
+        last.originalText = `${last.originalText}\n${ln.originalText}`;
+      }
+    } else {
+      merged.push(ln);
+    }
+  }
+  return merged;
 };

@@ -1,12 +1,13 @@
-import React, { useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useEffect, useCallback, useMemo } from 'react';
 import { useStore }  from './store/useStore';
 // FIX: Add CVStylesMap to imports for explicit typing of useMemo.
 import { Character, CVStylesMap } from './types';
 import ConfirmModal from './components/modal/ConfirmModal';
 import CharacterAndCvStyleModal from './features/scriptEditor/components/editor_page_modal/CharacterAndCvStyleModal';
-import AppRouter from './routing/AppRouter'; 
+import AppRouter from './routing/AppRouter';
 import { CogIcon } from './components/ui/icons';
 import SettingsModal from './components/modal/SettingsModal';
+import { useWebSocket } from './hooks/useWebSocket';
 
 const App: React.FC = () => {
   const { 
@@ -22,6 +23,7 @@ const App: React.FC = () => {
     navigateTo,
     addCharacter,
     editCharacter,
+    bulkUpdateCharacterStylesForCV,
     closeConfirmModal,
     closeCharacterAndCvStyleModal,
     openSettingsModal,
@@ -29,71 +31,36 @@ const App: React.FC = () => {
     setWebSocketStatus,
   } = useStore();
 
-  const socketRef = useRef<WebSocket | null>(null);
-  const reconnectTimeoutRef = useRef<number | null>(null);
-  const hasWarnedRef = useRef(false);
-  
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
 
+  // 使用重构后的 WebSocket hook
+  const { status: wsStatus } = useWebSocket({
+    url: 'ws://127.0.0.1:9002',
+    autoConnect: true,
+    reconnectDelay: 5000,
+    autoReconnect: true,
+    onMessage: (data) => {
+      // 只在页面可见时处理 nextLine 动作
+      if (data.action === 'nextLine' && document.visibilityState === 'visible') {
+        useStore.getState().goToNextLine();
+      }
+    },
+    onOpen: () => {
+      console.log('✅ 已连接到全局热键伴侣');
+    },
+    onClose: (event) => {
+      if (!event.wasClean) {
+        console.warn('热键服务未连接。请确保热键伴侣程序正在运行。');
+      }
+    },
+  });
+
+  // 同步 WebSocket 状态到全局 store
   useEffect(() => {
-    const connectWebSocket = () => {
-      setWebSocketStatus('connecting');
-      const socket = new WebSocket('ws://127.0.0.1:9002');
-      socketRef.current = socket;
-
-      socket.onopen = () => {
-        console.log('✅ 已连接到全局热键伴侣');
-        setWebSocketStatus('connected');
-        hasWarnedRef.current = false; // Reset warning on successful connection
-      };
-
-      socket.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.action === 'nextLine' && document.visibilityState === 'visible') {
-            useStore.getState().goToNextLine();
-          }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-        }
-      };
-
-      socket.onerror = (event: Event) => {
-        // This event is generic. The 'close' event provides more info.
-        // We set status to disconnected in onclose, so no need for extra state changes here.
-      };
-
-      socket.onclose = (event: CloseEvent) => {
-        setWebSocketStatus('disconnected');
-        if (event.wasClean) {
-          console.log(`WebSocket 连接已正常关闭。`);
-        } else {
-          // Only show warning once to prevent console spam
-          if (!hasWarnedRef.current) {
-            console.warn('热键服务未连接。请确保热键伴侣程序正在运行。5秒后将尝试重连...');
-            hasWarnedRef.current = true;
-          }
-        }
-        // Set timeout and store its ID
-        reconnectTimeoutRef.current = window.setTimeout(connectWebSocket, 5000);
-      };
-    };
-
-    connectWebSocket();
-
-    return () => {
-      // Cleanup on component unmount
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      if (socketRef.current) {
-        socketRef.current.onclose = null; // Prevent reconnect logic from firing on manual close
-        socketRef.current.close();
-      }
-    };
-  }, [setWebSocketStatus]);
+    setWebSocketStatus(wsStatus);
+  }, [wsStatus, setWebSocketStatus]);
 
 
   // FIX: Added an explicit return type to `useMemo` to ensure TypeScript correctly infers `projectCvNames` as `string[]` instead of `unknown[]`.
@@ -139,8 +106,12 @@ const App: React.FC = () => {
     } else {
       editCharacter(characterData, cvName, cvBgColor, cvTextColor);
     }
+    // 将CV样式同步到该CV在当前项目下的所有角色（未锁定独立样式的角色除外）
+    if (cvName && cvBgColor && cvTextColor) {
+      bulkUpdateCharacterStylesForCV(cvName, cvBgColor, cvTextColor);
+    }
     closeCharacterAndCvStyleModal();
-  }, [characterAndCvStyleModal.characterToEdit, addCharacter, editCharacter, closeCharacterAndCvStyleModal, selectedProjectId]);
+  }, [characterAndCvStyleModal.characterToEdit, addCharacter, editCharacter, bulkUpdateCharacterStylesForCV, closeCharacterAndCvStyleModal, selectedProjectId]);
 
 
   return (

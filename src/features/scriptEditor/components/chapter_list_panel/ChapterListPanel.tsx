@@ -35,6 +35,7 @@ const ChapterListPanel: React.FC = () => {
         runManualParseForChapters,
         openImportModal,
         cvFilter,
+        setCvFilter,
         batchAddChapters,
         insertChapterAfter,
     } = useEditorContext();
@@ -179,12 +180,23 @@ const ChapterListPanel: React.FC = () => {
     }, [multiSelectedChapterIds, currentProject]);
 
     const handleOpenMergeModal = useCallback(() => {
+        // 打开前做一次校验，避免误触发无效合并
+        if (!canMerge) {
+            alert('请至少选择两个章节再进行合并');
+            return;
+        }
         setIsMergeModalOpen(true);
-    }, []);
+    }, [canMerge]);
 
     const handleConfirmMerge = useCallback((targetChapterId: string) => {
+        if (multiSelectedChapterIds.length < 2) {
+            alert('请至少选择两个章节');
+            return;
+        }
         mergeChapters(multiSelectedChapterIds, targetChapterId);
         setIsMergeModalOpen(false);
+        // 给予用户明确反馈
+        alert('合并完成');
     }, [multiSelectedChapterIds, mergeChapters]);
 
     const handleExportConfirm = (option: ExportOption) => {
@@ -306,12 +318,13 @@ const ChapterListPanel: React.FC = () => {
                     setIsBatchAddModalOpen(true);
                 }}
             />
-             <BatchAddChaptersModal
+            <BatchAddChaptersModal
                 isOpen={isBatchAddModalOpen}
                 onClose={() => setIsBatchAddModalOpen(false)}
-                onSave={(count) => {
+                onSave={async (count) => {
                     if (currentProject) {
-                        batchAddChapters(count);
+                        setCvFilter(null);
+                        await batchAddChapters(count);
                     }
                     setIsBatchAddModalOpen(false);
                 }}
@@ -337,3 +350,4 @@ const ChapterListPanel: React.FC = () => {
 };
 
 export default ChapterListPanel;
+
