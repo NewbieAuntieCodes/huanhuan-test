@@ -125,6 +125,7 @@ export const useAnnotationImporter = ({
 
     } catch (error) {
       console.error("Annotation import failed:", error);
+      // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
       alert(`Annotation import failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       return new Map();
     } finally {

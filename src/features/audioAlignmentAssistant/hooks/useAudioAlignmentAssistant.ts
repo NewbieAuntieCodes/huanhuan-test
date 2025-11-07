@@ -118,6 +118,7 @@ export const useAudioAlignmentAssistant = () => {
             setScannedFiles(parsedFiles);
         } catch (err) {
             console.error("Error scanning directory:", err);
+            // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
             alert(`扫描文件夹时出错: ${err instanceof Error ? err.message : String(err)}`);
         } finally {
             setIsLoading(false);
@@ -186,8 +187,8 @@ export const useAudioAlignmentAssistant = () => {
             await db.directoryHandles.put({ projectId: currentProject.id, handle });
             setDirectoryHandle(handle);
             await scanDirectory(handle, true);
-// FIX: Add a type guard to the catch block to safely access the 'name' property on the error object.
         } catch (err) {
+            // FIX: Add a type guard to the catch block to safely access the 'name' property on the error object.
             if (err instanceof Error && err.name === 'AbortError') {
             } else {
                 console.error("Error picking directory:", err);
@@ -264,6 +265,7 @@ export const useAudioAlignmentAssistant = () => {
 
         } catch (err) {
             console.error("Error processing directory files:", err);
+            // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
             alert(`Error processing files: ${err instanceof Error ? err.message : String(err)}`);
             setDirectoryName(null);
             setScannedFiles([]);

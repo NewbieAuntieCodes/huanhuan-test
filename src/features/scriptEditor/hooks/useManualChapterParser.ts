@@ -47,6 +47,7 @@ export const useManualChapterParser = ({
       });
     } catch (error) {
       console.error("Manual parsing failed:", error);
+      // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
       alert(`Manual parsing failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setIsLoadingManualParse(false);

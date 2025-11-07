@@ -10,6 +10,7 @@ import {
   MicrophoneIcon,
   CheckCircleIcon,
   XMarkIcon,
+  ArrowDownOnSquareIcon,
 } from '../../../components/ui/icons';
 import LoadingSpinner from '../../../components/ui/LoadingSpinner';
 import { Character } from '../../../types';
@@ -35,6 +36,8 @@ interface AudioAlignmentHeaderProps {
   isChapterMatchLoading: boolean;
   onOpenExportModal: () => void;
   isExporting: boolean;
+  isExportingToReaper: boolean;
+  onExportToReaper: () => void;
   onClearAudio: () => void;
   hasAudioInSelection: boolean;
   multiSelectCount: number;
@@ -73,6 +76,8 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
   isChapterMatchLoading,
   onOpenExportModal,
   isExporting,
+  isExportingToReaper,
+  onExportToReaper,
   onClearAudio,
   hasAudioInSelection,
   multiSelectCount,
@@ -206,6 +211,16 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
           >
               {isExporting ? <LoadingSpinner /> : <ArrowDownTrayIcon className="w-4 h-4 mr-1" />}
               {isExporting ? '导出中...' : '导出音频'}
+          </button>
+          <button
+            onClick={onExportToReaper}
+            disabled={isExportingToReaper}
+            className="flex items-center text-sm text-teal-300 hover:text-teal-100 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-50"
+            aria-label="导出到 Reaper"
+            title="将选中的章节导出为 Reaper 工程文件"
+          >
+            {isExportingToReaper ? <LoadingSpinner /> : <ArrowDownOnSquareIcon className="w-4 h-4 mr-1" />}
+            {isExportingToReaper ? '导出中...' : '导出到 Reaper'}
           </button>
           <button
               onClick={onClearAudio}

@@ -369,12 +369,22 @@ const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, index, nextLine
                    </button>
                    <SilenceEditor line={line} nextLine={nextLine} />
                 </div>
+                <div className="flex-shrink-0 w-16 flex items-center justify-center">
+                    {line.soundType && (
+                    <span 
+                        className="px-2 py-1 rounded-md text-xs font-semibold bg-indigo-800 text-indigo-200"
+                        title={`声场: ${line.soundType}`}
+                    >
+                        {line.soundType}
+                    </span>
+                   )}
+                </div>
             </div>
             <div 
                 className={`transition-all duration-300 ease-in-out overflow-hidden ${line.isMarkedForReturn ? 'max-h-40 mt-1.5' : 'max-h-0'}`}
             >
                 {line.isMarkedForReturn && (
-                    <div className="pl-[12.75rem] pr-[8.5rem]">
+                    <div className="pl-[12.75rem] pr-[13rem]">
                          <div className="bg-slate-800/70 border border-dashed border-red-500/50 rounded-md p-2">
                             {/* FIX: Replaced the invalid 'placeholder' attribute on a content-editable div with a 'data-placeholder' attribute and Tailwind CSS utilities. The 'empty:before:' pseudo-class is used to display the placeholder text when the div is empty, fixing the TypeScript error while preserving functionality. */}
                             <div

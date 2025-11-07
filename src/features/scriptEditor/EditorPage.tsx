@@ -259,6 +259,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
         } catch (error) {
             console.error("读取或解析文件时出错:", error);
 
+            // FIX: Add type guard to the catch block to safely access the 'message' property on the error object.
             const detailedMessage = error instanceof Error ? error.message : String(error);
             
             let errorMessage = `读取或解析文件时出错: ${detailedMessage}`;
@@ -433,9 +434,9 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
       const candidateMinusStillUsed = Array.from(orphanCandidateIds).filter(id => !stillUsedIds.has(id));
       if (candidateMinusStillUsed.length > 0) {
         const charMap = new Map(characters.map(c => [c.id, c]));
-        const PROTECTED_NAMES = new Set<string>(['[静音]', '音效', '未识别角色', 'Narrator']);
+        const PROTECTED_NAMES = new Set<string>(['[静音]', '音效', '待识别角色', 'Narrator']);
         const toDelete = candidateMinusStillUsed.filter(id => {
-          const ch = charMap.get(id);
+          const ch = charMap.get(id) as Character | undefined;
           if (!ch) return false;
           // 仅删除当前项目下且不在保护名单中的角色
           if (ch.projectId !== currentProject?.id) return false;
@@ -624,4 +625,3 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
 };
 
 export default EditorPage;
-

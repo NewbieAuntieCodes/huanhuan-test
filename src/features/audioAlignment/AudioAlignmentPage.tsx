@@ -15,6 +15,7 @@ import { ChevronLeftIcon } from '../../components/ui/icons';
 import AudioAlignmentHeader from './components/AudioAlignmentHeader';
 import ChapterListPanel from './components/ChapterListPanel';
 import ScriptLineList from './components/ScriptLineList';
+import { exportToReaperProject } from '../../services/reaperExporter';
 
 const AudioAlignmentPage: React.FC = () => {
   const store = useStore(state => ({
@@ -58,6 +59,7 @@ const AudioAlignmentPage: React.FC = () => {
 
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingToReaper, setIsExportingToReaper] = useState(false);
   const [isSilenceSettingsModalOpen, setIsSilenceSettingsModalOpen] = useState(false);
   const [lastSelectedChapterForShiftClick, setLastSelectedChapterForShiftClick] = useState<string | null>(null);
   const [isRecordingMode, setIsRecordingMode] = useState(false);
@@ -134,6 +136,34 @@ const AudioAlignmentPage: React.FC = () => {
   const onGoBack = () => {
     selectedProjectId ? navigateTo("editor") : navigateTo("dashboard");
   }
+
+  const handleExportToReaper = async () => {
+    if (!currentProject) return;
+    const chaptersToExport = multiSelectedChapterIds.length > 0
+        ? currentProject.chapters.filter(c => multiSelectedChapterIds.includes(c.id))
+        : (selectedChapter ? [selectedChapter] : []);
+
+    if (chaptersToExport.length === 0) {
+        alert('没有可导出的章节。');
+        return;
+    }
+
+    const hasAudio = chaptersToExport.some(c => c.scriptLines.some(l => l.audioBlobId));
+    if (!hasAudio) {
+        alert('所选章节内没有已对轨的音频可供导出。');
+        return;
+    }
+    
+    setIsExportingToReaper(true);
+    try {
+        await exportToReaperProject(currentProject, chaptersToExport, characters);
+    } catch (error) {
+        console.error("导出到Reaper时出错:", error);
+        alert(`导出到Reaper时出错: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+        setIsExportingToReaper(false);
+    }
+  };
 
   const handleExport = async (scope: 'current' | 'all') => {
     if (!currentProject) return;
@@ -299,6 +329,8 @@ const AudioAlignmentPage: React.FC = () => {
             isChapterMatchLoading={isChapterMatchLoading}
             onOpenExportModal={() => setIsExportModalOpen(true)}
             isExporting={isExporting}
+            isExportingToReaper={isExportingToReaper}
+            onExportToReaper={handleExportToReaper}
             onClearAudio={handleClearAudio}
             hasAudioInSelection={hasAudioInSelection}
             multiSelectCount={multiSelectCount}

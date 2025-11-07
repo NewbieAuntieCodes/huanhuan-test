@@ -185,6 +185,7 @@ ${scriptText}
 
   } catch (error) {
     console.error(`Error with ${provider} API or parsing response:`, error);
+    // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
     alert(`Error with AI Annotation: ${error instanceof Error ? error.message : String(error)}.`);
     throw error;
   }
