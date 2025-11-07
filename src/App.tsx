@@ -1,6 +1,5 @@
 import React, { useEffect, useCallback, useMemo } from 'react';
-import { useStore }  from './store/useStore';
-// FIX: Add CVStylesMap to imports for explicit typing of useMemo.
+import { useStore } from './store/useStore';
 import { Character, CVStylesMap } from './types';
 import ConfirmModal from './components/modal/ConfirmModal';
 import CharacterAndCvStyleModal from './features/scriptEditor/components/editor_page_modal/CharacterAndCvStyleModal';
@@ -10,12 +9,12 @@ import SettingsModal from './components/modal/SettingsModal';
 import { useWebSocket } from './hooks/useWebSocket';
 
 const App: React.FC = () => {
-  const { 
-    currentView, 
-    projects, 
-    characters, 
-    selectedProjectId, 
-    isLoading, 
+  const {
+    currentView,
+    projects,
+    characters,
+    selectedProjectId,
+    isLoading,
     confirmModal,
     characterAndCvStyleModal,
     isSettingsModalOpen,
@@ -35,116 +34,147 @@ const App: React.FC = () => {
     loadInitialData();
   }, [loadInitialData]);
 
-  // 使用重构后的 WebSocket hook
+  // WebSocket 联动（全局控制器）
   const { status: wsStatus } = useWebSocket({
     url: 'ws://127.0.0.1:9002',
     autoConnect: true,
     reconnectDelay: 5000,
     autoReconnect: true,
     onMessage: (data) => {
-      // 只在页面可见时处理 nextLine 动作
       if (data.action === 'nextLine' && document.visibilityState === 'visible') {
         useStore.getState().goToNextLine();
       }
     },
-    onOpen: () => {
-      console.log('✅ 已连接到全局热键伴侣');
-    },
-    onClose: (event) => {
-      if (!event.wasClean) {
-        console.warn('热键服务未连接。请确保热键伴侣程序正在运行。');
-      }
-    },
   });
 
-  // 同步 WebSocket 状态到全局 store
   useEffect(() => {
     setWebSocketStatus(wsStatus);
   }, [wsStatus, setWebSocketStatus]);
 
-
-  // FIX: Added an explicit return type to `useMemo` to ensure TypeScript correctly infers `projectCvNames` as `string[]` instead of `unknown[]`.
-  // FIX: Replaced `Array.from(new Set(...))` with a `reduce` operation to create the unique list of CV names. This approach is more robust for TypeScript's type inference.
-  const { projectCvStyles, projectCvNames } = useMemo<{ projectCvStyles: CVStylesMap, projectCvNames: string[] }>(() => {
-    const currentProject = projects.find(p => p.id === selectedProjectId);
-    if (!currentProject) {
-      return { projectCvStyles: {}, projectCvNames: [] };
-    }
-    
-    // Get characters for the current project only, plus global characters (no projectId)
-    const projectCharacters = characters.filter(c => !c.projectId || c.projectId === selectedProjectId);
-    
-    // Derive CV names from the project's characters
-    const cvNames = projectCharacters.reduce<string[]>((acc, c) => {
-      if (c.cvName && !acc.includes(c.cvName)) {
-        acc.push(c.cvName);
-      }
-      return acc;
-    }, []).sort();
-
-    return {
-      projectCvStyles: currentProject.cvStyles || {},
-      projectCvNames: cvNames,
-    };
+  // 项目级 CV 名与样式
+  const { projectCvStyles, projectCvNames } = useMemo<{
+    projectCvStyles: CVStylesMap;
+    projectCvNames: string[];
+  }>(() => {
+    const currentProject = projects.find((p) => p.id === selectedProjectId);
+    if (!currentProject) return { projectCvStyles: {}, projectCvNames: [] };
+    const projectCharacters = characters.filter(
+      (c) => !c.projectId || c.projectId === selectedProjectId
+    );
+    const cvNames = projectCharacters
+      .reduce<string[]>((acc, c) => {
+        if (c.cvName && !acc.includes(c.cvName)) acc.push(c.cvName);
+        return acc;
+      }, [])
+      .sort();
+    return { projectCvStyles: currentProject.cvStyles || {}, projectCvNames: cvNames };
   }, [selectedProjectId, projects, characters]);
 
-
-  const handleSaveFromUnifiedModal = useCallback((
-    characterData: Character,
-    cvName: string,
-    cvBgColor: string,
-    cvTextColor: string
-  ) => {
-    const isNewCharacter = !characterAndCvStyleModal.characterToEdit || !characterData.projectId;
-    if (isNewCharacter) {
-      if (!selectedProjectId) {
-        alert("错误：无法在没有选定项目的情况下创建角色。");
-        return;
+  // 统一保存入口（角色/CV）
+  const handleSaveFromUnifiedModal = useCallback(
+    async (
+      characterData: Character,
+      cvName: string,
+      cvBgColor: string,
+      cvTextColor: string
+    ) => {
+      const isNewCharacter =
+        !characterAndCvStyleModal.characterToEdit || !characterData.projectId;
+      if (isNewCharacter) {
+        if (!selectedProjectId) {
+          alert('当前无法在未选择项目的情况下创建角色');
+          return;
+        }
+        const newChar = addCharacter(characterData, selectedProjectId);
+        await editCharacter(newChar, cvName, cvBgColor, cvTextColor);
+      } else {
+        await editCharacter(characterData, cvName, cvBgColor, cvTextColor);
       }
-      const newChar = addCharacter(characterData, selectedProjectId);
-      editCharacter(newChar, cvName, cvBgColor, cvTextColor);
-    } else {
-      editCharacter(characterData, cvName, cvBgColor, cvTextColor);
-    }
-    // 将CV样式同步到该CV在当前项目下的所有角色（未锁定独立样式的角色除外）
-    if (cvName && cvBgColor && cvTextColor) {
-      bulkUpdateCharacterStylesForCV(cvName, cvBgColor, cvTextColor);
-    }
-    closeCharacterAndCvStyleModal();
-  }, [characterAndCvStyleModal.characterToEdit, addCharacter, editCharacter, bulkUpdateCharacterStylesForCV, closeCharacterAndCvStyleModal, selectedProjectId]);
-
+      if (cvName && cvBgColor && cvTextColor) {
+        await bulkUpdateCharacterStylesForCV(cvName, cvBgColor, cvTextColor);
+      }
+      closeCharacterAndCvStyleModal();
+    },
+    [
+      characterAndCvStyleModal.characterToEdit,
+      addCharacter,
+      editCharacter,
+      bulkUpdateCharacterStylesForCV,
+      closeCharacterAndCvStyleModal,
+      selectedProjectId,
+    ]
+  );
 
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-900">
       <header className="bg-slate-800 text-white p-3 shadow-md flex-shrink-0 border-b border-slate-700 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-sky-400">AI 有声内容创作</h1>
         <nav className="space-x-3 flex items-center">
-          {currentView !== "upload" && (
-            <button onClick={() => navigateTo("upload")} className="text-sm text-sky-300 hover:text-sky-100">上传新文件</button>
+          {currentView !== 'upload' && (
+            <button
+              onClick={() => navigateTo('upload')}
+              className="text-sm text-sky-300 hover:text-sky-100"
+            >
+              上传文件
+            </button>
           )}
-          {currentView !== "dashboard" && projects.length > 0 && (
-            <button onClick={() => navigateTo("dashboard")} className="text-sm text-sky-300 hover:text-sky-100">我的项目</button>
+          {currentView !== 'dashboard' && projects.length > 0 && (
+            <button
+              onClick={() => navigateTo('dashboard')}
+              className="text-sm text-sky-300 hover:text-sky-100"
+            >
+              我的项目
+            </button>
           )}
-           {currentView !== "editor" && selectedProjectId && projects.length > 0 && (
-             <button onClick={() => navigateTo("editor")} className="text-sm text-sky-300 hover:text-sky-100">编辑项目</button>
+          {currentView !== 'editor' && selectedProjectId && projects.length > 0 && (
+            <button
+              onClick={() => navigateTo('editor')}
+              className="text-sm text-sky-300 hover:text-sky-100"
+            >
+              编辑项目
+            </button>
           )}
-          {currentView !== "audioAlignment" && projects.length > 0 && ( 
-             <button onClick={() => navigateTo("audioAlignment")} className="text-sm text-sky-300 hover:text-sky-100">音频对轨</button>
+          {currentView !== 'audioAlignment' && projects.length > 0 && (
+            <button
+              onClick={() => navigateTo('audioAlignment')}
+              className="text-sm text-sky-300 hover:text-sky-100"
+            >
+              音频对轨
+            </button>
           )}
-          {currentView !== "audioAlignmentAssistant" && projects.length > 0 && (
-             <button onClick={() => navigateTo("audioAlignmentAssistant")} className="text-sm text-sky-300 hover:text-sky-100">对轨助手</button>
+          {currentView !== 'audioAlignmentAssistant' && projects.length > 0 && (
+            <button
+              onClick={() => navigateTo('audioAlignmentAssistant')}
+              className="text-sm text-sky-300 hover:text-sky-100"
+            >
+              对轨助手
+            </button>
           )}
-          {currentView !== "cvManagement" && characters.length > 0 && (
-             <button onClick={() => navigateTo("cvManagement")} className="text-sm text-sky-300 hover:text-sky-100">CV管理</button>
+          {currentView !== 'voiceLibrary' && projects.length > 0 && (
+            <button
+              onClick={() => navigateTo('voiceLibrary')}
+              className="text-sm text-sky-300 hover:text-sky-100"
+            >
+              音色库
+            </button>
           )}
-          {currentView !== "voiceLibrary" && projects.length > 0 && (
-             <button onClick={() => navigateTo("voiceLibrary")} className="text-sm text-sky-300 hover:text-sky-100">音色库</button>
+          {currentView !== 'cvManagement' && characters.length > 0 && (
+            <button
+              onClick={() => navigateTo('cvManagement')}
+              className="text-sm text-sky-300 hover:text-sky-100"
+            >
+              CV 管理
+            </button>
           )}
-          <button onClick={openSettingsModal} className="text-sm text-sky-300 hover:text-sky-100 p-2 rounded-full hover:bg-slate-700" title="设置">
+          <button
+            onClick={openSettingsModal}
+            className="text-sm text-sky-300 hover:text-sky-100 p-2 rounded-full hover:bg-slate-700"
+            title="设置"
+          >
             <CogIcon className="w-5 h-5" />
           </button>
         </nav>
-      </header>      
+      </header>
       <main className="flex-grow overflow-hidden">
         {isLoading && (
           <div className="absolute inset-0 bg-slate-900 bg-opacity-75 flex items-center justify-center z-[100]">
@@ -163,9 +193,7 @@ const App: React.FC = () => {
           closeConfirmModal();
         }}
         onCancel={() => {
-          if (confirmModal.onCancel) {
-            confirmModal.onCancel();
-          }
+          if (confirmModal.onCancel) confirmModal.onCancel();
           closeConfirmModal();
         }}
         confirmButtonText={confirmModal.confirmText}
@@ -181,12 +209,10 @@ const App: React.FC = () => {
           cvStyles={projectCvStyles}
         />
       )}
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={closeSettingsModal}
-      />
+      <SettingsModal isOpen={isSettingsModalOpen} onClose={closeSettingsModal} />
     </div>
   );
 };
 
 export default App;
+

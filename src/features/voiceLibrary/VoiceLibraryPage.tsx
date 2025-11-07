@@ -37,6 +37,7 @@ const VoiceLibraryPage: React.FC = () => {
     handleExport,
     handleExportCharacterClips,
     generatedAudioUrls,
+    persistedPromptUrls,
   } = useVoiceLibrary();
 
   const [isCharacterDropdownOpen, setIsCharacterDropdownOpen] = useState(false);
@@ -217,7 +218,7 @@ const VoiceLibraryPage: React.FC = () => {
               return (
               <VoiceLibraryRow
                 key={row.id}
-                row={{ ...row, audioUrl: generatedAudioUrls[row.id] || null }}
+                row={{ ...row, audioUrl: generatedAudioUrls[row.id] || null, promptAudioUrl: row.promptAudioUrl || (persistedPromptUrls ? persistedPromptUrls[row.id] : null) }}
                 character={characterForRow}
                 isBatchGenerating={isGenerating}
                 onTextChange={(text) => handleTextChange(row.id, text)}

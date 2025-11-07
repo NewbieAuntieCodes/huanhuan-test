@@ -16,6 +16,7 @@ export { ProjectRepository, projectRepository } from './projectRepository';
 export { CharacterRepository, characterRepository } from './characterRepository';
 export { AudioRepository, audioRepository } from './audioRepository';
 export { MiscRepository, miscRepository } from './miscRepository';
+export { VoiceLibraryPromptRepository, voiceLibraryPromptRepository } from './voiceLibraryPromptRepository';
 
 export type { CreateCharacterInput } from './characterRepository';
 export type { ApiSettings, CharacterShortcuts } from './miscRepository';

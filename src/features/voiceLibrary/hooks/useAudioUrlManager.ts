@@ -12,6 +12,7 @@ export const useAudioUrlManager = (
     currentProject: Project | undefined
 ) => {
     const [generatedAudioUrls, setGeneratedAudioUrls] = useState<Record<string, string>>({});
+    const [persistedPromptUrls, setPersistedPromptUrls] = useState<Record<string, string>>({});
     const objectUrlsRef = useRef<Record<string, string>>({});
 
     // Cleanup all object URLs on unmount
@@ -35,19 +36,22 @@ export const useAudioUrlManager = (
             const currentRowIds = new Set(rows.map(r => r.id));
             const existingUrlKeys = new Set(Object.keys(generatedAudioUrls));
 
-            // Create URLs for new/updated rows
+            // Create URLs for new rows, and revoke URLs whose blobs were removed
             for (const row of rows) {
-                if (row.originalLineId && !generatedAudioUrls[row.id]) {
-                    const line = currentProject.chapters
+                const existingUrl = generatedAudioUrls[row.id];
+                const line = row.originalLineId ? currentProject.chapters
                         .flatMap(ch => ch.scriptLines)
-                        .find(l => l.id === row.originalLineId);
+                        .find(l => l.id === row.originalLineId) : undefined;
 
-                    if (line?.audioBlobId) {
-                        const audioBlob = await db.audioBlobs.get(line.audioBlobId);
-                        if (audioBlob) {
-                            newUrls[row.id] = URL.createObjectURL(audioBlob.data);
-                        }
+                if (row.originalLineId && !existingUrl && line?.audioBlobId) {
+                    const audioBlob = await db.audioBlobs.get(line.audioBlobId);
+                    if (audioBlob) {
+                        newUrls[row.id] = URL.createObjectURL(audioBlob.data);
                     }
+                }
+
+                if (existingUrl && (!line || !line.audioBlobId)) {
+                    urlsToRevoke.push(existingUrl);
                 }
             }
 
@@ -79,6 +83,49 @@ export const useAudioUrlManager = (
 
         syncAudioUrls();
     }, [rows, currentProject, generatedAudioUrls]);
+
+    // Sync persisted prompt URLs from database (for reference audios)
+    useEffect(() => {
+        const syncPromptUrls = async () => {
+            if (!currentProject) return;
+
+            const next: Record<string, string> = {};
+            const toRevoke: string[] = [];
+            const existing = { ...persistedPromptUrls };
+
+            for (const row of rows) {
+                if (!row.originalLineId) continue;
+                const id = `${currentProject.id}::${row.originalLineId}`;
+                const record = await db.voiceLibraryPrompts.get(id);
+                if (record) {
+                    if (!persistedPromptUrls[row.id]) {
+                        next[row.id] = URL.createObjectURL(record.data);
+                    }
+                } else if (persistedPromptUrls[row.id]) {
+                    toRevoke.push(persistedPromptUrls[row.id]);
+                }
+            }
+
+            // Revoke removed
+            if (toRevoke.length > 0) {
+                toRevoke.forEach(URL.revokeObjectURL);
+                setPersistedPromptUrls(prev => {
+                    const copy = { ...prev };
+                    toRevoke.forEach(url => {
+                        const key = Object.keys(copy).find(k => copy[k] === url);
+                        if (key) delete copy[key];
+                    });
+                    return copy;
+                });
+            }
+
+            if (Object.keys(next).length > 0) {
+                setPersistedPromptUrls(prev => ({ ...prev, ...next }));
+            }
+        };
+
+        syncPromptUrls();
+    }, [rows, currentProject, persistedPromptUrls]);
 
     /**
      * Create an Object URL for a prompt audio file
@@ -128,6 +175,7 @@ export const useAudioUrlManager = (
 
     return {
         generatedAudioUrls,
+        persistedPromptUrls,
         objectUrlsRef,
         createPromptUrl,
         revokePromptUrl,

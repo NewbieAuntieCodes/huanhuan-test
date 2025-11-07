@@ -97,6 +97,17 @@ export interface AudioMarkerSet {
     markers: number[]; // Array of timestamps in seconds
 }
 
+// Voice Library: stored prompt (reference) audio for TTS
+export interface VoiceLibraryPrompt {
+  id: string; // composed key: `${projectId}::${originalLineId}`
+  projectId: string;
+  originalLineId: string; // the script line this prompt belongs to
+  fileName: string | null; // original file name
+  serverPath: string | null; // path returned by TTS server for reuse when generating
+  data: Blob; // the uploaded prompt audio data
+  createdAt: number;
+}
+
 
 // For Editor Page UI State
 export type CharacterFilterMode = 'currentChapter' | 'all';

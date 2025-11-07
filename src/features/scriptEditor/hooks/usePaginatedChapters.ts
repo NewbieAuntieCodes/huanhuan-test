@@ -41,7 +41,7 @@ export const usePaginatedChapters = ({
     if (pageNumber !== currentPage) {
       setCurrentPage(pageNumber);
     }
-  }, [initialSelectedChapterIdForViewing, chapters, chaptersPerPage, currentPage]);
+  }, [initialSelectedChapterIdForViewing, chapters, chaptersPerPage]);
   
   // This effect now handles resetting the page when the project changes,
   // and correcting the page number if it becomes invalid (e.g., due to filtering).
@@ -59,7 +59,7 @@ export const usePaginatedChapters = ({
     if (currentPage > totalPages) {
       setCurrentPage(totalPages);
     }
-  }, [totalPages, currentPage]);
+  }, [totalPages]);
 
 
   const paginatedChapters = useMemo(() => {

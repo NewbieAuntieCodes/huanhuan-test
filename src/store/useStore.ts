@@ -89,6 +89,38 @@ export const useStore = create<AppState>((set, get, api) => ({
         status: char.status || 'active',
       }));
 
+      // One-time fix: ensure the special SFX role has transparent bg + red text and is locked
+      const isSfxName = (name?: string) => {
+        if (!name) return false;
+        const n = name.trim().toLowerCase();
+        return n === '音效' || n === 'sfx' || n === '��Ч'.toLowerCase();
+      };
+      const fixedCharacters: Character[] = processedCharacters.map((c) => {
+        if (isSfxName(c.name)) {
+          const desired = {
+            color: 'bg-transparent',
+            textColor: 'text-red-500',
+            cvName: '',
+            isStyleLockedToCv: true,
+          } as Partial<Character>;
+          const needsUpdate =
+            c.color !== desired.color ||
+            c.textColor !== desired.textColor ||
+            (c.cvName || '') !== desired.cvName ||
+            c.isStyleLockedToCv !== true;
+          if (needsUpdate) {
+            return { ...c, ...desired } as Character;
+          }
+        }
+        return c;
+      });
+
+      // Persist SFX fixes back to DB if any
+      const sfxUpdates = fixedCharacters.filter((c, idx) => c !== processedCharacters[idx]);
+      if (sfxUpdates.length > 0) {
+        await db.characters.bulkPut(sfxUpdates);
+      }
+
       // --- Faulty migration logic removed ---
       // This block was causing duplicate default characters on every load.
       // The correct logic for creating default characters is handled in `addProject`.
@@ -100,7 +132,7 @@ export const useStore = create<AppState>((set, get, api) => ({
       
       set({
         projects,
-        characters: processedCharacters,
+        characters: fixedCharacters,
         mergeHistory,
         cvColorPresets,
         characterColorPresets,

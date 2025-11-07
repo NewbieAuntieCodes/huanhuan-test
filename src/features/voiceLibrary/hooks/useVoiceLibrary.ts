@@ -4,6 +4,7 @@ import { exportMarkedWav, exportCharacterClips } from '../services/voiceLibraryE
 import { useTtsApi } from './useTtsApi';
 import { useVoiceLibraryData, VoiceLibraryRowState } from './useVoiceLibraryData';
 import { useAudioUrlManager } from './useAudioUrlManager';
+import { voiceLibraryPromptRepository } from '../../../repositories/voiceLibraryPromptRepository';
 import { processAndAssignAudio, deleteGeneratedAudio } from '../utils/audioAssignment';
 
 export type { VoiceLibraryRowState }; // Re-export for other components
@@ -28,7 +29,7 @@ export const useVoiceLibrary = () => {
         selectedCharacterId,
         chapterFilter
     });
-    const { generatedAudioUrls, createPromptUrl, revokePromptUrl, cleanupRowUrls } = useAudioUrlManager(
+    const { generatedAudioUrls, persistedPromptUrls, createPromptUrl, revokePromptUrl, cleanupRowUrls } = useAudioUrlManager(
         rows,
         currentProject
     );
@@ -57,6 +58,61 @@ export const useVoiceLibrary = () => {
     useEffect(() => {
         checkServerHealth();
     }, [checkServerHealth]);
+
+    // Persist prompt blobs and sync serverPath when available
+    useEffect(() => {
+        const persist = async () => {
+            if (!currentProject) return;
+            for (const row of rows) {
+                if (!row.originalLineId) continue;
+                const rec = await voiceLibraryPromptRepository.get(currentProject.id, row.originalLineId);
+
+                // If we have an object URL but no record, store it
+                if (!rec && row.promptAudioUrl) {
+                    try {
+                        const blob = await fetch(row.promptAudioUrl).then(r => r.blob());
+                        await voiceLibraryPromptRepository.save({
+                            id: `${currentProject.id}::${row.originalLineId}`,
+                            projectId: currentProject.id,
+                            originalLineId: row.originalLineId,
+                            fileName: row.promptFileName || null,
+                            serverPath: row.promptFilePath || null,
+                            data: blob,
+                        });
+                    } catch {}
+                }
+
+                // If record exists but serverPath changed/added, update
+                if (rec && row.promptFilePath && rec.serverPath !== row.promptFilePath) {
+                    await voiceLibraryPromptRepository.save({
+                        id: rec.id,
+                        projectId: rec.projectId,
+                        originalLineId: rec.originalLineId,
+                        fileName: rec.fileName,
+                        serverPath: row.promptFilePath,
+                        data: rec.data,
+                    });
+                }
+            }
+        };
+        persist();
+    }, [rows, currentProject]);
+
+    // Restore promptFilePath and fileName from IndexedDB if missing
+    useEffect(() => {
+        const restore = async () => {
+            if (!currentProject) return;
+            for (const row of rows) {
+                if (row.originalLineId && !row.promptFilePath) {
+                    const rec = await voiceLibraryPromptRepository.get(currentProject.id, row.originalLineId);
+                    if (rec) {
+                        updateRow(row.id, { promptFilePath: rec.serverPath, promptFileName: rec.fileName });
+                    }
+                }
+            }
+        };
+        restore();
+    }, [rows, currentProject, updateRow]);
 
     // --- Business Logic Handlers ---
 
@@ -178,10 +234,19 @@ export const useVoiceLibrary = () => {
         if (!row || !selectedProjectId || !currentProject) return;
 
         await deleteGeneratedAudio(row, currentProject, selectedProjectId, updateLineAudio);
-    }, [rows, selectedProjectId, currentProject, updateLineAudio]);
+        // Reset to idle so user can regenerate immediately
+        updateRow(rowId, { status: 'idle', error: null });
+    }, [rows, selectedProjectId, currentProject, updateLineAudio, updateRow]);
 
-    const handleDeletePromptAudio = useCallback((rowId: string) => {
+    const handleDeletePromptAudio = useCallback(async (rowId: string) => {
         revokePromptUrl(rowId);
+        // Also remove persisted prompt from database
+        if (currentProject) {
+            const row = rows.find(r => r.id === rowId);
+            if (row?.originalLineId) {
+                await voiceLibraryPromptRepository.delete(currentProject.id, row.originalLineId);
+            }
+        }
         updateRow(rowId, {
             promptFilePath: null,
             promptAudioUrl: null,
@@ -189,7 +254,7 @@ export const useVoiceLibrary = () => {
             status: 'idle',
             error: null
         });
-    }, [updateRow, revokePromptUrl]);
+    }, [rows, currentProject, updateRow, revokePromptUrl]);
 
     const addEmptyRow = useCallback(() => {
         setRows(prev => [...prev, {
@@ -263,5 +328,6 @@ export const useVoiceLibrary = () => {
         handleExport,
         handleExportCharacterClips,
         generatedAudioUrls,
+        persistedPromptUrls,
     };
 };

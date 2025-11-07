@@ -1,3 +1,4 @@
+import useStore from '../../../../store/useStore';
 import React, { useState, useCallback, useMemo } from 'react';
 import { Chapter } from '../../../../types';
 import { useEditorContext } from '../../contexts/EditorContext';
@@ -325,6 +326,12 @@ const ChapterListPanel: React.FC = () => {
                     if (currentProject) {
                         setCvFilter(null);
                         await batchAddChapters(count);
+                        const pid = currentProject?.id;
+                        if (pid) {
+                          const latest = useStore.getState().projects.find(p => p.id === pid);
+                          const lastId = latest?.chapters[latest.chapters.length - 1]?.id;
+                          if (lastId) setSelectedChapterId(lastId);
+                        }
                     }
                     setIsBatchAddModalOpen(false);
                 }}
