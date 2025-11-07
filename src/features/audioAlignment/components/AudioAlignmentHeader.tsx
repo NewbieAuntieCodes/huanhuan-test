@@ -13,7 +13,9 @@ import {
 } from '../../../components/ui/icons';
 import LoadingSpinner from '../../../components/ui/LoadingSpinner';
 import { Character } from '../../../types';
-import { WebSocketStatus } from '../../../store/slices/uiSlice';
+import { WebSocketStatus, LufsSettings } from '../../../store/slices/uiSlice';
+import NumberInput from '../../../components/ui/NumberInput';
+import Switch from '../../../components/ui/Switch';
 
 interface AudioAlignmentHeaderProps {
   currentProjectName: string;
@@ -27,6 +29,8 @@ interface AudioAlignmentHeaderProps {
   projectCharacters: Character[];
   projectCvNames: string[];
   onOpenSilenceSettings: () => void;
+  lufsSettings: LufsSettings;
+  onLufsSettingsChange: (settings: Partial<LufsSettings>) => void;
   isSmartMatchLoading: boolean;
   isChapterMatchLoading: boolean;
   onOpenExportModal: () => void;
@@ -63,6 +67,8 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
   projectCharacters,
   projectCvNames,
   onOpenSilenceSettings,
+  lufsSettings,
+  onLufsSettingsChange,
   isSmartMatchLoading,
   isChapterMatchLoading,
   onOpenExportModal,
@@ -157,6 +163,22 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
               <CogIcon className="w-4 h-4 mr-1" />
               间隔配置
           </button>
+          <div className="flex items-center gap-x-2 bg-slate-700 rounded-md p-1 h-8" title="LUFS 响度标准化">
+            <span className="text-sm text-slate-400 pl-1.5 pr-1 font-sans font-semibold">LUFS</span>
+            <NumberInput
+                value={lufsSettings.target}
+                onChange={target => onLufsSettingsChange({ target })}
+                step={0.5}
+                min={-40}
+                max={0}
+                precision={1}
+            />
+            <Switch
+                checked={lufsSettings.enabled}
+                onChange={enabled => onLufsSettingsChange({ enabled })}
+                label={lufsSettings.enabled ? "响度标准化已激活" : "响度标准化未激活"}
+            />
+          </div>
           <button
               onClick={handleSmartMatchClick}
               disabled={isSmartMatchLoading}

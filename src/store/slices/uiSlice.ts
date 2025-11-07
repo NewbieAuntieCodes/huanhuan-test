@@ -14,6 +14,11 @@ export interface ApiSettings {
   deepseek: { apiKey: string; baseUrl: string; model: string };
 }
 
+export interface LufsSettings {
+  enabled: boolean;
+  target: number;
+}
+
 
 export interface ConfirmModalState {
   isOpen: boolean;
@@ -60,6 +65,7 @@ export interface UiSlice {
   audioAlignmentMultiSelectedChapterIds: string[];
   activeRecordingLineId: string | null;
   webSocketStatus: WebSocketStatus;
+  lufsSettings: LufsSettings;
 
 
   navigateTo: (view: AppView) => void;
@@ -95,6 +101,7 @@ export interface UiSlice {
   setAudioAlignmentMultiSelectedChapterIds: (ids: string[]) => void;
   setActiveRecordingLineId: (id: string | null) => void;
   setWebSocketStatus: (status: WebSocketStatus) => void;
+  setLufsSettings: (settings: Partial<LufsSettings>) => Promise<void>;
   goToNextLine: () => Promise<void>;
 }
 
@@ -123,6 +130,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   audioAlignmentMultiSelectedChapterIds: [],
   activeRecordingLineId: null,
   webSocketStatus: 'disconnected',
+  lufsSettings: { enabled: false, target: -18 },
 
   navigateTo: (view) => set({ currentView: view }),
   setIsLoading: (loading) => set({ isLoading: loading }),
@@ -219,6 +227,11 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   setAudioAlignmentMultiSelectedChapterIds: (ids) => set({ audioAlignmentMultiSelectedChapterIds: ids }),
   setActiveRecordingLineId: (id) => set({ activeRecordingLineId: id }),
   setWebSocketStatus: (status) => set({ webSocketStatus: status }),
+  setLufsSettings: async (settingsUpdate) => {
+    const newSettings = { ...get().lufsSettings, ...settingsUpdate };
+    await db.misc.put({ key: 'lufsSettings', value: newSettings });
+    set({ lufsSettings: newSettings });
+  },
   goToNextLine: async () => {
     const {
         projects, selectedProjectId, selectedChapterId, characters, activeRecordingLineId,

@@ -1,5 +1,6 @@
 import { ScriptLine, Project, Character, LineType, SilencePairing } from '../types';
 import { defaultSilenceSettings } from './defaultSilenceSettings';
+import { normalizeAudioBuffer } from './lufsNormalizer';
 
 interface LineWithAudio {
     line: ScriptLine;
@@ -47,14 +48,25 @@ const getLineType = (line: ScriptLine | undefined, characters: Character[]): Lin
 
 
 // FIX: The `characters` property does not exist on the `Project` type. It is now passed as a separate argument.
-export async function exportAudioWithMarkers(linesWithAudio: LineWithAudio[], project: Project, characters: Character[]): Promise<Blob> {
+export async function exportAudioWithMarkers(
+    linesWithAudio: LineWithAudio[], 
+    project: Project, 
+    characters: Character[],
+    lufsSettings?: { enabled: boolean; target: number }
+): Promise<Blob> {
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     const { silenceSettings = defaultSilenceSettings } = project;
 
     try {
-        const decodedBuffers = await Promise.all(
+        let decodedBuffers = await Promise.all(
             linesWithAudio.map(item => item.audioBlob.arrayBuffer().then(ab => audioContext.decodeAudioData(ab)))
         );
+
+        if (lufsSettings?.enabled) {
+            decodedBuffers = await Promise.all(
+                decodedBuffers.map(buffer => normalizeAudioBuffer(buffer, lufsSettings.target))
+            );
+        }
 
         const cuePoints: number[] = [];
         let totalSamples = 0;

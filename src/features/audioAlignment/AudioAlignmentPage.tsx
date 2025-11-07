@@ -41,6 +41,8 @@ const AudioAlignmentPage: React.FC = () => {
     webSocketStatus: state.webSocketStatus,
     multiSelectedChapterIds: state.audioAlignmentMultiSelectedChapterIds,
     setMultiSelectedChapterIds: state.setAudioAlignmentMultiSelectedChapterIds,
+    lufsSettings: state.lufsSettings,
+    setLufsSettings: state.setLufsSettings,
   }));
 
   const {
@@ -49,7 +51,7 @@ const AudioAlignmentPage: React.FC = () => {
     openConfirmModal, clearAudioFromChapters, waveformEditorState, openWaveformEditor,
     closeWaveformEditor, cvFilter, setCvFilter, characterFilter, setCharacterFilter,
     activeRecordingLineId, setActiveRecordingLineId, webSocketStatus,
-    multiSelectedChapterIds, setMultiSelectedChapterIds,
+    multiSelectedChapterIds, setMultiSelectedChapterIds, lufsSettings, setLufsSettings
   } = store;
 
   const lineRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -168,7 +170,12 @@ const AudioAlignmentPage: React.FC = () => {
             return;
         }
 
-        const waveBlob = await exportAudioWithMarkers(linesWithAudio, currentProject, characters);
+        const waveBlob = await exportAudioWithMarkers(
+            linesWithAudio,
+            currentProject,
+            characters,
+            { enabled: lufsSettings.enabled, target: lufsSettings.target }
+        );
         
         const url = URL.createObjectURL(waveBlob);
         const a = document.createElement('a');
@@ -286,6 +293,8 @@ const AudioAlignmentPage: React.FC = () => {
             projectCharacters={projectCharacters}
             projectCvNames={projectCvNames}
             onOpenSilenceSettings={() => setIsSilenceSettingsModalOpen(true)}
+            lufsSettings={lufsSettings}
+            onLufsSettingsChange={setLufsSettings}
             isSmartMatchLoading={isSmartMatchLoading}
             isChapterMatchLoading={isChapterMatchLoading}
             onOpenExportModal={() => setIsExportModalOpen(true)}

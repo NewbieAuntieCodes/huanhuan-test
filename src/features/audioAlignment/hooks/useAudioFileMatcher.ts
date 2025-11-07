@@ -1,5 +1,5 @@
 // FIX: Changed React import from a named import to a default import to correctly resolve the React namespace for types like React.ChangeEvent.
-import React, { useState, useCallback, useMemo } from 'react';
+import React from 'react';
 import * as mm from 'music-metadata-browser';
 import { Project, Character, Chapter, ScriptLine, MasterAudio } from '../../../types';
 import { bufferToWav } from '../../../lib/wavEncoder';
@@ -172,16 +172,16 @@ export const useAudioFileMatcher = ({
   characters,
   assignAudioToLine,
 }: UseAudioFileMatcherProps) => {
-  const [isSmartMatchLoading, setIsSmartMatchLoading] = useState(false);
-  const [isChapterMatchLoading, setIsChapterMatchLoading] = useState(false);
+  const [isSmartMatchLoading, setIsSmartMatchLoading] = React.useState(false);
+  const [isChapterMatchLoading, setIsChapterMatchLoading] = React.useState(false);
 
-  const nonAudioCharacterIds = useMemo(() => {
+  const nonAudioCharacterIds = React.useMemo(() => {
     return characters
       .filter(c => c.name === '[静音]' || c.name === '音效')
       .map(c => c.id);
   }, [characters]);
 
-  const processMasterAudioFile = useCallback(async (
+  const processMasterAudioFile = React.useCallback(async (
     file: File,
     identifier: string,
     matchType: 'cv' | 'character' | 'chapter',
@@ -331,8 +331,8 @@ export const useAudioFileMatcher = ({
         let metadata;
         try {
             metadata = await mm.parseBlob(file);
-        // FIX: The 'e' object in a catch block is of type 'unknown'. Use a type guard to safely access its properties before attempting to read a message from it.
         } catch (e) {
+            // FIX: The 'e' object in a catch block is of type 'unknown'. Use a type guard to safely access its properties before attempting to read a message from it.
             const message = e instanceof Error ? e.message : String(e);
             const errorMsg = `音频文件解析失败: ${message}`;
             console.error(`Metadata parsing failed for ${file.name}:`, message);
@@ -439,7 +439,6 @@ export const useAudioFileMatcher = ({
           errorMessage: warningMessage || undefined
         };
 
-    // FIX: The 'error' object in a catch block is of type 'unknown'. Use a type guard to safely access its properties before attempting to read a message from it.
     } catch (error) {
         // FIX: Add type guard for 'unknown' error object before accessing properties.
         const message = error instanceof Error ? error.message : String(error);
@@ -457,7 +456,7 @@ export const useAudioFileMatcher = ({
   }, [currentProject, characters, nonAudioCharacterIds, assignAudioToLine]);
 
 
-  const handleFileSelection = useCallback(async (
+  const handleFileSelection = React.useCallback(async (
     event: React.ChangeEvent<HTMLInputElement>,
     matchType: 'cv' | 'character' | 'chapter',
     setIsLoading: (loading: boolean) => void

@@ -4,7 +4,7 @@ import LoadingSpinner from '../../../components/ui/LoadingSpinner';
 import WaveformPlayer from './WaveformPlayer';
 import GeneratedAudioPlayer from './GeneratedAudioPlayer';
 // FIX: Corrected the import path for the `VoiceLibraryRowState` type.
-import { VoiceLibraryRowState } from '../hooks/useVoiceLibrary';
+import { VoiceLibraryRowState } from '../hooks/useVoiceLibraryData';
 import { Character } from '../../../types';
 import { isHexColor, getContrastingTextColor } from '../../../lib/colorUtils';
 

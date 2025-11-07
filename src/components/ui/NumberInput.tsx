@@ -14,13 +14,14 @@ const NumberInput: React.FC<NumberInputProps> = ({
     value,
     onChange,
     step = 0.1,
-    min = 0,
+    min = -99,
     max = 99,
     precision = 1,
 }) => {
     
     const formatValue = (num: number) => {
-        return parseFloat(num.toFixed(precision));
+        // Use exponential notation to avoid floating point inaccuracies
+        return Number(Math.round(parseFloat(num + 'e' + precision)) + 'e-' + precision);
     };
 
     const handleIncrement = () => {

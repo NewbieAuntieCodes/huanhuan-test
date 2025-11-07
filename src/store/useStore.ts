@@ -4,7 +4,7 @@ import { AppView, CVStylesMap, PresetColor } from '../types';
 import { Project, Character, MergeHistoryEntry } from '../types';
 
 // Import slice creators and their state/action types
-import { createUiSlice, UiSlice } from './slices/uiSlice';
+import { createUiSlice, UiSlice, LufsSettings } from './slices/uiSlice';
 import { createProjectSlice, ProjectSlice } from './slices/projectSlice';
 import { createProjectAudioSlice, ProjectAudioSlice } from './slices/projectAudioSlice';
 import { createCharacterSlice, CharacterSlice } from './slices/characterSlice';
@@ -52,6 +52,7 @@ export const useStore = create<AppState>((set, get, api) => ({
         apiSettingsItem,
         selectedAiProviderItem,
         characterShortcutsItem,
+        lufsSettingsItem,
       ] = await db.transaction('r', db.projects, db.characters, db.misc, async () => {
         return Promise.all([
           db.projects.orderBy('lastModified').reverse().toArray(),
@@ -62,6 +63,7 @@ export const useStore = create<AppState>((set, get, api) => ({
           db.misc.get('apiSettings'),
           db.misc.get('selectedAiProvider'),
           db.misc.get('characterShortcuts'),
+          db.misc.get('lufsSettings'),
         ]);
       });
 
@@ -70,6 +72,7 @@ export const useStore = create<AppState>((set, get, api) => ({
       const apiSettings = apiSettingsItem?.value || get().apiSettings;
       const selectedAiProvider = selectedAiProviderItem?.value || 'gemini';
       const characterShortcuts = characterShortcutsItem?.value || {};
+      const lufsSettings = lufsSettingsItem?.value || { enabled: false, target: -18 };
       
       let cvColorPresets = cvColorPresetsItem?.value;
       if (!cvColorPresets || !Array.isArray(cvColorPresets) || cvColorPresets.length === 0) {
@@ -139,6 +142,7 @@ export const useStore = create<AppState>((set, get, api) => ({
         apiSettings,
         selectedAiProvider,
         characterShortcuts,
+        lufsSettings,
         currentView: initialView,
         aiProcessingChapterIds: [], // Reset on load
         selectedProjectId: get().selectedProjectId || null,

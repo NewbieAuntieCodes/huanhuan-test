@@ -1,5 +1,5 @@
 // FIX: Import the 'React' namespace to correctly type 'React.ChangeEvent'.
-import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import React from 'react';
 import { useStore } from '../../../store/useStore';
 import { Character, ParsedFileInfo, AudioAssistantState } from '../../../types';
 import { db } from '../../../db';
@@ -37,21 +37,21 @@ export interface MatchStatus {
 
 export const useAudioAlignmentAssistant = () => {
     const { projects, characters, selectedProjectId, navigateTo } = useStore();
-    const [directoryName, setDirectoryName] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(false);
-    const [scannedFiles, setScannedFiles] = useState<ParsedFileInfo[]>([]);
-    const [manualOverrides, setManualOverrides] = useState<Record<string, boolean>>({});
+    const [directoryName, setDirectoryName] = React.useState<string | null>(null);
+    const [isLoading, setIsLoading] = React.useState(false);
+    const [scannedFiles, setScannedFiles] = React.useState<ParsedFileInfo[]>([]);
+    const [manualOverrides, setManualOverrides] = React.useState<Record<string, boolean>>({});
 
-    const [selectedRangeIndex, setSelectedRangeIndex] = useState<number | null>(null);
-    const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null);
+    const [selectedRangeIndex, setSelectedRangeIndex] = React.useState<number | null>(null);
+    const [selectedChapterId, setSelectedChapterId] = React.useState<string | null>(null);
     
     // --- File System Access API state and refs ---
     const isApiSupported = 'showDirectoryPicker' in window;
-    const [directoryHandle, setDirectoryHandle] = useState<FileSystemDirectoryHandle | null>(null);
+    const [directoryHandle, setDirectoryHandle] = React.useState<FileSystemDirectoryHandle | null>(null);
     
-    const currentProject = useMemo(() => projects.find(p => p.id === selectedProjectId), [projects, selectedProjectId]);
+    const currentProject = React.useMemo(() => projects.find(p => p.id === selectedProjectId), [projects, selectedProjectId]);
     
-    const { allCvNames, projectCharacters } = useMemo<{ allCvNames: string[], projectCharacters: Character[] }>(() => {
+    const { allCvNames, projectCharacters } = React.useMemo<{ allCvNames: string[], projectCharacters: Character[] }>(() => {
         if (!currentProject) return { allCvNames: [], projectCharacters: [] };
         const projChars = characters.filter(c => (c.projectId === currentProject.id || !c.projectId) && c.status !== 'merged');
         const cvs = projChars.reduce<string[]>((acc, c) => {
@@ -63,7 +63,7 @@ export const useAudioAlignmentAssistant = () => {
         return { allCvNames: cvs, projectCharacters: projChars };
     }, [currentProject, characters]);
     
-    const scanDirectory = useCallback(async (handle: FileSystemDirectoryHandle, resetState: boolean) => {
+    const scanDirectory = React.useCallback(async (handle: FileSystemDirectoryHandle, resetState: boolean) => {
         setIsLoading(true);
         if (resetState) {
             setScannedFiles([]);
@@ -124,7 +124,7 @@ export const useAudioAlignmentAssistant = () => {
         }
     }, [allCvNames]);
 
-    useEffect(() => {
+    React.useEffect(() => {
         if (currentProject) {
             const loadState = async () => {
                 setIsLoading(true);
@@ -160,7 +160,7 @@ export const useAudioAlignmentAssistant = () => {
         }
     }, [currentProject, isApiSupported, scanDirectory]);
 
-    useEffect(() => {
+    React.useEffect(() => {
         if (currentProject && (directoryName || scannedFiles.length > 0)) {
             const saveState = async () => {
                 const stateToSave: AudioAssistantState = {
@@ -186,6 +186,7 @@ export const useAudioAlignmentAssistant = () => {
             await db.directoryHandles.put({ projectId: currentProject.id, handle });
             setDirectoryHandle(handle);
             await scanDirectory(handle, true);
+// FIX: Add a type guard to the catch block to safely access the 'name' property on the error object.
         } catch (err) {
             if (err instanceof Error && err.name === 'AbortError') {
             } else {
@@ -204,7 +205,7 @@ export const useAudioAlignmentAssistant = () => {
         }
     };
 
-    const handleDirectoryInputChange_Fallback = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const handleDirectoryInputChange_Fallback = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         if (!files || files.length === 0) return;
 
@@ -273,7 +274,7 @@ export const useAudioAlignmentAssistant = () => {
         }
     }, [allCvNames]);
     
-    const chapterRanges = useMemo<{ label: string; start: number; end: number; }[]>(() => {
+    const chapterRanges = React.useMemo<{ label: string; start: number; end: number; }[]>(() => {
         if (!currentProject) return [];
         const ranges = [];
         const rangeSize = 100;
@@ -295,7 +296,7 @@ export const useAudioAlignmentAssistant = () => {
         return ranges;
     }, [currentProject]);
 
-    const finalMatchStatus = useMemo<MatchStatus | null>(() => {
+    const finalMatchStatus = React.useMemo<MatchStatus | null>(() => {
         if (scannedFiles.length === 0 || !currentProject) return null;
 
         const finalStatus: MatchStatus = { characters: {}, chapters: {}, ranges: {} };
@@ -320,7 +321,7 @@ export const useAudioAlignmentAssistant = () => {
                 return;
             }
 
-// FIX: Add explicit type annotation to the callback parameter of `every` to resolve "Type 'unknown' cannot be used as an index type" error.
+            // FIX: Add explicit type annotation to the callback parameter of `every` to resolve "Type 'unknown' cannot be used as an index type" error.
             const isChapterComplete = Array.from(charIdsInChapter).every((charId: string) => {
                 const character = projectCharacters.find(c => c.id === charId);
                 if (!character) return true;
@@ -349,7 +350,7 @@ export const useAudioAlignmentAssistant = () => {
                 const relevantFiles = fileCoverage.get(chapterNum) || [];
                 const charIdsInChapter = new Set(chapter.scriptLines.map(l => l.characterId).filter((id): id is string => !!id));
 
-// FIX: Replace `for...of` loop with a typed `forEach` to resolve "Type 'unknown' cannot be used as an index type" errors.
+                // FIX: Replace `for...of` loop with a typed `forEach` to resolve "Type 'unknown' cannot be used as an index type" errors.
                 charIdsInChapter.forEach((charId: string) => {
                     const character = projectCharacters.find(c => c.id === charId);
                     if (!character) return; // continue equivalent
@@ -378,13 +379,13 @@ export const useAudioAlignmentAssistant = () => {
         }));
     };
 
-    const chaptersInSelectedRange = useMemo(() => {
+    const chaptersInSelectedRange = React.useMemo(() => {
         if (selectedRangeIndex === null || !currentProject) return [];
         const range = chapterRanges[selectedRangeIndex];
         return currentProject.chapters.slice(range.start, range.end + 1);
     }, [selectedRangeIndex, chapterRanges, currentProject]);
 
-    const charactersInSelectedChapter = useMemo(() => {
+    const charactersInSelectedChapter = React.useMemo(() => {
         if (!selectedChapterId || !currentProject) return [];
         const chapter = currentProject.chapters.find(c => c.id === selectedChapterId);
         if (!chapter) return [];
