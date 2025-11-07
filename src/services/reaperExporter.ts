@@ -5,6 +5,10 @@ import { defaultSilenceSettings } from '../lib/defaultSilenceSettings';
 
 // --- Helper Functions ---
 
+const sanitizeForRpp = (str: string): string => {
+    return str.replace(/"/g, "'").replace(/[\r\n]/g, ' ');
+}
+
 const sanitizeFilename = (name: string, maxLength: number = 200): string => {
     // Replace invalid characters with underscores and collapse multiple underscores
     const sanitized = name.replace(/[\r\n]/g, ' ').replace(/[<>:"/\\|?*]+/g, '_').replace(/_+/g, '_');
@@ -38,7 +42,10 @@ const generateRppTrackItems = (items: TimelineItem[]): string => {
     <ITEM
       POSITION ${item.startTime.toFixed(6)}
       LENGTH ${item.duration.toFixed(6)}
-      SOURCE WAVE "Audio/${item.generatedFileName}"
+      NAME "${sanitizeForRpp(item.generatedFileName.replace('.wav', ''))}"
+      <SOURCE WAVE
+        FILE "${sanitizeForRpp(item.generatedFileName)}"
+      >
     >
     `).join('');
 };
@@ -50,7 +57,7 @@ const generateRppContent = (
     trackItems: Record<string, string>
 ): string => {
     return `
-<REAPER_PROJECT 0.1 "6.83/js-web-exporter" 1680000000
+<REAPER_PROJECT 0.1 "7.0/js-web-exporter" 1700000000
   SAMPLERATE ${sampleRate}
   <TRACK
     NAME "旁白 (Narration)"${trackItems.narration || ''}
@@ -192,7 +199,13 @@ export const exportToReaperProject = async (
 Reaper 现在应该能正确加载所有音轨和对应的音频片段了。
 
 ---
+**常见问题：为什么导入Reaper后音频是空的/显示“OFFLINE”？**
 
+这几乎总是因为您没有先解压ZIP文件。当您直接从ZIP压缩包里打开.RPP文件时，操作系统只会临时解压这一个文件，但音频文件并没有被一起解压出来，所以Reaper自然就找不到了。
+
+**正确的做法永远是：先完整解压，再打开工程。**
+
+---
 **关于音频文件的说明**
 
 你可能会注意到，我们没有采纳“将一个角色的所有台词合并成一个文件”的建议。这是因为，在专业的音频后期流程中，**保持每一句台词的独立性至关重要**。
@@ -207,7 +220,7 @@ Reaper 现在应该能正确加载所有音轨和对应的音频片段了。
 **文件名格式**：\`Ch[章节号]_[行号]_[角色名]_[台词片段].wav\`
 **例如**：\`Ch001_003_白瑶_你好啊.wav\`
 
-这个名字清晰地告诉你这是第一章、第三个音频片段、角色是“白瑶”，内容是“你好啊”。
+这个名字清晰地告诉你这是第一章、第三个音频片段、角色是“白瑶”，内容是“你好啊”。并且，现在Reaper的轨道上也会直接显示这个名字。
 
 我们相信这个方案能为你提供更专业、更高效的后期制作体验。
 
@@ -215,12 +228,11 @@ Reaper 现在应该能正确加载所有音轨和对应的音频片段了。
 `;
         zip.file("【重要】如何使用.txt", readmeContent);
         zip.file(`${sanitizeFilename(project.name)}.RPP`, rppContent);
-        const audioFolder = zip.folder('Audio');
-        if (audioFolder) {
-            audioFilesMap.forEach(fileInfo => {
-                audioFolder.file(fileInfo.newName, fileInfo.blob);
-            });
-        }
+        
+        // Add audio files to the root of the zip
+        audioFilesMap.forEach(fileInfo => {
+            zip.file(fileInfo.newName, fileInfo.blob);
+        });
         
         const zipBlob = await zip.generateAsync({ type: 'blob' });
 
