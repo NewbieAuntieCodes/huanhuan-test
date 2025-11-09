@@ -37,7 +37,6 @@ interface TimelineItem {
     mainTimelineStartTime: number;
     sourceStartTime: number;
     generatedItemName: string;
-    // FIX: Add `audioBuffer` which is created when processing base items but was missing from the type definition.
     audioBuffer: AudioBuffer;
 }
 
@@ -133,24 +132,28 @@ export const exportToReaperProject = async (
         });
 
         // Step 2: Create final TimelineItem objects with all time calculations done in one pass.
+        // FIX: Replaced .map() with a more explicit for...of loop to ensure correct accumulator logic
+        // for `mainTimelineTime` and `sourceTimelineTime`, fixing the bug where all clips started at time 0.
+        const finalTimelineItems: TimelineItem[] = [];
         let mainTimelineTime = silenceSettings.startPadding > 0 ? silenceSettings.startPadding : 0;
         let sourceTimelineTime = 0;
 
-        const finalTimelineItems: TimelineItem[] = baseItemsUnsorted.map((item, index) => {
+        for (const [index, item] of baseItemsUnsorted.entries()) {
             const chapterNumStr = item.chapterIndex.toString().padStart(3, '0');
             const characterName = sanitizeFilename(item.character?.name || '未知', 20);
             const lineNumStr = (index + 1).toString().padStart(4, '0');
             const abridgedText = sanitizeFilename(item.line.text, 30);
             const generatedItemName = `Ch${chapterNumStr}_${lineNumStr}_${characterName}_${abridgedText}`;
 
-            const timelineItem: TimelineItem = {
+            // Create the item with the CURRENT accumulator values
+            finalTimelineItems.push({
                 ...item,
                 mainTimelineStartTime: mainTimelineTime,
                 sourceStartTime: sourceTimelineTime,
                 generatedItemName,
-            };
+            });
 
-            // Update times for the next item in the sequence
+            // NOW, update the accumulators for the NEXT item
             sourceTimelineTime += item.duration;
 
             let silenceDuration = 0;
@@ -168,9 +171,7 @@ export const exportToReaperProject = async (
                 }
             }
             mainTimelineTime += item.duration + (silenceDuration > 0 ? silenceDuration : 0);
-            
-            return timelineItem;
-        });
+        }
         
         // Step 3: Create the single, concatenated audio file.
         const totalSamples = finalTimelineItems.reduce((sum, item) => sum + item.audioBuffer.length, 0);
