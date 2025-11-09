@@ -54,25 +54,42 @@ export const ControlsAndCharactersPanel: React.FC<ControlsAndCharactersPanelProp
 
 
   const charactersToDisplay = useMemo(() => {
-    let filteredChars = storeCharacters.filter(c => (!c.projectId || c.projectId === currentProject?.id) && c.status !== 'merged');
+    // 1. Get all relevant characters: global ones OR those for the current project.
+    let relevantChars = storeCharacters.filter(c => (!c.projectId || c.projectId === currentProject?.id) && c.status !== 'merged');
+
+    // 2. De-duplicate by name, prioritizing project-specific characters over global ones.
+    const uniqueCharsMap = new Map<string, Character>();
+    relevantChars.forEach(char => {
+        const lowerCaseName = char.name.toLowerCase();
+        const existingChar = uniqueCharsMap.get(lowerCaseName);
+        
+        // If the name isn't in the map yet, add it.
+        // OR if the new character is project-specific and the one already in the map is global, replace it.
+        if (!existingChar || (char.projectId && !existingChar.projectId)) {
+            uniqueCharsMap.set(lowerCaseName, char);
+        }
+    });
+    let uniqueChars = Array.from(uniqueCharsMap.values());
     
+    // 3. Apply the "current chapter" filter if active.
     if (characterFilterMode === 'currentChapter' && currentProject && selectedChapterId) {
       const chapter = currentProject.chapters.find(ch => ch.id === selectedChapterId);
       const characterIdsInChapter = new Set(
         chapter?.scriptLines.map(line => line.characterId).filter(Boolean) as string[]
       );
-      filteredChars = filteredChars.filter(char => characterIdsInChapter.has(char.id));
+      uniqueChars = uniqueChars.filter(char => characterIdsInChapter.has(char.id));
     }
 
+    // 4. Apply the search term filter.
     if (searchTerm.trim() !== '') {
         const lowercasedSearchTerm = searchTerm.toLowerCase();
-        filteredChars = filteredChars.filter(char => 
+        uniqueChars = uniqueChars.filter(char => 
             char.name.toLowerCase().includes(lowercasedSearchTerm) ||
             (char.cvName && char.cvName.toLowerCase().includes(lowercasedSearchTerm))
         );
     }
 
-    return filteredChars;
+    return uniqueChars;
   }, [storeCharacters, characterFilterMode, currentProject, selectedChapterId, searchTerm]);
 
 

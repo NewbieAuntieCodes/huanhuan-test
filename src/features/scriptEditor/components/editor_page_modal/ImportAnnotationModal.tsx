@@ -71,26 +71,34 @@ const ImportAnnotationModal: React.FC<ImportAnnotationModalProps> = ({ isOpen, o
           </p>
 
           <div className="bg-slate-700 p-3 rounded-md">
-            <h3 className="font-semibold text-base text-sky-300 mb-2">第一步：让 AI 处理你的文本</h3>
-            <p className="text-xs mb-2 text-slate-300">
-              点击复制按钮，将包含章节原文的完整提示词复制到剪贴板，然后发送给 AI。
-            </p>
-            <div className="relative">
-              <pre className="mt-1 p-2 bg-slate-900 rounded text-xs overflow-x-auto text-sky-200 select-all pr-12">
-                {aiPrompt}
-              </pre>
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="font-semibold text-base text-sky-300">第一步：让 AI 处理你的文本</h3>
               <button
                 onClick={handleCopyClick}
-                className="absolute top-2 right-2 p-1.5 bg-slate-600/50 hover:bg-slate-500/50 rounded text-slate-300 hover:text-white disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-sky-600 hover:bg-sky-700 text-white rounded-md disabled:opacity-50 transition-colors"
                 title="复制完整提示词"
                 disabled={!chapterContentToCopy}
               >
                 {copyStatus === 'copied' ? (
-                  <CheckCircleIcon className="w-4 h-4 text-green-400" />
+                  <>
+                    <CheckCircleIcon className="w-4 h-4" />
+                    <span>已复制</span>
+                  </>
                 ) : (
-                  <ClipboardIcon className="w-4 h-4" />
+                  <>
+                    <ClipboardIcon className="w-4 h-4" />
+                    <span>复制提示</span>
+                  </>
                 )}
               </button>
+            </div>
+            <p className="text-xs mb-2 text-slate-300">
+              点击上方按钮，将包含章节原文的完整提示词复制到剪贴板，然后发送给 AI。
+            </p>
+            <div className="relative">
+              <pre className="mt-1 p-2 bg-slate-900 rounded text-xs overflow-x-auto text-sky-200 select-all">
+                {aiPrompt}
+              </pre>
             </div>
           </div>
           
