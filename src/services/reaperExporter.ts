@@ -41,15 +41,16 @@ interface TimelineItem {
 }
 
 const generateRppTrackItems = (items: TimelineItem[], sourceFileName: string): string => {
+    // Use ITEM-level SOFFS for maximum compatibility across REAPER versions.
+    // Each ITEM references the same concatenated WAV and plays from SOFFS.
     return items.map(item => `
     <ITEM
       POSITION ${item.mainTimelineStartTime.toFixed(6)}
       LENGTH ${item.duration.toFixed(6)}
       NAME "${sanitizeForRpp(item.generatedItemName)}"
+      SOFFS ${item.sourceStartTime.toFixed(6)}
       <SOURCE WAVE
         FILE "${sanitizeForRpp(sourceFileName)}"
-        STARTPOS ${item.sourceStartTime.toFixed(6)}
-        LENGTH ${item.duration.toFixed(6)}
       >
     >
     `).join('');
