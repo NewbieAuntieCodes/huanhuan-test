@@ -18,12 +18,13 @@ interface VoiceLibraryRowProps {
   onGenerateSingle: () => void;
   onDeleteGeneratedAudio: () => void;
   onDeletePromptAudio: () => void;
+  onTrim: () => void;
   audioContext: AudioContext | null;
   activePlayerKey: string | null;
   setActivePlayerKey: (key: string | null) => void;
 }
 
-const VoiceLibraryRow: React.FC<VoiceLibraryRowProps> = ({ row, character, isBatchGenerating, onTextChange, onFileUpload, onRemove, onGenerateSingle, onDeleteGeneratedAudio, onDeletePromptAudio, audioContext, activePlayerKey, setActivePlayerKey }) => {
+const VoiceLibraryRow: React.FC<VoiceLibraryRowProps> = ({ row, character, isBatchGenerating, onTextChange, onFileUpload, onRemove, onGenerateSingle, onDeleteGeneratedAudio, onDeletePromptAudio, onTrim, audioContext, activePlayerKey, setActivePlayerKey }) => {
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -55,10 +56,6 @@ const VoiceLibraryRow: React.FC<VoiceLibraryRowProps> = ({ row, character, isBat
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     handleFileProcessing(e.target.files?.[0]);
-  };
-
-  const handleTrim = () => {
-    alert('音频裁剪功能待实现。');
   };
 
   const getStatusDisplay = () => {
@@ -152,7 +149,7 @@ const VoiceLibraryRow: React.FC<VoiceLibraryRowProps> = ({ row, character, isBat
                     onActivate={() => setActivePlayerKey(`${row.id}-prompt`)}
                 >
                     <div className="flex items-center space-x-1 pl-1">
-                        <button onClick={handleTrim} className="p-1 text-slate-400 hover:text-white" title="裁剪音频 (待开发)">
+                        <button onClick={onTrim} className="p-1 text-slate-400 hover:text-white" title="裁剪参考音频">
                             <ScissorsIcon className="w-4 h-4" />
                         </button>
                         <button onClick={onDeletePromptAudio} className="p-1 text-slate-400 hover:text-red-400" title="删除参考音频">

@@ -7,6 +7,7 @@ import ExportVoiceLibraryModal from './components/ExportVoiceLibraryModal';
 import { useVoiceLibrary } from './hooks/useVoiceLibrary';
 import { VoiceLibraryRowState } from './hooks/useVoiceLibrary'; // Import type from hook
 import { ScriptLine } from '../../types';
+import AudioTrimmerModal from './components/AudioTrimmerModal';
 
 const VoiceLibraryPage: React.FC = () => {
   const { navigateTo } = useStore(state => ({
@@ -38,6 +39,10 @@ const VoiceLibraryPage: React.FC = () => {
     handleExportCharacterClips,
     generatedAudioUrls,
     persistedPromptUrls,
+    trimmingRow,
+    handleTrimRequest,
+    handleCloseTrimmer,
+    handleConfirmTrim,
   } = useVoiceLibrary();
 
   const [isCharacterDropdownOpen, setIsCharacterDropdownOpen] = useState(false);
@@ -219,7 +224,6 @@ const VoiceLibraryPage: React.FC = () => {
             rows.map(row => {
               const line = row.originalLineId ? lineMap.get(row.originalLineId) : null;
               // FIX: An empty object `{}` is not a valid `Character`. Changed the fallback to `null` to match the expected prop type `Character | null`.
-              // FIX: Type '{}' is missing the following properties from type 'Character': id, name, color. The `character` prop for `VoiceLibraryRow` expects `Character | null`, but `|| {}` could result in an empty object. Changed the fallback from `{}` to `null` to satisfy the prop type.
               const characterForRow = line?.characterId ? (characterMap.get(line.characterId) || null) : null;
               return (
               <VoiceLibraryRow
@@ -233,6 +237,7 @@ const VoiceLibraryPage: React.FC = () => {
                 onGenerateSingle={() => handleGenerateSingle(row.id)}
                 onDeleteGeneratedAudio={() => handleDeleteGeneratedAudio(row.id)}
                 onDeletePromptAudio={() => handleDeletePromptAudio(row.id)}
+                onTrim={() => handleTrimRequest(row.id)}
                 audioContext={audioContext}
                 activePlayerKey={activePlayerKey}
                 setActivePlayerKey={setActivePlayerKey}
@@ -247,6 +252,14 @@ const VoiceLibraryPage: React.FC = () => {
         onConfirm={handleExport}
         exportCount={rows.filter(r => generatedAudioUrls[r.id] && r.originalLineId).length}
       />
+      {trimmingRow && (
+          <AudioTrimmerModal
+              isOpen={!!trimmingRow}
+              onClose={handleCloseTrimmer}
+              audioUrl={trimmingRow.urlToTrim}
+              onConfirmTrim={handleConfirmTrim}
+          />
+      )}
     </div>
   );
 };
