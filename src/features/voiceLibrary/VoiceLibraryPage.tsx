@@ -213,7 +213,7 @@ const VoiceLibraryPage: React.FC = () => {
           ) : (
             rows.map(row => {
               const line = row.originalLineId ? lineMap.get(row.originalLineId) : null;
-              // FIX: Pass null instead of an empty object when a character is not found. This resolves a TypeScript error where an empty object doesn't match the `Character` type.
+              // FIX: Pass null instead of an empty object when a character is not found. This resolves a TypeScript error where an empty object doesn't match the `Character | null` type.
               const characterForRow = line?.characterId ? (characterMap.get(line.characterId) || null) : null;
               return (
               <VoiceLibraryRow
