@@ -32,22 +32,21 @@ interface TimelineItem {
     character: Character | undefined;
     audioBlob: Blob;
     duration: number;
-    // Properties for sorting and positioning
     chapterIndex: number;
     lineIndexInChapter: number;
-    mainTimelineStartTime: number; // The final position in the Reaper timeline
-    sourceStartTime: number; // The start position within its concatenated source audio file
-    generatedItemName: string; // The descriptive name for the Reaper item
+    mainTimelineStartTime: number;
+    sourceStartTime: number;
+    generatedItemName: string;
 }
 
-const generateRppTrackItemsAdvanced = (items: TimelineItem[], sourceFileName: string): string => {
+const generateRppTrackItems = (items: TimelineItem[], sourceFileName: string): string => {
     return items.map(item => `
     <ITEM
       POSITION ${item.mainTimelineStartTime.toFixed(6)}
       LENGTH ${item.duration.toFixed(6)}
       NAME "${sanitizeForRpp(item.generatedItemName)}"
       <SOURCE WAVE
-        FILE "Audio/${sanitizeForRpp(sourceFileName)}"
+        FILE "${sanitizeForRpp(sourceFileName)}"
         STARTPOS ${item.sourceStartTime.toFixed(6)}
         LENGTH ${item.duration.toFixed(6)}
       >
@@ -84,7 +83,6 @@ ${tracksRpp}
 >
     `.trim();
 };
-
 
 // --- Main Export Function ---
 
@@ -125,8 +123,13 @@ export const exportToReaperProject = async (
         if (allItems.length === 0) {
             throw new Error("所选章节内没有已对轨的音频。");
         }
+
+        const allItemsSortedByTimeline = allItems.sort((a, b) => {
+            if (a.chapterIndex !== b.chapterIndex) return a.chapterIndex - b.chapterIndex;
+            return a.lineIndexInChapter - b.lineIndexInChapter;
+        });
         
-        const allItemsWithNames = allItems.map((item, index) => {
+        const allItemsWithNames = allItemsSortedByTimeline.map((item, index) => {
              const chapterNumStr = item.chapterIndex.toString().padStart(3, '0');
              const characterName = sanitizeFilename(item.character?.name || '未知', 20);
              const lineNumStr = (index + 1).toString().padStart(4, '0');
@@ -135,75 +138,49 @@ export const exportToReaperProject = async (
              return { ...item, generatedItemName };
         });
 
-        // Step 2: Group items by track type
-        const tracks: Record<string, any[]> = { narration: [], dialogue: [], os: [], telephone: [], system: [], other: [] };
-        const otherSoundTypes = new Set(project.customSoundTypes || []);
-
-        allItemsWithNames.forEach(item => {
-            const soundType = item.line.soundType;
-            if (item.character?.name === 'Narrator') tracks.narration.push(item);
-            else if (soundType === 'OS') tracks.os.push(item);
-            else if (soundType === '电话音') tracks.telephone.push(item);
-            else if (soundType === '系统音') tracks.system.push(item);
-            else if (soundType && otherSoundTypes.has(soundType)) tracks.other.push(item);
-            else tracks.dialogue.push(item);
-        });
-
-        // Step 3: Concatenate audio for each track and add to ZIP
-        const audioFolder = zip.folder("Audio");
-        if (!audioFolder) throw new Error("无法创建Audio文件夹");
-
-        for (const trackName of Object.keys(tracks)) {
-            const trackItems = tracks[trackName];
-            if (trackItems.length === 0) continue;
-
-            const audioBlobs = trackItems.map(item => item.audioBlob);
-            const audioBuffers = await Promise.all(
-                audioBlobs.map(b => b.arrayBuffer().then(ab => audioContext.decodeAudioData(ab)))
-            );
-
-            const totalSamples = audioBuffers.reduce((sum, buffer) => sum + buffer.length, 0);
-            if (totalSamples === 0) continue;
-
-            const offlineCtx = new OfflineAudioContext(1, totalSamples, audioContext.sampleRate);
+        // Step 2: Create ONE single audio file from all items
+        const audioBuffers = await Promise.all(
+            allItemsWithNames.map(item => item.audioBlob.arrayBuffer().then(ab => audioContext.decodeAudioData(ab)))
+        );
+        
+        const totalSamples = audioBuffers.reduce((sum, buffer) => sum + buffer.length, 0);
+        if (totalSamples === 0) throw new Error("无法解码任何音频数据。");
+        
+        const offlineCtx = new OfflineAudioContext(1, totalSamples, audioContext.sampleRate);
+        
+        let currentOffsetInSeconds = 0;
+        audioBuffers.forEach((buffer, index) => {
+            const item = allItemsWithNames[index] as TimelineItem;
+            // This is the crucial fix: store the start time within the single concatenated file
+            item.sourceStartTime = currentOffsetInSeconds; 
             
-            let currentOffsetInSeconds = 0;
-            audioBuffers.forEach((buffer, index) => {
-                const item = trackItems[index];
-                item.sourceStartTime = currentOffsetInSeconds; 
-                
-                const source = offlineCtx.createBufferSource();
-                source.buffer = buffer;
-                source.connect(offlineCtx.destination);
-                source.start(currentOffsetInSeconds);
+            const source = offlineCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(offlineCtx.destination);
+            source.start(currentOffsetInSeconds);
 
-                currentOffsetInSeconds += buffer.duration;
-            });
-
-            const concatenatedBuffer = await offlineCtx.startRendering();
-            const wavBlob = bufferToWav(concatenatedBuffer);
-            audioFolder.file(`${trackName}.wav`, wavBlob);
-        }
-
-        // Step 4: Calculate main timeline positions for all items
-        const allTimelineItemsSorted = allItemsWithNames.sort((a, b) => {
-            if (a.chapterIndex !== b.chapterIndex) return a.chapterIndex - b.chapterIndex;
-            return a.lineIndexInChapter - b.lineIndexInChapter;
+            currentOffsetInSeconds += buffer.duration;
         });
 
+        const singleConcatenatedBuffer = await offlineCtx.startRendering();
+        const singleWavBlob = bufferToWav(singleConcatenatedBuffer);
+        const singleAudioFilename = `${sanitizeFilename(project.name)}_Audio.wav`;
+        zip.file(singleAudioFilename, singleWavBlob);
+
+        // Step 3: Calculate main timeline positions for all items
         let currentTime = silenceSettings.startPadding > 0 ? silenceSettings.startPadding : 0;
-        for (let i = 0; i < allTimelineItemsSorted.length; i++) {
-            const item = allTimelineItemsSorted[i] as TimelineItem;
+        for (let i = 0; i < allItemsWithNames.length; i++) {
+            const item = allItemsWithNames[i] as TimelineItem;
             item.mainTimelineStartTime = currentTime;
 
             let silenceDuration = 0;
             if (item.line.postSilence !== undefined && item.line.postSilence !== null) {
                 silenceDuration = item.line.postSilence;
             } else {
-                if (i === allTimelineItemsSorted.length - 1) {
+                if (i === allItemsWithNames.length - 1) {
                     silenceDuration = silenceSettings.endPadding;
                 } else {
-                    const nextItem = allTimelineItemsSorted[i + 1];
+                    const nextItem = allItemsWithNames[i + 1];
                     const currentLineType = getLineType(item.line, allCharacters);
                     const nextLineType = getLineType(nextItem.line, allCharacters);
                     const pairKey = `${currentLineType}-to-${nextLineType}` as SilencePairing;
@@ -213,16 +190,30 @@ export const exportToReaperProject = async (
             currentTime += item.duration + (silenceDuration > 0 ? silenceDuration : 0);
         }
 
+        // Step 4: Group items by track type for RPP generation
+        const tracks: Record<string, TimelineItem[]> = { narration: [], dialogue: [], os: [], telephone: [], system: [], other: [] };
+        const otherSoundTypes = new Set(project.customSoundTypes || []);
+
+        (allItemsWithNames as TimelineItem[]).forEach(item => {
+            const soundType = item.line.soundType;
+            if (item.character?.name === 'Narrator') tracks.narration.push(item);
+            else if (soundType === 'OS') tracks.os.push(item);
+            else if (soundType === '电话音') tracks.telephone.push(item);
+            else if (soundType === '系统音') tracks.system.push(item);
+            else if (soundType && otherSoundTypes.has(soundType)) tracks.other.push(item);
+            else tracks.dialogue.push(item);
+        });
+        
         // Step 5: Generate RPP content strings for each track
         const trackItemsStrings: Record<string, string> = {};
         Object.keys(tracks).forEach(key => {
             if(tracks[key].length > 0) {
-              trackItemsStrings[key] = generateRppTrackItemsAdvanced(tracks[key], `${key}.wav`);
+              trackItemsStrings[key] = generateRppTrackItems(tracks[key], singleAudioFilename);
             }
         });
         const rppContent = generateRppContent(project.name, audioContext.sampleRate, trackItemsStrings);
 
-        // Step 6: Create ZIP file with RPP, audio files, and a README
+        // Step 6: Create ZIP file with RPP, the single audio file, and a README
         const newReadme = `你好！感谢使用 AI 有声内容创作工具。
 
 我们采纳了您的建议，优化了导出流程，为您带来两全其美的体验：**整洁的项目文件夹** 与 **Reaper内部最大的编辑灵活性**。
@@ -239,8 +230,8 @@ Reaper 现在应该能正确加载所有音轨和对应的音频片段了。
 ---
 **新工作流说明**
 
-- **文件更少**：您的项目文件夹现在非常干净，每个音轨类型（如旁白、角色对白等）只有一个长音频文件，存放在 Audio 子目录下。
-- **灵活性不变**：在 Reaper 中，这些长文件已被自动“切割”成独立的、可拖动的小片段，与之前的版本在操作上完全一致！
+- **文件极简**：您的项目文件夹现在非常干净。只有一个 .RPP 工程文件和一个包含所有音频的 .wav 文件。
+- **灵活性不变**：在 Reaper 中，这个长文件已被自动“切割”成独立的、可拖动的小片段，与之前的版本在操作上完全一致！
 
 这意味着，您仍然可以：
 - **精准对轨**：精确调整每一句台词的时间。
