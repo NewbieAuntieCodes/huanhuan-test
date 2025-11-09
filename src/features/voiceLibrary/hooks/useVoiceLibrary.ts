@@ -185,6 +185,10 @@ export const useVoiceLibrary = () => {
             const results = await generateTtsBatch([ttsItem]);
             const item = results[0];
 
+            if (!item) {
+                throw new Error('TTS服务未返回有效结果。');
+            }
+
             if (item.ok && item.audioUrl) {
                 const result = await processAndAssignAudio(
                     row,
