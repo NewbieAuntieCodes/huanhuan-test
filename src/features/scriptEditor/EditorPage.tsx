@@ -259,7 +259,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
         } catch (error) {
             console.error("读取或解析文件时出错:", error);
 
-            // FIX: Add type guard to the catch block to safely access the 'message' property on the error object.
+            // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
             const detailedMessage = error instanceof Error ? error.message : String(error);
             
             let errorMessage = `读取或解析文件时出错: ${detailedMessage}`;
@@ -516,6 +516,29 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
     );
   }, [selectedChapter]);
 
+  const chapterContentForAiPrompt = useMemo(() => {
+    if (!currentProject) return '';
+    
+    const idsToProcess = multiSelectedChapterIds.length > 0 
+      ? multiSelectedChapterIds
+      : selectedChapterId 
+      ? [selectedChapterId] 
+      : [];
+      
+    if (idsToProcess.length === 0) return '';
+    
+    const sortedIds = [...idsToProcess].sort((a, b) => {
+      const indexA = currentProject.chapters.findIndex(ch => ch.id === a);
+      const indexB = currentProject.chapters.findIndex(ch => ch.id === b);
+      return indexA - indexB;
+    });
+      
+    return sortedIds
+      .map(id => currentProject.chapters.find(ch => ch.id === id)?.rawContent || '')
+      .join('\n\n--- CHAPTER BREAK ---\n\n');
+      
+  }, [currentProject, selectedChapterId, multiSelectedChapterIds]);
+
   const contextValue = useMemo(() => ({
     ...coreLogic,
     characters: projectCharacters,
@@ -537,21 +560,24 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
     openAddChaptersModal: () => setIsAddChaptersModalOpen(true),
     openScriptImport: handleOpenScriptImport,
     saveNewChapters: handleSaveNewChapters,
-    openCharacterSidePanel: handleOpenCharacterSidePanel,
-    openCvModal: onOpenCharacterAndCvStyleModal,
-    openCharacterEditModal: onOpenCharacterAndCvStyleModal,
     openShortcutSettingsModal: openShortcutSettingsModal,
     shortcutActiveLineId,
     setShortcutActiveLineId,
     addCustomSoundType: handleAddCustomSoundType,
     deleteCustomSoundType: handleDeleteCustomSoundType,
+    // FIX: Add missing properties to satisfy EditorContextType
+    openCharacterSidePanel: handleOpenCharacterSidePanel,
+    openCvModal: onOpenCharacterAndCvStyleModal,
+    openCharacterEditModal: onOpenCharacterAndCvStyleModal,
+    mergeChapters: undoableMergeChapters,
   }), [
     coreLogic, projectCharacters, allCvNames, cvStyles, applyUndoableProjectUpdate, deleteChapters,
     handleBatchAddChapters, isLoadingAiAnnotation, isLoadingManualParse, isLoadingImportAnnotation,
     handleRunAiAnnotationForChapters, handleManualParseChapters, handleOpenImportModalTrigger,
-    handleOpenScriptImport, handleSaveNewChapters, handleOpenCharacterSidePanel,
-    onOpenCharacterAndCvStyleModal, openShortcutSettingsModal, shortcutActiveLineId,
-    handleAddCustomSoundType, handleDeleteCustomSoundType
+    handleOpenScriptImport, handleSaveNewChapters, openShortcutSettingsModal, shortcutActiveLineId,
+    handleAddCustomSoundType, handleDeleteCustomSoundType,
+    // FIX: Add dependencies for the new properties
+    handleOpenCharacterSidePanel, onOpenCharacterAndCvStyleModal, undoableMergeChapters
   ]);
 
   if (coreLogic.isLoadingProject) {
@@ -607,6 +633,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
           onClose={() => setIsImportModalOpen(false)}
           onSubmit={handleImportAndCvUpdate}
           isLoading={isLoadingImportAnnotation}
+          chapterContentToCopy={chapterContentForAiPrompt}
         />
         <AddChaptersModal 
           isOpen={isAddChaptersModalOpen}
