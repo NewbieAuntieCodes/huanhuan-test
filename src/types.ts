@@ -55,6 +55,11 @@ export interface SilenceSettings {
   pairs: Record<SilencePairing, number>;
 }
 
+export interface PostProductionTimeline {
+  tracks: PostProductionTrack[];
+  // Other global settings
+}
+
 export interface Project {
   id: string;
   name: string; // Book name
@@ -69,6 +74,7 @@ export interface Project {
   customSoundTypes?: string[];
   lastViewedChapterId?: string;
   silenceSettings?: SilenceSettings;
+  postProductionTimeline?: PostProductionTimeline;
 }
 
 // For Gemini service response parsing
@@ -126,7 +132,7 @@ export interface MergeHistoryEntry {
 }
 
 // Fix: Moved from App.tsx to break circular dependencies
-export type AppView = "upload" | "dashboard" | "editor" | "audioAlignment" | "cvManagement" | "voiceLibrary" | "audioAlignmentAssistant";
+export type AppView = "upload" | "dashboard" | "editor" | "audioAlignment" | "cvManagement" | "voiceLibrary" | "audioAlignmentAssistant" | "postProduction";
 
 export interface CVStyle {
   bgColor: string;
@@ -157,4 +163,35 @@ export interface AudioAssistantState {
 export interface DirectoryHandleEntry {
   projectId: string;
   handle: FileSystemDirectoryHandle;
+}
+
+// Post Production Types
+export interface SoundLibraryItem {
+    id?: number;
+    name: string;
+    // Using handle implies File System Access API. We'll manage this carefully.
+    handle: any; // FileSystemFileHandle is not universally available in all envs.
+    tags: string[];
+    duration: number;
+}
+
+export interface AudioClip {
+    id: string;
+    soundLibraryId: number;
+    startTime: number; // in seconds on the timeline
+    duration: number;
+    // Optional properties for trimming within the clip
+    trimStartTime?: number;
+    trimEndTime?: number;
+    volume: number;
+}
+
+export interface PostProductionTrack {
+    id: string;
+    name: string;
+    type: 'music' | 'sfx' | 'ambience' | 'dialogue'; // dialogue is read-only
+    clips: AudioClip[];
+    isMuted: boolean;
+    isSolo: boolean;
+    volume: number; // 0-1
 }

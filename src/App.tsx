@@ -4,7 +4,7 @@ import { Character, CVStylesMap } from './types';
 import ConfirmModal from './components/modal/ConfirmModal';
 import CharacterAndCvStyleModal from './features/scriptEditor/components/editor_page_modal/CharacterAndCvStyleModal';
 import AppRouter from './routing/AppRouter';
-import { CogIcon } from './components/ui/icons';
+import { CogIcon, FilmIcon } from './components/ui/icons';
 import SettingsModal from './components/modal/SettingsModal';
 import { useWebSocket } from './hooks/useWebSocket';
 
@@ -142,6 +142,14 @@ const App: React.FC = () => {
               音频对轨
             </button>
           )}
+           {currentView !== 'postProduction' && projects.length > 0 && (
+            <button
+              onClick={() => navigateTo('postProduction')}
+              className="text-sm text-sky-300 hover:text-sky-100"
+            >
+              后期制作
+            </button>
+          )}
           {currentView !== 'audioAlignmentAssistant' && projects.length > 0 && (
             <button
               onClick={() => navigateTo('audioAlignmentAssistant')}
@@ -215,4 +223,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-

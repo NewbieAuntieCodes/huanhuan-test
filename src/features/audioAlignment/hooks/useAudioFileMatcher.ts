@@ -440,7 +440,7 @@ export const useAudioFileMatcher = ({
         };
 
     } catch (error) {
-        // FIX: Add type guard for 'unknown' error object before accessing properties.
+        // FIX: The 'error' object in a catch block is of type 'unknown'. Use a type guard to safely access its properties.
         const message = error instanceof Error ? error.message : String(error);
         const errorMsg = `处理失败: ${message}`;
         console.error(`Error processing master audio file ${file.name}:`, message);

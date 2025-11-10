@@ -259,7 +259,7 @@ const EditorPage: React.FC<EditorPageProps> = (props) => {
         } catch (error) {
             console.error("读取或解析文件时出错:", error);
 
-            // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
+            // FIX: The 'error' object in a catch block is of type 'unknown'. Use a type guard to safely access its properties before calling methods like '.toLowerCase()'.
             const detailedMessage = error instanceof Error ? error.message : String(error);
             
             let errorMessage = `读取或解析文件时出错: ${detailedMessage}`;
