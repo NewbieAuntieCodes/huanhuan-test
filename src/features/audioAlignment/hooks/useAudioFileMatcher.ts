@@ -3,9 +3,10 @@ import React from 'react';
 import * as mm from 'music-metadata-browser';
 import { Project, Character, Chapter, ScriptLine, MasterAudio } from '../../../types';
 import { bufferToWav } from '../../../lib/wavEncoder';
-import { db } from '../../../db';
 // FIX: Import `Buffer` to resolve "Cannot find name 'Buffer'" error.
 import { Buffer } from 'buffer';
+// FIX: Import the 'db' instance to resolve 'Cannot find name 'db''.
+import { db } from '../../../db';
 
 interface UseAudioFileMatcherProps {
   currentProject: Project | undefined;
@@ -331,8 +332,9 @@ export const useAudioFileMatcher = ({
         let metadata;
         try {
             metadata = await mm.parseBlob(file);
+        // FIX: Safely handle error object of type 'unknown'.
         } catch (e) {
-            // FIX: The 'e' object in a catch block is of type 'unknown'. Use a type guard to safely access its properties before attempting to read a message from it.
+            // FIX: Safely handle error object of type 'unknown'.
             const message = e instanceof Error ? e.message : String(e);
             const errorMsg = `音频文件解析失败: ${message}`;
             console.error(`Metadata parsing failed for ${file.name}:`, message);
@@ -439,8 +441,9 @@ export const useAudioFileMatcher = ({
           errorMessage: warningMessage || undefined
         };
 
+    // FIX: Safely handle error object of type 'unknown'.
     } catch (error) {
-        // FIX: The 'error' object in a catch block is of type 'unknown'. Use a type guard to safely access its properties.
+        // FIX: Safely handle error object of type 'unknown'.
         const message = error instanceof Error ? error.message : String(error);
         const errorMsg = `处理失败: ${message}`;
         console.error(`Error processing master audio file ${file.name}:`, message);

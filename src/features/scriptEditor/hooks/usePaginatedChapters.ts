@@ -59,7 +59,7 @@ export const usePaginatedChapters = ({
     if (currentPage > totalPages) {
       setCurrentPage(totalPages);
     }
-  }, [totalPages]);
+  }, [totalPages, currentPage]);
 
 
   const paginatedChapters = useMemo(() => {
@@ -77,6 +77,8 @@ export const usePaginatedChapters = ({
   
   const allVisibleChaptersSelected = useMemo(() => {
     if (paginatedChapters.length === 0) return false;
+    // FIX: Ensure multiSelectedChapterIds is an array before calling .includes
+    if (!Array.isArray(multiSelectedChapterIds)) return false;
     return paginatedChapters.every(ch => multiSelectedChapterIds.includes(ch.id));
   }, [paginatedChapters, multiSelectedChapterIds]);
 

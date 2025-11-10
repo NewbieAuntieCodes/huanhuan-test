@@ -9,16 +9,10 @@
 
 import { db, MiscData } from '../db';
 import { MergeHistoryEntry, PresetColor, AudioAssistantState, DirectoryHandleEntry } from '../types';
+// FIX: The ApiSettings interface was outdated. Imported the correct, comprehensive interface from uiSlice to ensure type consistency for API settings across the app.
+import { type ApiSettings } from '../store/slices/uiSlice';
+export type { ApiSettings };
 
-/**
- * API 设置类型
- */
-export interface ApiSettings {
-  geminiApiKey?: string;
-  openaiApiKey?: string;
-  openaiBaseUrl?: string;
-  customTtsUrl?: string;
-}
 
 /**
  * 字符快捷键映射类型
@@ -131,7 +125,12 @@ export class MiscRepository {
    */
   async getApiSettings(): Promise<ApiSettings> {
     const settings = await this.getRaw<ApiSettings>('apiSettings');
-    return settings || {};
+    return settings || {
+        gemini: { apiKey: '' },
+        openai: { apiKey: '', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4-turbo' },
+        moonshot: { apiKey: '', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
+        deepseek: { apiKey: '', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+    };
   }
 
   /**

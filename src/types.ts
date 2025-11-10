@@ -75,6 +75,7 @@ export interface Project {
   lastViewedChapterId?: string;
   silenceSettings?: SilenceSettings;
   postProductionTimeline?: PostProductionTimeline;
+  textMarkers?: TextMarker[];
 }
 
 // For Gemini service response parsing
@@ -194,4 +195,15 @@ export interface PostProductionTrack {
     isMuted: boolean;
     isSolo: boolean;
     volume: number; // 0-1
+}
+
+// FIX: Added TextMarker type to resolve import error in PostProductionPage.
+export interface TextMarker {
+  id: string;
+  type: 'bgm' | 'sfx' | 'scene';
+  name?: string;
+  startLineId: string;
+  startOffset?: number;
+  endLineId: string;
+  endOffset?: number;
 }

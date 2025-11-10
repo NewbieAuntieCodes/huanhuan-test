@@ -1,6 +1,5 @@
 import React, { createContext, useContext } from 'react';
 import { Project, Character, ScriptLine, Chapter, CharacterFilterMode } from '../../../types';
-// Fix: Import from types.ts to break circular dependency
 import { CVStylesMap } from '../../../types';
 
 export interface EditorContextType {
@@ -41,7 +40,7 @@ export interface EditorContextType {
   runManualParseForChapters: (chapterIds: string[]) => Promise<void>;
   openImportModal: () => void;
   openAddChaptersModal: () => void;
-  openScriptImport: () => void; // New function to trigger script import
+  openScriptImport: () => void;
   saveNewChapters: (pastedText: string) => void;
   openShortcutSettingsModal: () => void;
 
@@ -50,7 +49,6 @@ export interface EditorContextType {
   cvFilter: string | null;
   setCvFilter: (cvName: string | null) => void;
   openCharacterSidePanel: (character: Character) => void;
-  // These will now call the onOpenCharacterAndCvStyleModal prop from App.tsx
   openCvModal: (character: Character | null) => void; 
   openCharacterEditModal: (character: Character | null) => void;
   addCustomSoundType: (soundType: string) => void;

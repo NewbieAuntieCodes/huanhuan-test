@@ -1,6 +1,6 @@
 import { StateCreator } from 'zustand';
 import { AppState } from '../useStore';
-import { Project, Collaborator, Chapter, AudioBlob, ScriptLine, Character, SilenceSettings, MasterAudio } from '../../types';
+import { Project, Collaborator, Chapter, AudioBlob, ScriptLine, Character, SilenceSettings, MasterAudio, TextMarker } from '../../types';
 import { db } from '../../db';
 import { bufferToWav } from '../../lib/wavEncoder';
 // FIX: Import `defaultSilenceSettings` to resolve reference error.
@@ -27,6 +27,7 @@ export interface ProjectSlice {
   updateLineFeedback: (projectId: string, chapterId: string, lineId: string, feedback: string) => Promise<void>;
   updateProjectSilenceSettings: (projectId: string, settings: SilenceSettings) => Promise<void>;
   updateLinePostSilence: (projectId: string, chapterId: string, lineId: string, silence?: number) => Promise<void>;
+  updateProjectTextMarkers: (projectId: string, markers: TextMarker[]) => Promise<void>;
 }
 
 export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = (set, get, _api) => ({
@@ -354,6 +355,21 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
     await db.projects.put(updatedProject);
     set(state => ({
         projects: state.projects.map(p => p.id === projectId ? updatedProject : p),
+    }));
+  },
+  updateProjectTextMarkers: async (projectId, markers) => {
+    const project = get().projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const updatedProject = {
+      ...project,
+      textMarkers: markers,
+      lastModified: Date.now(),
+    };
+
+    await db.projects.put(updatedProject);
+    set(state => ({
+      projects: state.projects.map(p => (p.id === projectId ? updatedProject : p)),
     }));
   },
 });

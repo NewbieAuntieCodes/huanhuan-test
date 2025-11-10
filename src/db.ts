@@ -95,8 +95,16 @@ db.version(7).stores({
   voiceLibraryPrompts: 'id, projectId, originalLineId',
 });
 
-// v8: Add tables for Post Production
 db.version(8).stores({
+  projects: 'id, lastModified',
+  characters: 'id, projectId',
+  misc: 'key',
+  audioBlobs: 'id, lineId, sourceAudioId',
+  masterAudios: 'id',
+  audioMarkers: 'sourceAudioId',
+  assistantState: 'projectId',
+  directoryHandles: 'projectId',
+  voiceLibraryPrompts: 'id, projectId, originalLineId',
   soundLibrary: '++id, name, *tags', // id auto-increment, name and tags can be indexed
   postProductionTimelines: 'projectId', // projectId as primary key
 });

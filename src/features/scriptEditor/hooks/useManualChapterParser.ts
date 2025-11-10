@@ -1,4 +1,5 @@
 
+
 import { useState, useCallback } from 'react';
 import { Project, Character } from '../../../types';
 import { parseRawTextToScriptLinesByRules } from '../../../lib/manualScriptParser';
@@ -47,7 +48,7 @@ export const useManualChapterParser = ({
       });
     } catch (error) {
       console.error("Manual parsing failed:", error);
-      // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
+      // Comment: Safely handle error object of type 'unknown'.
       alert(`Manual parsing failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setIsLoadingManualParse(false);
