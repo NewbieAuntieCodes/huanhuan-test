@@ -3,7 +3,8 @@ import { SoundLibraryItem } from '../../../types';
 
 // Utility to escape HTML special characters
 const escapeHtml = (text: string) => {
-    return text
+    // FIX: Add a fallback to an empty string to prevent runtime errors if `text` is undefined.
+    return (text || '')
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
