@@ -88,8 +88,9 @@ export const useMarkerRendering = (
         const scrollableContainer = contentEl.parentElement;
         if (!scrollableContainer) return;
 
-        const newOverlays: SceneOverlay[] = [];
         const containerRect = scrollableContainer.getBoundingClientRect();
+        
+        const newOverlays: SceneOverlay[] = [];
         
         const findTextNodeAndOffsetForEl = (element: Element, targetOffset: number): { node: Node; offset: number } | null => {
             const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
@@ -160,23 +161,25 @@ export const useMarkerRendering = (
         bgmMarkers.forEach(marker => {
             const markEl = contentEl.querySelector(`mark[data-marker-id="${marker.id}"]`);
             if (markEl) {
-                const markRect = markEl.getBoundingClientRect();
-                
-                const top = markRect.top - containerRect.top + scrollableContainer.scrollTop;
-                
-                const baseColor = marker.color || getBgmColor(markerOrdinalMap.get(marker.id) ?? 1);
-                const bgColor = baseColor.replace(/, ?([\d\.]+)\)$/, ', 0.85)');
-                const displayNameParts = (marker.name || 'BGM').replace(/_/g, '-').split('-');
-                
-                newOverlays.push({
-                    id: marker.id,
-                    name: marker.name || 'BGM',
-                    displayNameParts,
-                    top: Math.max(0, top),
-                    left: 8, // Position in the left gutter
-                    bgColor,
-                    textColor: '#1e293b'
-                });
+                const clientRects = markEl.getClientRects();
+                if (clientRects.length > 0) {
+                    const firstLineRect = clientRects[0];
+                    const top = firstLineRect.top - containerRect.top + scrollableContainer.scrollTop;
+                    
+                    const baseColor = marker.color || getBgmColor(markerOrdinalMap.get(marker.id) ?? 1);
+                    const bgColor = baseColor.replace(/, ?([\d\.]+)\)$/, ', 0.85)');
+                    const displayNameParts = (marker.name || 'BGM').replace(/_/g, '-').split('-');
+                    
+                    newOverlays.push({
+                        id: marker.id,
+                        name: marker.name || 'BGM',
+                        displayNameParts,
+                        top: Math.max(0, top),
+                        left: 8, // Position in the left gutter
+                        bgColor,
+                        textColor: '#1e293b'
+                    });
+                }
             }
         });
 
