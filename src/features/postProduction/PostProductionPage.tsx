@@ -12,10 +12,11 @@ import { DialogueContent } from './components/DialogueContent';
 import { usePostProduction } from './hooks/usePostProduction';
 
 const PostProductionPage: React.FC = () => {
-    const { navigateTo, characters, soundLibrary } = useStore((state) => ({
+    const { navigateTo, characters, soundLibrary, selectedChapterId } = useStore((state) => ({
         navigateTo: state.navigateTo,
         characters: state.characters,
         soundLibrary: state.soundLibrary,
+        selectedChapterId: state.selectedChapterId,
     }));
 
     const {
@@ -57,6 +58,15 @@ const PostProductionPage: React.FC = () => {
         const names = new Set(textMarkers.filter((m) => m.type === 'bgm').map((m) => m.name).filter((n): n is string => !!n));
         return Array.from(names).sort();
     }, [textMarkers]);
+    
+    const chaptersToDisplay = useMemo(() => {
+        if (!currentProject) return [];
+        if (selectedChapterId) {
+            const selectedChapter = currentProject.chapters.find(c => c.id === selectedChapterId);
+            return selectedChapter ? [selectedChapter] : currentProject.chapters;
+        }
+        return currentProject.chapters;
+    }, [currentProject, selectedChapterId]);
 
     const handleAddSfx = () => {
         alert('音效功能稍后提供');
@@ -107,7 +117,7 @@ const PostProductionPage: React.FC = () => {
                                 </div>
                                 <div className="flex-grow overflow-y-auto">
                                     <DialogueContent
-                                        chapters={currentProject.chapters}
+                                        chapters={chaptersToDisplay}
                                         allProjectChapters={currentProject.chapters}
                                         characters={characters}
                                         onTextSelect={handleTextSelect}
