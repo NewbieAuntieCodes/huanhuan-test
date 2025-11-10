@@ -35,6 +35,7 @@ export type SceneOverlay = {
 export type BgmLabelOverlay = {
     id: string;
     name: string;
+    displayNameParts: string[];
     top: number;
     left: number;
     bgColor: string;
@@ -162,19 +163,19 @@ export const useMarkerRendering = (
                 const markRect = markEl.getBoundingClientRect();
                 
                 const top = markRect.top - containerRect.top + scrollableContainer.scrollTop;
-                const left = markRect.left - containerRect.left + scrollableContainer.scrollLeft;
-
+                
                 const baseColor = marker.color || getBgmColor(markerOrdinalMap.get(marker.id) ?? 1);
-                // Make the label background more opaque for readability
                 const bgColor = baseColor.replace(/, ?([\d\.]+)\)$/, ', 0.85)');
+                const displayNameParts = (marker.name || 'BGM').replace(/_/g, '-').split('-');
                 
                 newOverlays.push({
                     id: marker.id,
                     name: marker.name || 'BGM',
-                    top: Math.max(0, top), // prevent negative top
-                    left: Math.max(0, left),
+                    displayNameParts,
+                    top: Math.max(0, top),
+                    left: 8, // Position in the left gutter
                     bgColor,
-                    textColor: '#1e293b' // slate-800, good contrast for light BGM colors
+                    textColor: '#1e293b'
                 });
             }
         });

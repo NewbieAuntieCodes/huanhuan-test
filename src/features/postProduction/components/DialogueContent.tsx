@@ -99,8 +99,14 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
                         }}
                         title={`BGM: ${overlay.name}`}
                     >
-                        <MusicalNoteIcon className="w-3 h-3 mr-1.5 flex-shrink-0" />
-                        <span className="truncate">{overlay.name}</span>
+                        <MusicalNoteIcon className="w-3 h-3 mr-1 flex-shrink-0 mt-0.5" />
+                        <div className="flex flex-col">
+                            {overlay.displayNameParts.map((part, index) => (
+                                <span key={index} className="truncate w-full">
+                                    {part}
+                                </span>
+                            ))}
+                        </div>
                     </div>
                 ))}
             </div>
