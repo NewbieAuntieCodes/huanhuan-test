@@ -17,6 +17,7 @@ export { CharacterRepository, characterRepository } from './characterRepository'
 export { AudioRepository, audioRepository } from './audioRepository';
 export { MiscRepository, miscRepository } from './miscRepository';
 export { VoiceLibraryPromptRepository, voiceLibraryPromptRepository } from './voiceLibraryPromptRepository';
+export { soundLibraryRepository } from './soundLibraryRepository';
 
 export type { CreateCharacterInput } from './characterRepository';
 // FIX: Export ApiSettings from miscRepository to resolve module export error.

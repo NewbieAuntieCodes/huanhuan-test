@@ -367,7 +367,8 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
       lastModified: Date.now(),
     };
 
-    await db.projects.put(updatedProject);
+    // 优化：只更新变更字段，避免写入整条大型项目对象
+    await db.projects.update(projectId, { textMarkers: markers, lastModified: updatedProject.lastModified });
     set(state => ({
       projects: state.projects.map(p => (p.id === projectId ? updatedProject : p)),
     }));

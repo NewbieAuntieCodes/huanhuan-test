@@ -105,7 +105,7 @@ db.version(8).stores({
   assistantState: 'projectId',
   directoryHandles: 'projectId',
   voiceLibraryPrompts: 'id, projectId, originalLineId',
-  soundLibrary: '++id, name, *tags', // id auto-increment, name and tags can be indexed
+  soundLibrary: '++id, name, category, *tags', // id auto-increment, name, category and tags can be indexed
   postProductionTimelines: 'projectId', // projectId as primary key
 });
 

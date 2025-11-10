@@ -170,11 +170,13 @@ export interface DirectoryHandleEntry {
 export interface SoundLibraryItem {
     id?: number;
     name: string;
-    // Using handle implies File System Access API. We'll manage this carefully.
-    handle: any; // FileSystemFileHandle is not universally available in all envs.
+    handle: FileSystemFileHandle;
     tags: string[];
     duration: number;
+    category: string;
 }
+
+export type SoundLibraryHandleMap = Record<string, FileSystemDirectoryHandle>;
 
 export interface AudioClip {
     id: string;
@@ -206,4 +208,5 @@ export interface TextMarker {
   startOffset?: number;
   endLineId: string;
   endOffset?: number;
+  color?: string; // 可选：自定义高亮颜色（BGM 用）
 }

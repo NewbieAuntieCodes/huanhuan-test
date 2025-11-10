@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 // Fix: Import from types.ts to break circular dependency
-import { AppView, CVStylesMap, PresetColor } from '../types';
+import { AppView, CVStylesMap, PresetColor, SoundLibraryItem } from '../types';
 import { Project, Character, MergeHistoryEntry } from '../types';
 
 // Import slice creators and their state/action types
@@ -11,14 +11,17 @@ import { createCharacterSlice, CharacterSlice } from './slices/characterSlice';
 import { createMergeSlice, MergeSlice } from './slices/mergeSlice';
 import { db } from '../db'; // Import the Dexie database instance
 import { defaultCvPresetColors, defaultCharacterPresetColors } from '../lib/colorPresets';
+import { soundLibraryRepository } from '../repositories/soundLibraryRepository';
 
 // Define the combined state shape by extending all slice types
 export interface AppState extends UiSlice, ProjectSlice, ProjectAudioSlice, CharacterSlice, MergeSlice {
   cvColorPresets: PresetColor[];
   characterColorPresets: PresetColor[];
+  soundLibrary: SoundLibraryItem[];
   loadInitialData: () => Promise<void>;
   updateCvColorPresets: (presets: PresetColor[]) => Promise<void>;
   updateCharacterColorPresets: (presets: PresetColor[]) => Promise<void>;
+  refreshSoundLibrary: () => Promise<void>;
 }
 
 const defaultCharConfigs = [
@@ -39,8 +42,18 @@ export const useStore = create<AppState>((set, get, api) => ({
   // State for global color presets
   cvColorPresets: [],
   characterColorPresets: [],
+  soundLibrary: [],
 
   // Global actions
+  refreshSoundLibrary: async () => {
+    try {
+      const sounds = await soundLibraryRepository.getSounds();
+      set({ soundLibrary: sounds });
+    } catch (error) {
+      console.error("Failed to load sound library:", error);
+      set({ soundLibrary: [] });
+    }
+  },
   loadInitialData: async () => {
     try {
       const [
@@ -133,6 +146,8 @@ export const useStore = create<AppState>((set, get, api) => ({
         initialView = "upload";
       }
       
+      const soundsFromDb = await soundLibraryRepository.getSounds();
+
       set({
         projects,
         characters: fixedCharacters,
@@ -147,6 +162,7 @@ export const useStore = create<AppState>((set, get, api) => ({
         aiProcessingChapterIds: [], // Reset on load
         selectedProjectId: get().selectedProjectId || null,
         isLoading: false,
+        soundLibrary: soundsFromDb,
       });
     } catch (error) {
       console.error("Failed to load data from Dexie database:", error);
@@ -158,6 +174,7 @@ export const useStore = create<AppState>((set, get, api) => ({
         characterColorPresets: defaultCharacterPresetColors,
         currentView: "upload",
         isLoading: false,
+        soundLibrary: [],
       });
     }
   },

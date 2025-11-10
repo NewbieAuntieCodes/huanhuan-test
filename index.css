@@ -52,3 +52,49 @@
     .force-text-color * {
       color: inherit !important;
     }
+
+    /* Scene bracket styles */
+    .scene-bracket {
+        position: absolute;
+        width: 18px; /* bracket visual width */
+        pointer-events: none;
+    }
+    .scene-bracket-line {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 100%;
+        height: 100%;
+        border-right-width: 2px;
+        border-color: inherit;
+    }
+    .scene-bracket-line::before,
+    .scene-bracket-line::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        width: 50%;
+        height: 0;
+        border-top-width: 2px;
+        border-color: inherit;
+    }
+    .scene-bracket-line::before {
+        top: 0;
+    }
+    .scene-bracket-line::after {
+        bottom: -2px; /* Adjust for border width */
+    }
+    .scene-bracket-label {
+        position: absolute;
+        top: 0;
+        left: 100%; /* 移动到括号右侧 */
+        margin-left: 8px; /* 增加间距 */
+        transform: none;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.75rem; /* text-xs */
+        font-weight: 600; /* font-semibold */
+        white-space: nowrap;
+        color: #1e293b; /* slate-800, good contrast for pastels */
+        z-index: 20;
+    }
