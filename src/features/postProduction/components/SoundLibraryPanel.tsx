@@ -5,6 +5,8 @@ import { SoundLibraryItem, SoundLibraryHandleMap } from '../../../types';
 import * as mm from 'music-metadata-browser';
 import { useStore } from '../../../store/useStore';
 import LoadingSpinner from '../../../components/ui/LoadingSpinner';
+// FIX: Import 'db' to resolve 'Cannot find name 'db''.
+import { db } from '../../../db';
 
 const CATEGORIES = [
     { key: 'music', name: '音乐' },
@@ -36,35 +38,75 @@ const SoundLibraryPanel: React.FC = () => {
         loadHandles();
     }, []);
 
-    const scanDirectory = useCallback(async (categoryKey: string, handle: FileSystemDirectoryHandle, isRescan: boolean) => {
+    const scanDirectory = useCallback(async (categoryKey: string, handle: FileSystemDirectoryHandle, mode: 'full' | 'incremental') => {
         setIsLoading(true);
-        setLoadingMessage(`扫描 "${handle.name}"...`);
+        setLoadingMessage(`扫描 "${handle.name}"... (${mode === 'full' ? '全量' : '增量'})`);
 
-        if (isRescan) {
-            await soundLibraryRepository.clearSounds(categoryKey);
-        }
-
-        const newSounds: SoundLibraryItem[] = [];
         try {
-            for await (const entry of handle.values()) {
-                if (entry.kind === 'file' && (entry.name.endsWith('.mp3') || entry.name.endsWith('.wav'))) {
-                    try {
-                        const file = await (entry as any).getFile();
-                        const metadata = await mm.parseBlob(file);
-                        newSounds.push({
-                            name: file.name,
-                            handle: entry as any,
-                            tags: [],
-                            duration: metadata.format.duration || 0,
-                            category: categoryKey,
-                        });
-                    } catch (e) {
-                        console.warn(`无法解析文件元数据: ${entry.name}`, e);
+            if (mode === 'full') {
+                // 全量扫描：清空后添加
+                await soundLibraryRepository.clearSounds(categoryKey);
+                const newSounds: SoundLibraryItem[] = [];
+                for await (const entry of handle.values()) {
+                    if (entry.kind === 'file' && (entry.name.endsWith('.mp3') || entry.name.endsWith('.wav'))) {
+                        try {
+                            const file = await (entry as any).getFile();
+                            const metadata = await mm.parseBlob(file);
+                            newSounds.push({
+                                name: file.name,
+                                handle: entry as any,
+                                tags: [],
+                                duration: metadata.format.duration || 0,
+                                category: categoryKey,
+                            });
+                        } catch (e) {
+                            console.warn(`无法解析文件元数据: ${entry.name}`, e);
+                        }
                     }
                 }
-            }
-            if (newSounds.length > 0) {
-                await soundLibraryRepository.addSounds(newSounds);
+                if (newSounds.length > 0) {
+                    await soundLibraryRepository.addSounds(newSounds);
+                }
+            } else {
+                // 增量扫描
+                const existingSounds = await soundLibraryRepository.getSoundsByCategory(categoryKey);
+                const existingSoundMap = new Map(existingSounds.map(s => [s.name, s]));
+                const newSounds: SoundLibraryItem[] = [];
+                const foundFileNames = new Set<string>();
+
+                for await (const entry of handle.values()) {
+                    if (entry.kind === 'file' && (entry.name.endsWith('.mp3') || entry.name.endsWith('.wav'))) {
+                        foundFileNames.add(entry.name);
+                        if (!existingSoundMap.has(entry.name)) {
+                            // 文件是新增的
+                            try {
+                                const file = await (entry as any).getFile();
+                                const metadata = await mm.parseBlob(file);
+                                newSounds.push({
+                                    name: file.name,
+                                    handle: entry as any,
+                                    tags: [],
+                                    duration: metadata.format.duration || 0,
+                                    category: categoryKey,
+                                });
+                            } catch (e) {
+                                console.warn(`无法解析新文件元数据: ${entry.name}`, e);
+                            }
+                        }
+                    }
+                }
+
+                const soundsToDelete = existingSounds.filter(s => !foundFileNames.has(s.name));
+                const idsToDelete = soundsToDelete.map(s => s.id).filter((id): id is number => id !== undefined);
+
+                await db.transaction('rw', db.soundLibrary, async () => {
+                    if (newSounds.length > 0) {
+                        await soundLibraryRepository.addSounds(newSounds);
+                    }
+                    if (idsToDelete.length > 0) {
+                        await soundLibraryRepository.bulkDeleteByIds(idsToDelete);
+                    }
+                });
             }
         } catch (err) {
             console.error(`扫描文件夹失败: ${handle.name}`, err);
@@ -81,7 +123,7 @@ const SoundLibraryPanel: React.FC = () => {
             const handle = await (window as any).showDirectoryPicker();
             await soundLibraryRepository.saveHandle(categoryKey, handle);
             setHandles(prev => ({ ...prev, [categoryKey]: handle }));
-            await scanDirectory(categoryKey, handle, true);
+            await scanDirectory(categoryKey, handle, 'full'); // 首次关联或更换文件夹时执行全量扫描
         } catch (err) {
             if (err instanceof Error && err.name === 'AbortError') {
                 // User cancelled, do nothing.
@@ -94,17 +136,11 @@ const SoundLibraryPanel: React.FC = () => {
     const handleRefreshAll = () => {
         openConfirmModal(
             '刷新所有音效库',
-            '此操作将清空当前的音效列表，并从所有已关联的本地文件夹中重新扫描音频文件。确定要继续吗？',
+            '此操作将对所有已关联的文件夹执行全量扫描，清空并重新加载所有音频文件。确定要继续吗？',
             async () => {
-                setIsLoading(true);
-                setLoadingMessage('正在刷新所有音效...');
-                await soundLibraryRepository.clearSounds();
                 for (const categoryKey in handles) {
-                    await scanDirectory(categoryKey, handles[categoryKey], false);
+                    await scanDirectory(categoryKey, handles[categoryKey], 'full');
                 }
-                await refreshSoundLibrary();
-                setIsLoading(false);
-                setLoadingMessage('');
             },
             '全部刷新',
             '取消'
@@ -156,7 +192,10 @@ const SoundLibraryPanel: React.FC = () => {
                             {handles[key] ? (
                                 <div className="flex items-center justify-between">
                                     <p className="text-xs text-slate-400 truncate pr-2" title={handles[key]?.name}>已关联: {handles[key]?.name}</p>
-                                    <button onClick={() => scanDirectory(key, handles[key]!, true)} className="text-xs text-sky-400 hover:underline flex-shrink-0">重新扫描</button>
+                                    <div className="flex items-center space-x-2 flex-shrink-0">
+                                      <button onClick={() => handleLinkFolder(key)} className="text-xs text-sky-400 hover:underline">更换</button>
+                                      <button onClick={() => scanDirectory(key, handles[key]!, 'incremental')} className="text-xs text-sky-400 hover:underline">更新</button>
+                                    </div>
                                 </div>
                             ) : (
                                 <button onClick={() => handleLinkFolder(key)} className="w-full text-xs text-center py-1 bg-slate-600 hover:bg-sky-600 rounded">关联文件夹</button>

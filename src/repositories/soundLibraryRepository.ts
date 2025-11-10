@@ -36,6 +36,13 @@ class SoundLibraryRepository {
   async getSounds(): Promise<SoundLibraryItem[]> {
     return db.soundLibrary.toArray();
   }
+
+  /**
+   * 根据分类获取音效
+   */
+  async getSoundsByCategory(category: string): Promise<SoundLibraryItem[]> {
+    return db.soundLibrary.where('category').equals(category).toArray();
+  }
   
   /**
    * 批量添加音效
@@ -43,6 +50,14 @@ class SoundLibraryRepository {
   async addSounds(sounds: SoundLibraryItem[]): Promise<void> {
     if (sounds.length === 0) return;
     await db.soundLibrary.bulkAdd(sounds);
+  }
+
+  /**
+   * 根据ID批量删除音效
+   */
+  async bulkDeleteByIds(ids: number[]): Promise<void> {
+    if (ids.length === 0) return;
+    await db.soundLibrary.bulkDelete(ids);
   }
 
   /**
