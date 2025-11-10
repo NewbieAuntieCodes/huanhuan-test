@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Chapter, Character, TextMarker } from '../../../types';
 import { useMarkerRendering } from '../hooks/useMarkerRendering';
+import { MusicalNoteIcon } from '../../../components/ui/icons';
 
 const formatChapterNumber = (index: number) => {
   if (index < 0) return '';
@@ -24,7 +25,7 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
   textMarkers,
   suspendLayout,
 }) => {
-    const { contentRef, sceneOverlays } = useMarkerRendering(textMarkers, chapters, suspendLayout);
+    const { contentRef, sceneOverlays, bgmLabelOverlays } = useMarkerRendering(textMarkers, chapters, suspendLayout);
     
     const handleMouseUp = () => {
         const selection = window.getSelection();
@@ -56,6 +57,7 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
 
     return (
         <div className="relative p-4 h-full" ref={contentRef} onMouseUp={handleMouseUp}>
+            {/* Scene Brackets */}
             <div className="absolute inset-0 pointer-events-none z-10">
                 {sceneOverlays.map((overlay) => (
                     <div
@@ -74,6 +76,31 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
                         >
                             {overlay.name}
                         </div>
+                    </div>
+                ))}
+            </div>
+
+            {/* BGM Labels */}
+            <div className="absolute inset-0 pointer-events-none z-20">
+                {bgmLabelOverlays.map((overlay) => (
+                    <div
+                        key={overlay.id}
+                        className="bgm-label"
+                        style={{
+                            top: overlay.top,
+                            left: overlay.left,
+                            backgroundColor: overlay.bgColor,
+                            color: overlay.textColor,
+                            pointerEvents: 'auto',
+                        }}
+                        onClick={() => {
+                            const marker = textMarkers.find((m) => m.id === overlay.id);
+                            if (marker) (window as any).__openEditMarker?.(marker);
+                        }}
+                        title={`BGM: ${overlay.name}`}
+                    >
+                        <MusicalNoteIcon className="w-3 h-3 mr-1.5 flex-shrink-0" />
+                        <span className="truncate">{overlay.name}</span>
                     </div>
                 ))}
             </div>

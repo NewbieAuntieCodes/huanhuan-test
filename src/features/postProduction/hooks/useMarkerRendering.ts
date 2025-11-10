@@ -32,6 +32,16 @@ export type SceneOverlay = {
     bgColor: string;
 };
 
+export type BgmLabelOverlay = {
+    id: string;
+    name: string;
+    top: number;
+    left: number;
+    bgColor: string;
+    textColor: string;
+};
+
+
 export const useMarkerRendering = (
     textMarkers: TextMarker[],
     chapters: Chapter[],
@@ -40,20 +50,44 @@ export const useMarkerRendering = (
     const contentRef = useRef<HTMLDivElement>(null);
     const lastMarkersRef = useRef<TextMarker[]>([]);
     const [sceneOverlays, setSceneOverlays] = useState<SceneOverlay[]>([]);
+    const [bgmLabelOverlays, setBgmLabelOverlays] = useState<BgmLabelOverlay[]>([]);
 
     const bgmMarkers = useMemo(() => textMarkers.filter((m) => m.type === 'bgm'), [textMarkers]);
     const sceneMarkers = useMemo(() => textMarkers.filter((m) => m.type === 'scene'), [textMarkers]);
+
+    const lineIdToChapterIndex = useMemo(() => {
+        const map = new Map<string, number>();
+        chapters.forEach((ch, chIdx) => ch.scriptLines.forEach((ln) => map.set(ln.id, chIdx)));
+        return map;
+    }, [chapters]);
+
+    const lineIdToLineOrder = useMemo(() => {
+        const map = new Map<string, number>();
+        chapters.forEach((ch) => ch.scriptLines.forEach((ln, lnIdx) => map.set(ln.id, lnIdx)));
+        return map;
+    }, [chapters]);
+
+    const markerOrdinalMap = useMemo(() => {
+        const map = new Map<string, number>();
+        const chapterGrouped: Record<number, { id: string; startOrder: number }[]> = {};
+        bgmMarkers.forEach((m) => {
+            const chIdx = lineIdToChapterIndex.get(m.startLineId) ?? 0;
+            const order = (lineIdToLineOrder.get(m.startLineId) ?? 0) * 1e6 + (m.startOffset ?? 0);
+            (chapterGrouped[chIdx] || (chapterGrouped[chIdx] = [])).push({ id: m.id, startOrder: order });
+        });
+        Object.values(chapterGrouped).forEach(list => list.sort((a, b) => a.startOrder - b.startOrder).forEach((item, idx) => map.set(item.id, idx + 1)));
+        return map;
+    }, [bgmMarkers, lineIdToChapterIndex, lineIdToLineOrder]);
+
 
     const recomputeSceneOverlays = useCallback(() => {
         const contentEl = contentRef.current;
         if (!contentEl) return;
         
-        // FIX: The actual scrollable element is the parent of the `contentRef` element.
         const scrollableContainer = contentEl.parentElement;
         if (!scrollableContainer) return;
 
         const newOverlays: SceneOverlay[] = [];
-        // FIX: The containerRect should be for the scrollable parent, which is our positioning context.
         const containerRect = scrollableContainer.getBoundingClientRect();
         
         const findTextNodeAndOffsetForEl = (element: Element, targetOffset: number): { node: Node; offset: number } | null => {
@@ -103,7 +137,6 @@ export const useMarkerRendering = (
                     bottomPx = (endP || endRow).getBoundingClientRect().bottom;
                 }
 
-                // FIX: Use the scrollable container's properties for the final position calculation.
                 const top = topPx - containerRect.top + scrollableContainer.scrollTop;
                 const bottom = bottomPx - containerRect.top + scrollableContainer.scrollTop;
                 const height = Math.max(0, bottom - top);
@@ -112,6 +145,42 @@ export const useMarkerRendering = (
         });
         setSceneOverlays(newOverlays);
     }, [sceneMarkers]);
+    
+    const recomputeBgmLabelOverlays = useCallback(() => {
+        const contentEl = contentRef.current;
+        if (!contentEl || suspendLayout) return;
+
+        const scrollableContainer = contentEl.parentElement;
+        if (!scrollableContainer) return;
+        
+        const containerRect = scrollableContainer.getBoundingClientRect();
+        const newOverlays: BgmLabelOverlay[] = [];
+
+        bgmMarkers.forEach(marker => {
+            const markEl = contentEl.querySelector(`mark[data-marker-id="${marker.id}"]`);
+            if (markEl) {
+                const markRect = markEl.getBoundingClientRect();
+                
+                const top = markRect.top - containerRect.top + scrollableContainer.scrollTop;
+                const left = markRect.left - containerRect.left + scrollableContainer.scrollLeft;
+
+                const baseColor = marker.color || getBgmColor(markerOrdinalMap.get(marker.id) ?? 1);
+                // Make the label background more opaque for readability
+                const bgColor = baseColor.replace(/, ?([\d\.]+)\)$/, ', 0.85)');
+                
+                newOverlays.push({
+                    id: marker.id,
+                    name: marker.name || 'BGM',
+                    top: Math.max(0, top), // prevent negative top
+                    left: Math.max(0, left),
+                    bgColor,
+                    textColor: '#1e293b' // slate-800, good contrast for light BGM colors
+                });
+            }
+        });
+
+        setBgmLabelOverlays(newOverlays);
+    }, [bgmMarkers, markerOrdinalMap, suspendLayout]);
 
     const recalculateBgmHighlights = useCallback(() => {
         const contentEl = contentRef.current;
@@ -126,22 +195,6 @@ export const useMarkerRendering = (
             }
         });
         contentEl.normalize();
-
-        const lineIdToChapterIndex = new Map<string, number>();
-        const lineIdToLineOrder = new Map<string, number>();
-        chapters.forEach((ch, chIdx) => ch.scriptLines.forEach((ln, lnIdx) => {
-            lineIdToChapterIndex.set(ln.id, chIdx);
-            lineIdToLineOrder.set(ln.id, lnIdx);
-        }));
-
-        const markerOrdinalMap = new Map<string, number>();
-        const chapterGrouped: Record<number, { id: string; startOrder: number }[]> = {};
-        bgmMarkers.forEach((m) => {
-            const chIdx = lineIdToChapterIndex.get(m.startLineId) ?? 0;
-            const order = (lineIdToLineOrder.get(m.startLineId) ?? 0) * 1e6 + (m.startOffset ?? 0);
-            (chapterGrouped[chIdx] || (chapterGrouped[chIdx] = [])).push({ id: m.id, startOrder: order });
-        });
-        Object.values(chapterGrouped).forEach(list => list.sort((a, b) => a.startOrder - b.startOrder).forEach((item, idx) => markerOrdinalMap.set(item.id, idx + 1)));
 
         bgmMarkers.forEach((marker) => {
             if (marker.startOffset === undefined || marker.endOffset === undefined) return;
@@ -185,27 +238,30 @@ export const useMarkerRendering = (
             }
         });
 
-    }, [bgmMarkers, chapters, suspendLayout]);
+    }, [bgmMarkers, chapters, suspendLayout, markerOrdinalMap]);
 
     useEffect(() => {
         if (!suspendLayout) {
             recalculateBgmHighlights();
             recomputeSceneOverlays();
+            recomputeBgmLabelOverlays();
         }
         lastMarkersRef.current = textMarkers;
-    }, [textMarkers, suspendLayout, recalculateBgmHighlights, recomputeSceneOverlays]);
+    }, [textMarkers, suspendLayout, recalculateBgmHighlights, recomputeSceneOverlays, recomputeBgmLabelOverlays]);
     
     useEffect(() => {
         if (suspendLayout) return;
         
-        // FIX: Attach scroll and resize listeners to the correct scrollable parent element.
         const scrollableParent = contentRef.current?.parentElement;
         if (!scrollableParent) return;
 
         let timeoutId: number;
         const handle = () => {
           clearTimeout(timeoutId);
-          timeoutId = window.setTimeout(recomputeSceneOverlays, 120);
+          timeoutId = window.setTimeout(() => {
+            recomputeSceneOverlays();
+            recomputeBgmLabelOverlays();
+          }, 120);
         };
 
         window.addEventListener('resize', handle);
@@ -216,11 +272,12 @@ export const useMarkerRendering = (
           scrollableParent.removeEventListener('scroll', handle);
           clearTimeout(timeoutId);
         };
-    }, [recomputeSceneOverlays, suspendLayout]);
+    }, [recomputeSceneOverlays, recomputeBgmLabelOverlays, suspendLayout]);
 
 
     return {
         contentRef,
         sceneOverlays,
+        bgmLabelOverlays,
     };
 };
