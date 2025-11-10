@@ -62,6 +62,23 @@ export class MiscRepository {
     }
   }
 
+  // ==================== 音效助手 ====================
+  
+  /**
+   * 获取音效关键词观察列表
+   */
+  async getSoundObservationList(): Promise<string[]> {
+      const list = await this.getRaw<string[]>('soundObservationList');
+      return list || [];
+  }
+
+  /**
+   * 保存音效关键词观察列表
+   */
+  async saveSoundObservationList(list: string[]): Promise<void> {
+      await this.setRaw('soundObservationList', list);
+  }
+
   // ==================== 合并历史 ====================
 
   /**
@@ -264,6 +281,7 @@ export class MiscRepository {
     apiSettings: ApiSettings;
     selectedAiProvider: string;
     characterShortcuts: CharacterShortcuts;
+    soundObservationList: string[];
   }> {
     try {
       const [
@@ -273,6 +291,7 @@ export class MiscRepository {
         apiSettings,
         selectedAiProvider,
         characterShortcuts,
+        soundObservationList,
       ] = await Promise.all([
         this.getMergeHistory(),
         this.getCvColorPresets(),
@@ -280,6 +299,7 @@ export class MiscRepository {
         this.getApiSettings(),
         this.getSelectedAiProvider(),
         this.getCharacterShortcuts(),
+        this.getSoundObservationList(),
       ]);
 
       return {
@@ -289,6 +309,7 @@ export class MiscRepository {
         apiSettings,
         selectedAiProvider,
         characterShortcuts,
+        soundObservationList,
       };
     } catch (error) {
       console.error('❌ [MiscRepository] 批量获取配置失败:', error);

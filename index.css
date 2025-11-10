@@ -126,3 +126,26 @@
         white-space: nowrap;
         width: 100%;
     }
+
+    /* Sound Assistant Styles */
+    .sound-keyword-highlight {
+      text-decoration: underline;
+      text-decoration-color: #f87171; /* red-400 */
+      text-decoration-style: wavy;
+      text-decoration-thickness: 1.5px;
+      text-underline-offset: 2px;
+      cursor: pointer;
+    }
+
+    .manual-sound-marker {
+      border-bottom: 2px dashed #60a5fa; /* blue-400 */
+      color: #93c5fd; /* blue-300 */
+      font-weight: 500;
+      cursor: help;
+    }
+
+    /* Caret color for transparent contentEditable */
+    .transparent-text {
+      color: transparent;
+      caret-color: #f1f5f9; /* slate-100 */
+    }

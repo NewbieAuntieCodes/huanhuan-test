@@ -12,6 +12,7 @@ import { createMergeSlice, MergeSlice } from './slices/mergeSlice';
 import { db } from '../db'; // Import the Dexie database instance
 import { defaultCvPresetColors, defaultCharacterPresetColors } from '../lib/colorPresets';
 import { soundLibraryRepository } from '../repositories/soundLibraryRepository';
+import { miscRepository } from '../repositories';
 
 // Define the combined state shape by extending all slice types
 export interface AppState extends UiSlice, ProjectSlice, ProjectAudioSlice, CharacterSlice, MergeSlice {
@@ -59,41 +60,37 @@ export const useStore = create<AppState>((set, get, api) => ({
       const [
         projectsFromDb,
         charactersFromDb,
-        mergeHistoryItem,
-        cvColorPresetsItem,
-        characterColorPresetsItem,
-        apiSettingsItem,
-        selectedAiProviderItem,
-        characterShortcutsItem,
+        miscData,
         lufsSettingsItem,
       ] = await db.transaction('r', db.projects, db.characters, db.misc, async () => {
         return Promise.all([
           db.projects.orderBy('lastModified').reverse().toArray(),
           db.characters.toArray(),
-          db.misc.get('mergeHistory'),
-          db.misc.get('cvColorPresets'),
-          db.misc.get('characterColorPresets'),
-          db.misc.get('apiSettings'),
-          db.misc.get('selectedAiProvider'),
-          db.misc.get('characterShortcuts'),
+          miscRepository.getBulkConfig(),
           db.misc.get('lufsSettings'),
         ]);
       });
 
+      const {
+        mergeHistory,
+        cvColorPresets: cvColorPresetsFromDb,
+        characterColorPresets: characterColorPresetsFromDb,
+        apiSettings,
+        selectedAiProvider,
+        characterShortcuts,
+        soundObservationList,
+      } = miscData;
+
       const projects = projectsFromDb.map(p => ({ ...p, cvStyles: p.cvStyles || {} }));
-      const mergeHistory = mergeHistoryItem?.value || [];
-      const apiSettings = apiSettingsItem?.value || get().apiSettings;
-      const selectedAiProvider = selectedAiProviderItem?.value || 'gemini';
-      const characterShortcuts = characterShortcutsItem?.value || {};
       const lufsSettings = lufsSettingsItem?.value || { enabled: false, target: -18 };
       
-      let cvColorPresets = cvColorPresetsItem?.value;
+      let cvColorPresets = cvColorPresetsFromDb;
       if (!cvColorPresets || !Array.isArray(cvColorPresets) || cvColorPresets.length === 0) {
         cvColorPresets = defaultCvPresetColors;
         await db.misc.put({ key: 'cvColorPresets', value: cvColorPresets });
       }
 
-      let characterColorPresets = characterColorPresetsItem?.value;
+      let characterColorPresets = characterColorPresetsFromDb;
       if (!characterColorPresets || !Array.isArray(characterColorPresets) || characterColorPresets.length === 0) {
         characterColorPresets = defaultCharacterPresetColors;
         await db.misc.put({ key: 'characterColorPresets', value: characterColorPresets });
@@ -137,10 +134,6 @@ export const useStore = create<AppState>((set, get, api) => ({
         await db.characters.bulkPut(sfxUpdates);
       }
 
-      // --- Faulty migration logic removed ---
-      // This block was causing duplicate default characters on every load.
-      // The correct logic for creating default characters is handled in `addProject`.
-
       let initialView: AppView = "dashboard";
       if (projects.length === 0) {
         initialView = "upload";
@@ -158,6 +151,7 @@ export const useStore = create<AppState>((set, get, api) => ({
         selectedAiProvider,
         characterShortcuts,
         lufsSettings,
+        soundObservationList,
         currentView: initialView,
         aiProcessingChapterIds: [], // Reset on load
         selectedProjectId: get().selectedProjectId || null,
@@ -175,6 +169,7 @@ export const useStore = create<AppState>((set, get, api) => ({
         currentView: "upload",
         isLoading: false,
         soundLibrary: [],
+        soundObservationList: [],
       });
     }
   },

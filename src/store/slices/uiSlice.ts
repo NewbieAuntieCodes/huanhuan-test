@@ -3,6 +3,7 @@ import { AppState } from '../useStore'; // Import AppState for cross-slice type 
 import { AppView, ScriptLine, Character } from '../../types';
 import React from 'react';
 import { db } from '../../db';
+import { miscRepository } from '../../repositories';
 
 export type AiProvider = 'gemini' | 'openai' | 'moonshot' | 'deepseek';
 export type WebSocketStatus = 'connecting' | 'connected' | 'disconnected';
@@ -66,6 +67,7 @@ export interface UiSlice {
   activeRecordingLineId: string | null;
   webSocketStatus: WebSocketStatus;
   lufsSettings: LufsSettings;
+  soundObservationList: string[];
 
 
   navigateTo: (view: AppView) => void;
@@ -102,6 +104,7 @@ export interface UiSlice {
   setActiveRecordingLineId: (id: string | null) => void;
   setWebSocketStatus: (status: WebSocketStatus) => void;
   setLufsSettings: (settings: Partial<LufsSettings>) => Promise<void>;
+  setSoundObservationList: (list: string[]) => Promise<void>;
   goToNextLine: () => Promise<void>;
 }
 
@@ -131,6 +134,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   activeRecordingLineId: null,
   webSocketStatus: 'disconnected',
   lufsSettings: { enabled: false, target: -18 },
+  soundObservationList: [],
 
   navigateTo: (view) => set({ currentView: view }),
   setIsLoading: (loading) => set({ isLoading: loading }),
@@ -221,6 +225,10 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   setCharacterShortcuts: async (shortcuts) => {
     await db.misc.put({ key: 'characterShortcuts', value: shortcuts });
     set({ characterShortcuts: shortcuts });
+  },
+  setSoundObservationList: async (list) => {
+    await miscRepository.saveSoundObservationList(list);
+    set({ soundObservationList: list });
   },
   setAudioAlignmentCvFilter: (filter) => set({ audioAlignmentCvFilter: filter }),
   setAudioAlignmentCharacterFilter: (filter) => set({ audioAlignmentCharacterFilter: filter }),

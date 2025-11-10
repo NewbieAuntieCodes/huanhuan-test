@@ -39,7 +39,11 @@ export const useEditorPageLogic = (props: EditorPageProps) => {
     onEditCharacter,
   } = props;
 
-  const openConfirmModal = useStore(state => state.openConfirmModal);
+  const { openConfirmModal, soundLibrary, soundObservationList } = useStore(state => ({
+    openConfirmModal: state.openConfirmModal,
+    soundLibrary: state.soundLibrary,
+    soundObservationList: state.soundObservationList,
+  }));
   const coreLogic = useEnhancedEditorCoreLogic({ projectId, projects, onProjectUpdate });
   const { currentProject, selectedChapterId, multiSelectedChapterIds, setMultiSelectedChapterIds, applyUndoableProjectUpdate } = coreLogic;
   const scriptImportInputRef = useRef<HTMLInputElement>(null);
@@ -348,7 +352,9 @@ export const useEditorPageLogic = (props: EditorPageProps) => {
     openCharacterSidePanel: handleOpenCharacterSidePanel,
     openCvModal: onOpenCharacterAndCvStyleModal,
     openCharacterEditModal: onOpenCharacterAndCvStyleModal,
-  }), [coreLogic, projectCharacters, allCvNames, cvStyles, applyUndoableProjectUpdate, deleteChapters, undoableMergeChapters, handleBatchAddChapters, isLoadingAiAnnotation, isLoadingManualParse, isLoadingImportAnnotation, handleRunAiAnnotationForChapters, handleManualParseChapters, handleOpenImportModalTrigger, handleOpenScriptImport, handleSaveNewChapters, openShortcutSettingsModal, shortcutActiveLineId, handleAddCustomSoundType, handleDeleteCustomSoundType, handleOpenCharacterSidePanel, onOpenCharacterAndCvStyleModal]);
+    soundLibrary,
+    soundObservationList,
+  }), [coreLogic, projectCharacters, allCvNames, cvStyles, applyUndoableProjectUpdate, deleteChapters, undoableMergeChapters, handleBatchAddChapters, isLoadingAiAnnotation, isLoadingManualParse, isLoadingImportAnnotation, handleRunAiAnnotationForChapters, handleManualParseChapters, handleOpenImportModalTrigger, handleOpenScriptImport, handleSaveNewChapters, openShortcutSettingsModal, shortcutActiveLineId, handleAddCustomSoundType, handleDeleteCustomSoundType, handleOpenCharacterSidePanel, onOpenCharacterAndCvStyleModal, soundLibrary, soundObservationList]);
 
   return {
     contextValue,

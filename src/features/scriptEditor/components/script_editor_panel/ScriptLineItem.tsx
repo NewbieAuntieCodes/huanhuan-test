@@ -5,6 +5,8 @@ import { isHexColor, getContrastingTextColor } from '../../../../lib/colorUtils'
 import { tailwindToHex } from '../../../../lib/tailwindColorMap';
 import CharacterSelectorDropdown from './CharacterSelectorDropdown';
 import { useEditorContext } from '../../contexts/EditorContext';
+import { useSoundHighlighter } from '../../hooks/useSoundHighlighter';
+import SoundKeywordPopover from './SoundKeywordPopover';
 
 interface ScriptLineItemProps {
   line: ScriptLine;
@@ -42,7 +44,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   onAddCustomSoundType,
   onDeleteCustomSoundType,
 }) => {
-  const { openCvModal } = useEditorContext();
+  const { openCvModal, soundLibrary, soundObservationList } = useEditorContext();
   const character = characters.find(c => c.id === line.characterId);
   const isCharacterMissing = line.characterId && !character;
   const isSilentLine = character && character.name === '[静音]';
@@ -50,6 +52,15 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const contentEditableRef = useRef<HTMLDivElement>(null);
+
+  const [popoverState, setPopoverState] = useState<{
+    visible: boolean;
+    keyword: string;
+    top: number;
+    left: number;
+  } | null>(null);
+
+  const highlightedHtml = useSoundHighlighter(line.text, soundLibrary, soundObservationList);
 
   const [isSoundTypeDropdownOpen, setIsSoundTypeDropdownOpen] = useState(false);
   const soundTypeDropdownRef = useRef<HTMLDivElement>(null);
@@ -59,10 +70,10 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   
   useLayoutEffect(() => {
     const element = contentEditableRef.current;
-    if (element && element.innerHTML !== line.text) {
-      if (document.activeElement !== element) {
-        element.innerHTML = line.text;
-      }
+    if (element && element.innerText !== line.text) {
+        if (document.activeElement !== element) {
+            element.innerText = line.text;
+        }
     }
   }, [line.text]);
 
@@ -105,7 +116,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
         finalTextClass = '';
     } else if (!cvTextToUse && !textIsHex && !cvName) {
         finalTextClass = defaultTextClass;
-    } else if (!cvTextToUse && !textIsHex && cvName && !cvStyles[cvName]) {
+    } else if (!cvTextToUse && !textIsHex && cvName && !cvStyles[cvName]){
      finalTextClass = defaultTextClass;
     }
     return { style: { ...(bgIsHex && { backgroundColor: cvBgToUse }), ...cvTextStyle }, className: `${finalBgClass} ${finalTextClass}` };
@@ -123,22 +134,38 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   
   const isNarrator = !character || character.name === 'Narrator';
   let contentEditableStyle: React.CSSProperties = {};
-  let contentEditableClasses = 'flex-grow p-2 rounded-md min-h-[40px] focus:ring-1 focus:ring-sky-500 outline-none whitespace-pre-wrap';
-  if (isSilentLine) contentEditableClasses += ' bg-slate-800 text-slate-500 italic';
-  else if (isNarrator) contentEditableClasses += ' bg-slate-700 text-slate-100';
-  else if (character) {
-      const charBg = character.color;
-      const charText = character.textColor;
-      if (isHexColor(charBg)) contentEditableStyle.backgroundColor = charBg;
-      else contentEditableClasses += ` ${charBg || 'bg-slate-700'}`;
-      if (charText) {
-          if (isHexColor(charText)) contentEditableStyle.color = charText;
-          else contentEditableStyle.color = tailwindToHex[charText] || '#F1F5F9';
-      } else {
-          const bgColorAsHex = isHexColor(charBg) ? charBg : (tailwindToHex[charBg] || '#334155');
-          contentEditableStyle.color = getContrastingTextColor(bgColorAsHex);
-      }
-  } else contentEditableClasses += ' bg-slate-700 text-slate-100';
+  let contentEditableClasses = 'flex-grow p-2 rounded-md min-h-[40px] focus:ring-1 focus:ring-sky-500 outline-none whitespace-pre-wrap transparent-text relative z-10';
+  
+  // Base background and text color for the overlay
+  let overlayStyle: React.CSSProperties = {};
+  let overlayClasses = 'absolute top-0 left-0 w-full h-full p-2 rounded-md whitespace-pre-wrap pointer-events-none';
+  
+  if (isSilentLine) {
+    overlayClasses += ' bg-slate-800 text-slate-500 italic';
+    contentEditableClasses += ' bg-slate-800';
+  } else if (isNarrator) {
+    overlayClasses += ' bg-slate-700 text-slate-100';
+    contentEditableClasses += ' bg-slate-700';
+  } else if (character) {
+    const charBg = character.color;
+    const charText = character.textColor;
+    if (isHexColor(charBg)) overlayStyle.backgroundColor = charBg;
+    else overlayClasses += ` ${charBg || 'bg-slate-700'}`;
+
+    if (isHexColor(charBg)) contentEditableStyle.backgroundColor = charBg;
+    else contentEditableClasses += ` ${charBg || 'bg-slate-700'}`;
+    
+    if (charText) {
+      if (isHexColor(charText)) overlayStyle.color = charText;
+      else overlayStyle.color = tailwindToHex[charText] || '#F1F5F9';
+    } else {
+      const bgColorAsHex = isHexColor(charBg) ? charBg : (tailwindToHex[charBg] || '#334155');
+      overlayStyle.color = getContrastingTextColor(bgColorAsHex);
+    }
+  } else {
+    overlayClasses += ' bg-slate-700 text-slate-100';
+    contentEditableClasses += ' bg-slate-700';
+  }
 
   const handleToggleOS = () => onUpdateSoundType(line.id, line.soundType === 'OS' ? '' : 'OS');
   const isLit = !!line.soundType && line.soundType !== '清除';
@@ -150,6 +177,24 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   };
 
   const isShortcutActive = shortcutActiveLineId === line.id;
+  
+  const handleMouseOver = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('sound-keyword-highlight')) {
+        const keyword = target.dataset.keyword;
+        if (keyword) {
+            const rect = target.getBoundingClientRect();
+            setPopoverState({ visible: true, keyword, top: rect.bottom + window.scrollY, left: rect.left + window.scrollX });
+        }
+    }
+  };
+
+  const handleMouseOut = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.classList.contains('sound-keyword-highlight')) {
+        setPopoverState(null);
+    }
+  };
 
   return (
     <div className={`p-3 mb-2 rounded-lg border flex items-center gap-3 transition-all duration-150 ${isSilentLine ? 'border-slate-800 opacity-70' : 'border-slate-700'} hover:border-slate-600 ${line.isAiAudioLoading ? 'opacity-70' : ''} ${isShortcutActive ? 'ring-2 ring-amber-400' : ''}`}>
@@ -174,7 +219,11 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
           </div>
         </div>
       </div>
-      <div ref={contentEditableRef} contentEditable suppressContentEditableWarning onFocus={handleDivFocus} onBlur={handleDivBlur} className={contentEditableClasses} style={contentEditableStyle} aria-label={`脚本行文本: ${line.text.substring(0,50)}... ${character ? `角色: ${character.name}` : '未分配角色'}`} />
+      <div className="relative flex-grow" onMouseOver={handleMouseOver} onMouseOut={handleMouseOut}>
+        <div ref={contentEditableRef} contentEditable suppressContentEditableWarning onFocus={handleDivFocus} onBlur={handleDivBlur} className={contentEditableClasses} style={contentEditableStyle} aria-label={`脚本行文本: ${line.text.substring(0,50)}... ${character ? `角色: ${character.name}` : '未分配角色'}`} />
+        <div className={overlayClasses} style={overlayStyle} dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+      </div>
+      {popoverState?.visible && <SoundKeywordPopover keyword={popoverState.keyword} top={popoverState.top} left={popoverState.left} onClose={() => setPopoverState(null)} />}
       <div className="relative flex-shrink-0" style={{width: '6rem'}} ref={soundTypeDropdownRef}>
         <div className="flex w-full h-9 rounded-md border border-slate-600 overflow-hidden">
           <button onClick={handleToggleOS} className={`flex-grow h-full flex items-center justify-center px-2 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:z-10 ${isLit ? 'bg-orange-500 text-white font-semibold' : 'bg-slate-700 hover:bg-slate-600 text-slate-200'}`}>

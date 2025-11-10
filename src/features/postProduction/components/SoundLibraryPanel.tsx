@@ -15,6 +15,7 @@ const CATEGORIES = [
     { key: 'fabric', name: '布料' },
     { key: 'horror', name: '恐怖音效' },
     { key: 'variety', name: '综艺音效' },
+    { key: 'doors_windows', name: '门窗' },
 ];
 
 const SoundLibraryPanel: React.FC = () => {
