@@ -30,7 +30,7 @@ const defaultCharConfigs = [
   { name: '[静音]', color: 'bg-slate-700', textColor: 'text-slate-400', description: '用于标记无需录制的旁白提示' },
   { name: 'Narrator', color: 'bg-slate-600', textColor: 'text-slate-100', description: '默认旁白角色' },
   { name: '待识别角色', color: 'bg-orange-400', textColor: 'text-black', description: '由系统自动识别但尚未分配的角色' },
-  { name: '音效', color: 'bg-transparent', textColor: 'text-red-500', description: '用于标记音效的文字描述' },
+  { name: '[音效]', color: 'bg-transparent', textColor: 'text-red-500', description: '用于标记音效的文字描述' },
 ];
 
 export const useStore = create<AppState>((set, get, api) => ({
@@ -107,7 +107,8 @@ export const useStore = create<AppState>((set, get, api) => ({
       const isSfxName = (name?: string) => {
         if (!name) return false;
         const n = name.trim().toLowerCase();
-        return n === '音效' || n === 'sfx' || n === '��Ч'.toLowerCase();
+        // 兼容旧数据与新显示格式
+        return n === '音效' || n === '[音效]' || n === 'sfx';
       };
       const fixedCharacters: Character[] = processedCharacters.map((c) => {
         if (isSfxName(c.name)) {

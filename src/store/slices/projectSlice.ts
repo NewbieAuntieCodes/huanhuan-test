@@ -10,7 +10,7 @@ const defaultCharConfigs = [
   { name: '[静音]', color: 'bg-slate-700', textColor: 'text-slate-400', description: '用于标记无需录制的旁白提示' },
   { name: 'Narrator', color: 'bg-slate-600', textColor: 'text-slate-100', description: '默认旁白角色' },
   { name: '待识别角色', color: 'bg-orange-400', textColor: 'text-black', description: '由系统自动识别但尚未分配的角色' },
-  { name: '音效', color: 'bg-transparent', textColor: 'text-red-500', description: '用于标记音效的文字描述' },
+  { name: '[音效]', color: 'bg-transparent', textColor: 'text-red-500', description: '用于标记音效的文字描述' },
 ];
 
 export interface ProjectSlice {
@@ -29,6 +29,7 @@ export interface ProjectSlice {
   updateLinePostSilence: (projectId: string, chapterId: string, lineId: string, silence?: number) => Promise<void>;
   updateProjectTextMarkers: (projectId: string, markers: TextMarker[]) => Promise<void>;
   addIgnoredSoundKeyword: (projectId: string, chapterId: string, lineId: string, keyword: IgnoredSoundKeyword) => Promise<void>;
+  updateLineText: (projectId: string, chapterId: string, lineId: string, newText: string) => Promise<void>;
 }
 
 export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = (set, get, _api) => ({
@@ -356,6 +357,34 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
     await db.projects.put(updatedProject);
     set(state => ({
         projects: state.projects.map(p => p.id === projectId ? updatedProject : p),
+    }));
+  },
+  updateLineText: async (projectId, chapterId, lineId, newText) => {
+    const project = get().projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const updatedProject: Project = {
+      ...project,
+      chapters: project.chapters.map(ch => {
+        if (ch.id === chapterId) {
+          return {
+            ...ch,
+            scriptLines: ch.scriptLines.map(line => {
+              if (line.id === lineId) {
+                const isSynced = line.text === newText;
+                return { ...line, text: newText, isTextModifiedManual: true, isAiAudioSynced: isSynced } as ScriptLine;
+              }
+              return line;
+            })
+          };
+        }
+        return ch;
+      }),
+      lastModified: Date.now(),
+    };
+    await db.projects.put(updatedProject);
+    set(state => ({
+      projects: state.projects.map(p => p.id === projectId ? updatedProject : p),
     }));
   },
   updateProjectTextMarkers: async (projectId, markers) => {

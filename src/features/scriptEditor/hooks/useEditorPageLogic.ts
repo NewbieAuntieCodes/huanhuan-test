@@ -281,7 +281,7 @@ export const useEditorPageLogic = (props: EditorPageProps) => {
       const candidateMinusStillUsed = Array.from(orphanCandidateIds).filter(id => !stillUsedIds.has(id));
       if (candidateMinusStillUsed.length > 0) {
         const charMap = new Map(characters.map(c => [c.id, c]));
-        const PROTECTED_NAMES = new Set<string>(['[静音]', '音效', '待识别角色', 'Narrator']);
+        const PROTECTED_NAMES = new Set<string>(['[静音]', '[音效]', '音效', '待识别角色', 'Narrator']);
         const toDelete = candidateMinusStillUsed.filter(id => {
           const ch = charMap.get(id) as Character | undefined;
           if (!ch) return false;

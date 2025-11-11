@@ -1,101 +1,99 @@
 import { useMemo } from 'react';
 import { SoundLibraryItem, IgnoredSoundKeyword } from '../../../types';
 
-// Utility to escape HTML special characters
+// Escape HTML special characters
 const escapeHtml = (text: string) => {
-    // FIX: Add a fallback to an empty string to prevent runtime errors if `text` is undefined.
-    return (text || '')
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
+  return (text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 };
 
-// Utility to create keywords from filenames
+// Create keywords from filenames
 const createKeywordsFromFilename = (filename: string): string[] => {
-    const nameWithoutExt = filename.substring(0, filename.lastIndexOf('.')) || filename;
-    // Split by common delimiters and filter out empty strings
-    return nameWithoutExt.split(/[_ \-()]/)
-        .map(s => s.trim())
-        .filter(s => s && !/^\d+$/.test(s)); // Filter out numeric-only parts
+  const nameWithoutExt = filename.substring(0, filename.lastIndexOf('.')) || filename;
+  return nameWithoutExt
+    .split(/[_ \-()]/)
+    .map((s) => s.trim())
+    .filter((s) => s && !/^\d+$/.test(s));
 };
 
 export const useSoundHighlighter = (
-    text: string,
-    soundLibrary: SoundLibraryItem[],
-    observationList: string[],
-    ignoredKeywords: IgnoredSoundKeyword[] = []
+  text: string,
+  soundLibrary: SoundLibraryItem[],
+  observationList: string[],
+  ignoredKeywords: IgnoredSoundKeyword[] = []
 ): string => {
-    const combinedRegex = useMemo(() => {
-        // Keywords from sound library
-        const soundKeywords = new Set<string>();
-        soundLibrary.forEach(item => {
-            createKeywordsFromFilename(item.name).forEach(kw => soundKeywords.add(kw));
-        });
+  const combinedRegex = useMemo(() => {
+    // Build keyword set
+    const soundKeywords = new Set<string>();
+    soundLibrary.forEach((item) => {
+      createKeywordsFromFilename(item.name).forEach((kw) => soundKeywords.add(kw));
+    });
+    const allKeywords = new Set<string>([...soundKeywords, ...observationList]);
 
-        // Combine all keywords
-        const allKeywords = new Set([...soundKeywords, ...observationList]);
-        
-        // Filter out very short or meaningless keywords
-        const filteredKeywords = Array.from(allKeywords).filter(kw => kw.length > 1);
+    // Filter short/meaningless keywords
+    const filteredKeywords = Array.from(allKeywords).filter((kw) => kw.length > 1);
 
-        if (filteredKeywords.length === 0) {
-            // Only match manual markers if no keywords exist
-            return new RegExp(`（([^，]+)，([^）]+)）`, 'g');
-        }
+    // Patterns
+    const legacyMarker = `��([^��]+)��([^��]+)��`; // legacy mojibake-safe markers
+    const bracketSfx = `\\[[^\\[\\]]+\\]`; // [任意内容]
 
-        // Escape keywords for regex and sort by length descending to match longest first
-        const sortedKeywords = filteredKeywords.sort((a, b) => b.length - a.length);
-        const escapedKeywords = sortedKeywords.map(kw => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-        
-        const keywordsPattern = `(${escapedKeywords.join('|')})`;
-        const manualMarkerPattern = `（([^，]+)，([^）]+)）`;
+    if (filteredKeywords.length === 0) {
+      return new RegExp(`${bracketSfx}|${legacyMarker}`, 'g');
+    }
 
-        return new RegExp(`${keywordsPattern}|${manualMarkerPattern}`, 'g');
-    }, [soundLibrary, observationList]);
+    // Escape keywords and sort by length (longest-first)
+    const sortedKeywords = filteredKeywords.sort((a, b) => b.length - a.length);
+    const escapedKeywords = sortedKeywords.map((kw) => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const keywordsPattern = `(${escapedKeywords.join('|')})`;
 
-    const highlightedHtml = useMemo(() => {
-        if (!text || !combinedRegex) return escapeHtml(text);
+    return new RegExp(`${keywordsPattern}|${bracketSfx}|${legacyMarker}`, 'g');
+  }, [soundLibrary, observationList]);
 
-        // Reset regex state for global regex
-        combinedRegex.lastIndex = 0;
+  const highlightedHtml = useMemo(() => {
+    if (!text || !combinedRegex) return escapeHtml(text);
 
-        let lastIndex = 0;
-        const parts = [];
-        let match;
+    combinedRegex.lastIndex = 0; // reset global regex
 
-        while ((match = combinedRegex.exec(text)) !== null) {
-            const matchText = match[0];
-            const matchIndex = match.index;
+    let lastIndex = 0;
+    const parts: string[] = [];
+    let match: RegExpExecArray | null;
 
-            // Add text before the match
-            if (matchIndex > lastIndex) {
-                parts.push(escapeHtml(text.substring(lastIndex, matchIndex)));
-            }
+    while ((match = combinedRegex.exec(text)) !== null) {
+      const matchText = match[0];
+      const matchIndex = match.index;
 
-            const isIgnored = ignoredKeywords.some(ik => ik.keyword === matchText && ik.index === matchIndex);
+      if (matchIndex > lastIndex) {
+        parts.push(escapeHtml(text.substring(lastIndex, matchIndex)));
+      }
 
-            // Add the highlighted match
-            if (isIgnored) {
-                parts.push(escapeHtml(matchText));
-            } else if (matchText.startsWith('（') && matchText.endsWith('）')) {
-                const title = matchText.slice(1, -1).replace('，', ', ');
-                parts.push(`<span class="manual-sound-marker" title="音效标记: ${escapeHtml(title)}">${escapeHtml(matchText)}</span>`);
-            } else {
-                parts.push(`<span class="sound-keyword-highlight" data-keyword="${escapeHtml(matchText)}">${escapeHtml(matchText)}</span>`);
-            }
+      const isIgnored = ignoredKeywords.some((ik) => ik.keyword === matchText && ik.index === matchIndex);
 
-            lastIndex = matchIndex + matchText.length;
-        }
+      if (isIgnored) {
+        parts.push(escapeHtml(matchText));
+      } else if (matchText.startsWith('��') && matchText.endsWith('��')) {
+        const title = matchText.slice(1, -1).replace('��', ', ');
+        parts.push(`<span class=\"manual-sound-marker\" title=\"音效标记: ${escapeHtml(title)}\">${escapeHtml(matchText)}</span>`);
+      } else if (matchText.startsWith('[') && matchText.endsWith(']')) {
+        const inner = matchText.slice(1, -1);
+        parts.push(`<span class=\"sound-keyword-highlight\" data-keyword=\"${escapeHtml(inner)}\">${escapeHtml(matchText)}</span>`);
+      } else {
+        parts.push(`<span class=\"sound-keyword-highlight\" data-keyword=\"${escapeHtml(matchText)}\">${escapeHtml(matchText)}</span>`);
+      }
 
-        // Add any remaining text after the last match
-        if (lastIndex < text.length) {
-            parts.push(escapeHtml(text.substring(lastIndex)));
-        }
+      lastIndex = matchIndex + matchText.length;
+    }
 
-        return parts.join('');
-    }, [text, combinedRegex, ignoredKeywords]);
+    if (lastIndex < text.length) {
+      parts.push(escapeHtml(text.substring(lastIndex)));
+    }
 
-    return highlightedHtml;
+    return parts.join('');
+  }, [text, combinedRegex, ignoredKeywords]);
+
+  return highlightedHtml;
 };
+

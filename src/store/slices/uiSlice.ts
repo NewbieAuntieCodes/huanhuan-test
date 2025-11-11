@@ -251,7 +251,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
     if (!project) return;
     
     const nonAudioCharacterIds = characters
-        .filter(c => c.name === '[静音]' || c.name === '音效')
+        .filter(c => c.name === '[静音]' || c.name === '音效' || c.name === '[音效]')
         .map(c => c.id);
 
     const isLineMatch = (line: ScriptLine): boolean => {

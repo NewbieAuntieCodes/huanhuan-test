@@ -122,7 +122,6 @@ export const exportCharacterClips = async (
             await writable.close();
             alert(`成功导出 ${rowsToExport.length} 个音频片段到 ${filename}`);
             return; // Success, exit function
-        // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'name'.
         } catch (err) {
             // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'name'.
             if (err instanceof Error && err.name === 'AbortError') {

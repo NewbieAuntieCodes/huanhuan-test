@@ -94,6 +94,7 @@ export const tailwindToHex: { [key: string]: string } = {
   // Text Colors
   'text-white': '#FFFFFF',
   'text-black': '#000000',
+  'text-red-500': '#EF4444',
   'text-red-100': '#FEE2E2',
   'text-blue-100': '#DBEAFE',
   'text-green-100': '#D1FAE5',

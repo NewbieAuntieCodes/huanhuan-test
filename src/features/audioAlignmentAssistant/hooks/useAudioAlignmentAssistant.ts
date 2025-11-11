@@ -118,8 +118,8 @@ export const useAudioAlignmentAssistant = () => {
             }
             setDirectoryName(handle.name);
             setScannedFiles(parsedFiles);
-        // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message' or 'name'.
         } catch (err) {
+            // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message' or 'name'.
             console.error("Error scanning directory:", err);
             // FIX: Safely handle error object of type 'unknown' before accessing its 'message' property.
             alert(`扫描文件夹时出错: ${err instanceof Error ? err.message : String(err)}`);
@@ -190,8 +190,8 @@ export const useAudioAlignmentAssistant = () => {
             await db.directoryHandles.put({ projectId: currentProject.id, handle });
             setDirectoryHandle(handle);
             await scanDirectory(handle, true);
-        // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'name'.
         } catch (err) {
+            // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'name'.
             // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'name'.
             // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'name'.
             if (err instanceof Error && err.name === 'AbortError') {
@@ -269,8 +269,8 @@ export const useAudioAlignmentAssistant = () => {
             setDirectoryName(dirName);
             setScannedFiles(parsedFiles);
 
-        // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message'.
         } catch (err) {
+            // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message'.
             console.error("Error processing directory files:", err);
             // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message'.
             alert(`Error processing files: ${err instanceof Error ? err.message : String(err)}`);

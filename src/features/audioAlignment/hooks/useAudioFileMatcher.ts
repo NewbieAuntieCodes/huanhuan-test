@@ -178,7 +178,7 @@ export const useAudioFileMatcher = ({
 
   const nonAudioCharacterIds = React.useMemo(() => {
     return characters
-      .filter(c => c.name === '[静音]' || c.name === '音效')
+      .filter(c => c.name === '[静音]' || c.name === '音效' || c.name === '[音效]')
       .map(c => c.id);
   }, [characters]);
 
@@ -332,7 +332,6 @@ export const useAudioFileMatcher = ({
         let metadata;
         try {
             metadata = await mm.parseBlob(file);
-        // FIX: Safely handle error object of type 'unknown'.
         } catch (e) {
             // FIX: The 'e' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message'.
             const message = e instanceof Error ? e.message : String(e);
@@ -441,7 +440,6 @@ export const useAudioFileMatcher = ({
           errorMessage: warningMessage || undefined
         };
 
-    // FIX: Safely handle error object of type 'unknown'.
     } catch (error) {
         // FIX: The 'error' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message' or 'name'.
         const message = error instanceof Error ? error.message : String(error);

@@ -139,7 +139,7 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
     let needsProjectUpdate = false;
 
     // Prevent deleting certain default characters even if project-scoped
-    const PROTECTED_NAMES = ['[静音]', '音效', '待识别角色'];
+    const PROTECTED_NAMES = ['[静音]', '[音效]', '音效', '待识别角色'];
     if (charToDelete && PROTECTED_NAMES.includes(charToDelete.name)) {
        alert(`无法删除默认的功能性角色: ${charToDelete.name}`);
        return;
@@ -186,7 +186,7 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
     const charsToDelete = state.characters.filter(c => characterIds.includes(c.id));
     
     // Prevent deleting certain default characters even if project-scoped
-    const PROTECTED_NAMES = ['[静音]', '音效', '待识别角色'];
+    const PROTECTED_NAMES = ['[静音]', '[音效]', '音效', '待识别角色'];
     const protectedCharsFound = charsToDelete.filter(c => PROTECTED_NAMES.includes(c.name));
 
     if (protectedCharsFound.length > 0) {

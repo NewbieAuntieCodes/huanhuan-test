@@ -7,6 +7,7 @@ import TimelineHeader from './components/TimelineHeader';
 import SoundLibraryPanel from './components/SoundLibraryPanel';
 import AddSceneModal from './components/AddSceneModal';
 import AddBgmModal from './components/AddBgmModal';
+import AddSfxModal from './components/AddSfxModal';
 import EditMarkerModal from './components/EditMarkerModal';
 import SoundAssistantSettingsModal from './components/SoundAssistantSettingsModal';
 import { usePostProduction } from './hooks/usePostProduction';
@@ -27,6 +28,7 @@ const PostProductionPage: React.FC = () => {
         selectedRange,
         isSceneModalOpen,
         isBgmModalOpen,
+        isSfxModalOpen,
         editingMarker,
         suspendLayout,
         handleTextSelect,
@@ -34,10 +36,13 @@ const PostProductionPage: React.FC = () => {
         closeSceneModal,
         openBgmModal,
         closeBgmModal,
+        openSfxModal,
+        closeSfxModal,
         openEditModal,
         closeEditModal,
         handleSaveScene,
         handleSaveBgm,
+        handleSaveSfx,
         handleDeleteMarker,
         handleRenameMarker,
         handleUpdateRangeFromSelection,
@@ -128,6 +133,7 @@ const PostProductionPage: React.FC = () => {
                 <div className="flex items-center space-x-3">
                     <button onClick={openSceneModal} disabled={!selectedRange} className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50">添加场景</button>
                     <button onClick={openBgmModal} disabled={!selectedRange} className="px-3 py-1.5 text-sm bg-purple-600 hover:bg-purple-700 rounded-md disabled:opacity-50">添加 BGM</button>
+                    <button onClick={openSfxModal} disabled={!selectedRange} title={!selectedRange ? '请先在文本中点击定位或选择一段文本' : ''} className="px-3 py-1.5 text-sm bg-rose-600 hover:bg-rose-700 rounded-md disabled:opacity-50">添加音效</button>
                     <button onClick={() => setIsSoundAssistantSettingsOpen(true)} className="px-3 py-1.5 text-sm bg-teal-600 hover:bg-teal-700 rounded-md">音效助手设置</button>
                     <button onClick={() => navigateTo('editor')} className="flex items-center text-sm text-sky-300 hover:text-sky-100 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md">
                         <ChevronLeftIcon className="w-4 h-4 mr-1" /> 返回
@@ -182,6 +188,11 @@ const PostProductionPage: React.FC = () => {
                 onSave={handleSaveBgm}
                 existingBgmNames={existingBgmNames}
                 soundLibrary={soundLibrary}
+            />
+            <AddSfxModal
+                isOpen={isSfxModalOpen}
+                onClose={closeSfxModal}
+                onSave={handleSaveSfx}
             />
             <EditMarkerModal
                 isOpen={!!editingMarker}

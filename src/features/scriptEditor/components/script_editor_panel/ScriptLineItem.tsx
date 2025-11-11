@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
 import { ScriptLine, Character } from '../../../../types';
 import { UserCircleIcon, ChevronDownIcon, XMarkIcon } from '../../../../components/ui/icons';
 import { isHexColor, getContrastingTextColor } from '../../../../lib/colorUtils';
@@ -52,6 +52,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const contentEditableRef = useRef<HTMLDivElement>(null);
+  const [isEditing, setIsEditing] = useState(false);
 
   const [popoverState, setPopoverState] = useState<{
     visible: boolean;
@@ -68,21 +69,6 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   
   const defaultSoundOptions = ['清除', 'OS', '电话音', '系统音', '广播'];
   const soundOptions = [...defaultSoundOptions, ...customSoundTypes, '自定义'];
-
-  // This effect ensures that if the line.text is updated from outside
-  // (e.g., by an undo/redo action), the contentEditable div reflects that change,
-  // but only if the user is not currently editing it.
-  useEffect(() => {
-    const element = contentEditableRef.current;
-    if (element && document.activeElement !== element) {
-      // Create a temporary div to compare innerText from HTML
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = highlightedHtml;
-      if (element.innerText !== tempDiv.innerText) {
-        element.innerHTML = highlightedHtml;
-      }
-    }
-  }, [line.text, highlightedHtml]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -131,13 +117,27 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   const cvButtonAppliedStyle = getCvButtonStyle();
   const cvButtonText = character?.cvName ? character.cvName : '添加CV';
 
-  const handleDivFocus = () => onFocusChange(line.id);
+  const handleDivFocus = () => {
+    setIsEditing(true);
+    onFocusChange(line.id);
+  };
   const handleDivBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+    setIsEditing(false);
     onFocusChange(null);
     const newText = e.currentTarget.innerText;
     if (newText.trim() === '') onDelete(line.id);
     else if (newText !== line.text) onUpdateText(line.id, newText);
   };
+
+  // Prevent re-renders from wiping user-typed text while editing
+  useLayoutEffect(() => {
+    const el = contentEditableRef.current;
+    if (!el) return;
+    if (isEditing) return;
+    if (el.innerHTML !== highlightedHtml) {
+      el.innerHTML = highlightedHtml;
+    }
+  }, [highlightedHtml, isEditing, line.id]);
   
   const isNarrator = !character || character.name === 'Narrator';
   let contentEditableStyle: React.CSSProperties = {};
@@ -222,7 +222,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
           <div className="relative flex-grow min-w-[80px]" ref={dropdownRef}>
             <div className={`relative flex rounded-md border h-9 overflow-hidden ${isShortcutActive ? 'ring-2 ring-sky-400' : 'border-slate-600'}`}>
               <button onClick={() => onActivateShortcutMode(line.id)} title="点击激活快捷键模式" className={`flex-grow p-2 text-sm text-left outline-none focus:z-10 flex items-center min-w-0 ${charSelectAppliedStyle.className}`} style={charSelectAppliedStyle.style}>
-                <span className="truncate">{isCharacterMissing ? '待识别角色' : character?.name || '分配角色...'}</span>
+                <span className="truncate">{isCharacterMissing ? '待识别角色' : (character ? (character.name === '音效' ? '[音效]' : character.name) : '分配角色...')}</span>
               </button>
               <button onClick={() => setIsDropdownOpen(prev => !prev)} title="打开角色选择菜单" className={`flex-shrink-0 px-1 outline-none focus:z-10 border-l border-black/20 ${charSelectAppliedStyle.className}`} style={charSelectAppliedStyle.style} aria-haspopup="listbox" aria-expanded={isDropdownOpen}>
                 <ChevronDownIcon className="w-4 h-4 text-current opacity-70" />
@@ -246,7 +246,6 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
             className={contentEditableClasses}
             style={contentEditableStyle}
             aria-label={`脚本行文本: ${line.text.substring(0,50)}... ${character ? `角色: ${character.name}` : '未分配角色'}`}
-            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
         />
       </div>
       {popoverState?.visible && (

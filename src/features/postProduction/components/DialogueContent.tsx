@@ -36,6 +36,7 @@ const HighlightedLine: React.FC<{ text: string; soundLibrary: SoundLibraryItem[]
 export const DialogueContent: React.FC<DialogueContentProps> = ({
   chapters,
   allProjectChapters,
+  characters,
   onTextSelect,
   textMarkers,
   suspendLayout,
@@ -53,9 +54,11 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
     
     const handleMouseUp = () => {
         const selection = window.getSelection();
-        if (selection && !selection.isCollapsed && contentRef.current?.contains(selection.anchorNode)) {
-            const range = selection.getRangeAt(0);
-            onTextSelect(range);
+        if (selection && contentRef.current?.contains(selection.anchorNode)) {
+            if (selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                onTextSelect(range);
+            }
         } else {
             onTextSelect(null);
         }
@@ -115,6 +118,13 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
         el.addEventListener('click', onClick);
         return () => el.removeEventListener('click', onClick);
     }, [textMarkers]);
+
+    const bracketIfNeeded = (text: string) => {
+        const t = (text || '').trim();
+        if (!t) return '[]';
+        if (t.startsWith('[') && t.endsWith(']')) return t; // 幂等
+        return `[${t}]`;
+    };
 
     return (
         <div 
@@ -195,12 +205,22 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
                             </h4>
                             {isExpanded && (
                                 <div className="space-y-3">
-                                    {chapter.scriptLines.map((line, index) => (
-                                        <div key={line.id} data-line-id={line.id} className="flex items-start gap-x-4">
-                                            <div className="w-24 pt-1 text-right text-slate-500 select-none flex-shrink-0 font-mono text-xs">{index + 1}</div>
-                                            <HighlightedLine text={line.text} soundLibrary={soundLibrary} soundObservationList={soundObservationList} />
-                                        </div>
-                                    ))}
+                                    {chapter.scriptLines.map((line, index) => {
+                                        const char = characters.find(c => c.id === line.characterId);
+                                        const nameForCheck = (char?.name || '').replace(/[\[\]()]/g, '').toLowerCase();
+                                        const isSfx = nameForCheck === '音效' || nameForCheck === 'sfx';
+                                        const display = isSfx ? bracketIfNeeded(line.text) : line.text;
+                                        return (
+                                            <div key={line.id} data-line-id={line.id} className="flex items-start gap-x-4">
+                                                <div className="w-24 pt-1 text-right text-slate-500 select-none flex-shrink-0 font-mono text-xs">{index + 1}</div>
+                                                {isSfx ? (
+                                                    <p className="flex-grow leading-relaxed whitespace-pre-wrap text-red-500">{display}</p>
+                                                ) : (
+                                                    <HighlightedLine text={display} soundLibrary={soundLibrary} soundObservationList={soundObservationList} />
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>

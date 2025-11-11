@@ -40,7 +40,7 @@ const CharacterSelectorDropdown: React.FC<CharacterSelectorDropdownProps> = ({
     }, []);
 
     const { specialCharacters, chapterCharacters, otherCharacters } = useMemo(() => {
-        const specialNamesOrder = ['[静音]', '音效', 'narrator']; // lowercase
+        const specialNamesOrder = ['[静音]', '音效', '[音效]', 'narrator']; // lowercase, 兼容老数据与新显示
         const specials: Character[] = [];
         const chapterChars: Character[] = [];
         const otherChars: Character[] = [];
@@ -93,7 +93,7 @@ const CharacterSelectorDropdown: React.FC<CharacterSelectorDropdownProps> = ({
                 className={className}
                 style={style}
             >
-                <span>{c.name}</span>
+                <span>{c.name === '音效' ? '[音效]' : c.name}</span>
                 {shortcut && <span className="ml-auto text-xs font-mono bg-black/20 px-1.5 py-0.5 rounded">{shortcut.toUpperCase()}</span>}
             </li>
         );

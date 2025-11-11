@@ -8,7 +8,7 @@ const presetNames = [
   // Row 3: Teen/Child Roles & Misc
   '少女', '少年', '女童', '男童', '旁白一', '旁白二', '旁白三', '旁白四',
   // Row 4: Supporting Roles & Misc
-  '龙套女一', '龙套女二', '龙套男一', '龙套男二', '音效', 'OS', '系统', 'AI',
+  '龙套女一', '龙套女二', '龙套男一', '龙套男二', '[音效]', 'OS', '系统', 'AI',
 ];
 
 // Palette for CV Presets

@@ -35,8 +35,9 @@ export const parseHtmlWorkbook = (
     if (/^(静音|silence|mute)$/i.test(normalized)) {
       charName = '[静音]';
       cvName = undefined;
-    } else if (/^(音效|sfx|fx|音效描述)$/i.test(normalized)) {
-      charName = '音效';
+    } else if (/^(\[?音效\]?|sfx|fx|音效描述)$/i.test(normalized)) {
+      // 统一标准显示为 [音效]
+      charName = '[音效]';
       cvName = undefined;
     }
     const lowerName = charName.toLowerCase();
@@ -54,7 +55,7 @@ export const parseHtmlWorkbook = (
 
     const isNarrator = charName.toLowerCase() === 'narrator';
     const isSilence = charName === '[静音]';
-    const isSfx = charName === '音效';
+    const isSfx = (charName === '音效' || charName === '[音效]');
 
     const newChar = onAddCharacter({
       name: charName,

@@ -153,7 +153,7 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
                       >
                           <option value="">所有角色</option>
                           {projectCharacters
-                              .filter(c => c.name !== '[静音]' && c.name !== '音效' && c.name !== 'Narrator')
+                              .filter(c => c.name !== '[静音]' && c.name !== '音效' && c.name !== '[音效]' && c.name !== 'Narrator')
                               .sort((a,b) => a.name.localeCompare(b.name, 'zh-Hans-CN'))
                               .map(char => <option key={char.id} value={char.id}>{char.name}</option>)}
                       </select>
