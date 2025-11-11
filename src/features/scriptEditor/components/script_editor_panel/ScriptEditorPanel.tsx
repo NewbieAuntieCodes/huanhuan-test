@@ -34,6 +34,7 @@ const ScriptEditorPanel: React.FC = () => {
     openCvModal,
     addCustomSoundType,
     deleteCustomSoundType,
+    splitChapterAtLine,
   } = useEditorContext();
 
   const {
@@ -50,13 +51,9 @@ const ScriptEditorPanel: React.FC = () => {
     selectedChapterId
   );
   
-  // Directly using the split chapter logic from context
+  // Use split chapter logic from context
   const onSplitChapterAtLine = (chapterId: string, lineId: string) => {
-    // This logic needs to be in a hook or service accessible by the context
-    // For now, let's assume it's part of a broader "chapter operations" hook
-    // and just call it. This part of the refactor might need another step.
-    // Let's call a placeholder for now.
-    alert("拆分章节功能需要进一步集成。");
+    splitChapterAtLine(chapterId, lineId);
   };
 
 

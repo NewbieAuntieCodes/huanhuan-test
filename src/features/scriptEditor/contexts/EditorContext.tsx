@@ -15,6 +15,7 @@ export interface EditorContextType {
   deleteChapters: (chapterIds: string[]) => void;
   mergeChapters: (chapterIds: string[], targetChapterId: string) => void;
   insertChapterAfter: (afterChapterId: string) => void;
+  splitChapterAtLine: (chapterId: string, lineId: string) => void;
   batchAddChapters: (count: number) => void;
   
   undo: () => void;
