@@ -1,5 +1,5 @@
 import React, { createContext, useContext } from 'react';
-import { Project, Character, ScriptLine, Chapter, CharacterFilterMode, SoundLibraryItem } from '../../../types';
+import { Project, Character, ScriptLine, Chapter, CharacterFilterMode, SoundLibraryItem, IgnoredSoundKeyword } from '../../../types';
 import { CVStylesMap } from '../../../types';
 
 export interface EditorContextType {
@@ -53,6 +53,7 @@ export interface EditorContextType {
   openCharacterEditModal: (character: Character | null) => void;
   addCustomSoundType: (soundType: string) => void;
   deleteCustomSoundType: (soundType: string) => void;
+  addIgnoredSoundKeyword: (projectId: string, chapterId: string, lineId: string, keyword: IgnoredSoundKeyword) => Promise<void>;
 
   // Sound Assistant
   soundLibrary: SoundLibraryItem[];

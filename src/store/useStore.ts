@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 // Fix: Import from types.ts to break circular dependency
-import { AppView, CVStylesMap, PresetColor, SoundLibraryItem } from '../types';
+import { AppView, CVStylesMap, PresetColor, SoundLibraryItem, IgnoredSoundKeyword } from '../types';
 import { Project, Character, MergeHistoryEntry } from '../types';
 
 // Import slice creators and their state/action types
@@ -23,6 +23,7 @@ export interface AppState extends UiSlice, ProjectSlice, ProjectAudioSlice, Char
   updateCvColorPresets: (presets: PresetColor[]) => Promise<void>;
   updateCharacterColorPresets: (presets: PresetColor[]) => Promise<void>;
   refreshSoundLibrary: () => Promise<void>;
+  addIgnoredSoundKeyword: (projectId: string, chapterId: string, lineId: string, keyword: IgnoredSoundKeyword) => Promise<void>;
 }
 
 const defaultCharConfigs = [

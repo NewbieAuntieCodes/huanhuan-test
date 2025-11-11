@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Chapter, Character, TextMarker, SoundLibraryItem } from '../../../types';
 import { useMarkerRendering } from '../hooks/useMarkerRendering';
-import { MusicalNoteIcon } from '../../../components/ui/icons';
+import { MusicalNoteIcon, ChevronDownIcon } from '../../../components/ui/icons';
 import { useSoundHighlighter } from '../../scriptEditor/hooks/useSoundHighlighter';
 import SoundKeywordPopover from '../../scriptEditor/components/script_editor_panel/SoundKeywordPopover';
+import ChapterPagination from '../../scriptEditor/components/chapter_list_panel/ChapterPagination';
 
 const formatChapterNumber = (index: number) => {
   if (index < 0) return '';
@@ -20,6 +21,11 @@ interface DialogueContentProps {
   suspendLayout?: boolean;
   soundLibrary: SoundLibraryItem[];
   soundObservationList: string[];
+  expandedChapterId: string | null;
+  setExpandedChapterId: (id: string | null) => void;
+  currentPage: number;
+  totalPages: number;
+  onPageChange: (page: number) => void;
 }
 
 const HighlightedLine: React.FC<{ text: string; soundLibrary: SoundLibraryItem[]; soundObservationList: string[] }> = ({ text, soundLibrary, soundObservationList }) => {
@@ -35,8 +41,13 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
   suspendLayout,
   soundLibrary,
   soundObservationList,
+  expandedChapterId,
+  setExpandedChapterId,
+  currentPage,
+  totalPages,
+  onPageChange,
 }) => {
-    const { contentRef, sceneOverlays, bgmLabelOverlays } = useMarkerRendering(textMarkers, chapters, suspendLayout);
+    const { contentRef, sceneOverlays, bgmLabelOverlays } = useMarkerRendering(textMarkers, chapters, suspendLayout, expandedChapterId);
     const [popoverState, setPopoverState] = useState<{ visible: boolean; keyword: string; top: number; left: number } | null>(null);
     const hidePopoverTimeout = useRef<number | null>(null);
     
@@ -76,6 +87,18 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
     };
 
     useEffect(() => {
+        if (expandedChapterId) {
+            const el = contentRef.current?.querySelector(`[data-chapter-id="${expandedChapterId}"]`);
+            if (el) {
+                setTimeout(() => {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 100);
+            }
+        }
+    }, [expandedChapterId]);
+
+
+    useEffect(() => {
         const el = contentRef.current;
         if (!el) return;
         const onClick = (e: MouseEvent) => {
@@ -95,84 +118,95 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
 
     return (
         <div 
-            className="relative p-4 h-full" 
-            ref={contentRef} 
+            className="relative p-4 h-full flex flex-col" 
             onMouseUp={handleMouseUp}
             onMouseOver={handleMouseOver}
             onMouseOut={handleMouseOut}
         >
-            {/* Scene Brackets */}
-            <div className="absolute inset-0 pointer-events-none z-10">
-                {sceneOverlays.map((overlay) => (
-                    <div
-                        key={overlay.id}
-                        className="scene-bracket"
-                        style={{ top: overlay.top, height: overlay.height, right: '40px', color: overlay.lineColor, pointerEvents: 'auto' }}
-                    >
-                        <div className="scene-bracket-line"></div>
+            <div 
+                className="relative flex-grow overflow-y-auto"
+                ref={contentRef}
+            >
+                {/* Scene Brackets */}
+                <div className="absolute inset-0 pointer-events-none z-10">
+                    {sceneOverlays.map((overlay) => (
                         <div
-                            className="scene-bracket-label"
-                            style={{ backgroundColor: overlay.bgColor }}
-                            onClick={() => {
-                                const m = textMarkers.find((tm) => tm.id === overlay.id);
-                                if (m) (window as any).__openEditMarker?.(m);
-                            }}
+                            key={overlay.id}
+                            className="scene-bracket"
+                            style={{ top: overlay.top, height: overlay.height, right: '40px', color: overlay.lineColor, pointerEvents: 'auto' }}
                         >
-                            {overlay.name}
+                            <div className="scene-bracket-line"></div>
+                            <div
+                                className="scene-bracket-label"
+                                style={{ backgroundColor: overlay.bgColor }}
+                                onClick={() => {
+                                    const m = textMarkers.find((tm) => tm.id === overlay.id);
+                                    if (m) (window as any).__openEditMarker?.(m);
+                                }}
+                            >
+                                {overlay.name}
+                            </div>
                         </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
 
-            {/* BGM Labels */}
-            <div className="absolute inset-0 pointer-events-none z-20">
-                {bgmLabelOverlays.map((overlay) => (
-                    <div
-                        key={overlay.id}
-                        className="bgm-label"
-                        style={{
-                            top: overlay.top,
-                            left: overlay.left,
-                            backgroundColor: overlay.bgColor,
-                            color: overlay.textColor,
-                            pointerEvents: 'auto',
-                        }}
-                        onClick={() => {
-                            const marker = textMarkers.find((m) => m.id === overlay.id);
-                            if (marker) (window as any).__openEditMarker?.(marker);
-                        }}
-                        title={`BGM: ${overlay.name}`}
-                    >
-                        <MusicalNoteIcon className="w-3 h-3 mr-1 flex-shrink-0 mt-0.5" />
-                        <div className="flex flex-col">
-                            {overlay.displayNameParts.map((part, index) => (
-                                <span key={index} className="truncate w-full">
-                                    {part}
-                                </span>
-                            ))}
+                {/* BGM Labels */}
+                <div className="absolute inset-0 pointer-events-none z-20">
+                    {bgmLabelOverlays.map((overlay) => (
+                        <div
+                            key={overlay.id}
+                            className="bgm-label"
+                            style={{
+                                top: overlay.top,
+                                left: overlay.left,
+                                backgroundColor: overlay.bgColor,
+                                color: overlay.textColor,
+                                pointerEvents: 'auto',
+                            }}
+                            onClick={() => {
+                                const marker = textMarkers.find((m) => m.id === overlay.id);
+                                if (marker) (window as any).__openEditMarker?.(marker);
+                            }}
+                            title={`BGM: ${overlay.name}`}
+                        >
+                            <MusicalNoteIcon className="w-3 h-3 mr-1 flex-shrink-0 mt-0.5" />
+                            <div className="flex flex-col">
+                                {overlay.displayNameParts.map((part, index) => (
+                                    <span key={index} className="truncate w-full">
+                                        {part}
+                                    </span>
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
 
-            {chapters.map((chapter) => {
-                const projectChapterIndex = allProjectChapters.findIndex((c) => c.id === chapter.id);
-                return (
-                    <div key={chapter.id} className="mb-8 relative">
-                        <h4 className="text-lg font-bold text-slate-400 sticky top-0 bg-slate-900/80 backdrop-blur-sm py-2 z-10 border-b border-slate-700 -mx-4 px-4 mb-4">
-                            {`${formatChapterNumber(projectChapterIndex)} ${chapter.title}`}
-                        </h4>
-                        <div className="space-y-3">
-                            {chapter.scriptLines.map((line, index) => (
-                                <div key={line.id} data-line-id={line.id} className="flex items-start gap-x-4">
-                                    <div className="w-24 pt-1 text-right text-slate-500 select-none flex-shrink-0 font-mono text-xs">{index + 1}</div>
-                                    <HighlightedLine text={line.text} soundLibrary={soundLibrary} soundObservationList={soundObservationList} />
+                {chapters.map((chapter) => {
+                    const projectChapterIndex = allProjectChapters.findIndex((c) => c.id === chapter.id);
+                    const isExpanded = chapter.id === expandedChapterId;
+                    return (
+                        <div key={chapter.id} data-chapter-id={chapter.id} className="mb-4 relative">
+                            <h4 
+                                className="text-lg font-bold text-slate-400 sticky top-0 bg-slate-900/80 backdrop-blur-sm py-2 z-10 border-b border-slate-700 -mx-4 px-4 mb-4 flex items-center justify-between cursor-pointer"
+                                onClick={() => setExpandedChapterId(isExpanded ? null : chapter.id)}
+                            >
+                                <span>{`${formatChapterNumber(projectChapterIndex)} ${chapter.title}`}</span>
+                                <ChevronDownIcon className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                            </h4>
+                            {isExpanded && (
+                                <div className="space-y-3">
+                                    {chapter.scriptLines.map((line, index) => (
+                                        <div key={line.id} data-line-id={line.id} className="flex items-start gap-x-4">
+                                            <div className="w-24 pt-1 text-right text-slate-500 select-none flex-shrink-0 font-mono text-xs">{index + 1}</div>
+                                            <HighlightedLine text={line.text} soundLibrary={soundLibrary} soundObservationList={soundObservationList} />
+                                        </div>
+                                    ))}
                                 </div>
-                            ))}
+                            )}
                         </div>
-                    </div>
-                );
-            })}
+                    );
+                })}
+            </div>
              {popoverState?.visible && (
                 <SoundKeywordPopover
                     keyword={popoverState.keyword}
@@ -184,6 +218,15 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
                     soundLibrary={soundLibrary}
                 />
             )}
+            <div className="flex-shrink-0 mt-4">
+              <ChapterPagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={onPageChange}
+                  isAnyOperationLoading={false}
+                  isEditingTitle={false}
+              />
+            </div>
         </div>
     );
 };

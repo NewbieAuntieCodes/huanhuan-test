@@ -1,6 +1,6 @@
 import { StateCreator } from 'zustand';
 import { AppState } from '../useStore';
-import { Project, Collaborator, Chapter, AudioBlob, ScriptLine, Character, SilenceSettings, MasterAudio, TextMarker } from '../../types';
+import { Project, Collaborator, Chapter, AudioBlob, ScriptLine, Character, SilenceSettings, MasterAudio, TextMarker, IgnoredSoundKeyword } from '../../types';
 import { db } from '../../db';
 import { bufferToWav } from '../../lib/wavEncoder';
 // FIX: Import `defaultSilenceSettings` to resolve reference error.
@@ -28,6 +28,7 @@ export interface ProjectSlice {
   updateProjectSilenceSettings: (projectId: string, settings: SilenceSettings) => Promise<void>;
   updateLinePostSilence: (projectId: string, chapterId: string, lineId: string, silence?: number) => Promise<void>;
   updateProjectTextMarkers: (projectId: string, markers: TextMarker[]) => Promise<void>;
+  addIgnoredSoundKeyword: (projectId: string, chapterId: string, lineId: string, keyword: IgnoredSoundKeyword) => Promise<void>;
 }
 
 export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = (set, get, _api) => ({
@@ -372,5 +373,37 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
     set(state => ({
       projects: state.projects.map(p => (p.id === projectId ? updatedProject : p)),
     }));
+  },
+  addIgnoredSoundKeyword: async (projectId, chapterId, lineId, keyword) => {
+    const project = get().projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const updatedProject = {
+      ...project,
+      chapters: project.chapters.map(ch => {
+        if (ch.id === chapterId) {
+          return {
+            ...ch,
+            scriptLines: ch.scriptLines.map(line => {
+              if (line.id === lineId) {
+                const ignored = line.ignoredSoundKeywords || [];
+                // Avoid duplicates
+                if (!ignored.some(ik => ik.keyword === keyword.keyword && ik.index === keyword.index)) {
+                  return { ...line, ignoredSoundKeywords: [...ignored, keyword] };
+                }
+              }
+              return line;
+            })
+          };
+        }
+        return ch;
+      }),
+      lastModified: Date.now(),
+    };
+
+    await db.projects.put(updatedProject);
+    set({
+      projects: get().projects.map(p => p.id === projectId ? updatedProject : p),
+    });
   },
 });

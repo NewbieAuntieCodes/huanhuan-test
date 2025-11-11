@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { SoundLibraryItem } from '../../../types';
+import { SoundLibraryItem, IgnoredSoundKeyword } from '../../../types';
 
 // Utility to escape HTML special characters
 const escapeHtml = (text: string) => {
@@ -24,7 +24,8 @@ const createKeywordsFromFilename = (filename: string): string[] => {
 export const useSoundHighlighter = (
     text: string,
     soundLibrary: SoundLibraryItem[],
-    observationList: string[]
+    observationList: string[],
+    ignoredKeywords: IgnoredSoundKeyword[] = []
 ): string => {
     const combinedRegex = useMemo(() => {
         // Keywords from sound library
@@ -73,8 +74,12 @@ export const useSoundHighlighter = (
                 parts.push(escapeHtml(text.substring(lastIndex, matchIndex)));
             }
 
+            const isIgnored = ignoredKeywords.some(ik => ik.keyword === matchText && ik.index === matchIndex);
+
             // Add the highlighted match
-            if (matchText.startsWith('（') && matchText.endsWith('）')) {
+            if (isIgnored) {
+                parts.push(escapeHtml(matchText));
+            } else if (matchText.startsWith('（') && matchText.endsWith('）')) {
                 const title = matchText.slice(1, -1).replace('，', ', ');
                 parts.push(`<span class="manual-sound-marker" title="音效标记: ${escapeHtml(title)}">${escapeHtml(matchText)}</span>`);
             } else {
@@ -90,7 +95,7 @@ export const useSoundHighlighter = (
         }
 
         return parts.join('');
-    }, [text, combinedRegex]);
+    }, [text, combinedRegex, ignoredKeywords]);
 
     return highlightedHtml;
 };

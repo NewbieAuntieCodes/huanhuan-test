@@ -46,7 +46,8 @@ export type BgmLabelOverlay = {
 export const useMarkerRendering = (
     textMarkers: TextMarker[],
     chapters: Chapter[],
-    suspendLayout?: boolean
+    suspendLayout?: boolean,
+    expandedChapterId?: string | null
 ) => {
     const contentRef = useRef<HTMLDivElement>(null);
     const lastMarkersRef = useRef<TextMarker[]>([]);
@@ -85,7 +86,7 @@ export const useMarkerRendering = (
         const contentEl = contentRef.current;
         if (!contentEl) return;
         
-        const scrollableContainer = contentEl.parentElement;
+        const scrollableContainer = contentEl;
         if (!scrollableContainer) return;
 
         const containerRect = scrollableContainer.getBoundingClientRect();
@@ -152,7 +153,7 @@ export const useMarkerRendering = (
         const contentEl = contentRef.current;
         if (!contentEl || suspendLayout) return;
 
-        const scrollableContainer = contentEl.parentElement;
+        const scrollableContainer = contentEl;
         if (!scrollableContainer) return;
         
         const containerRect = scrollableContainer.getBoundingClientRect();
@@ -242,21 +243,24 @@ export const useMarkerRendering = (
             }
         });
 
-    }, [bgmMarkers, chapters, suspendLayout, markerOrdinalMap]);
+    }, [bgmMarkers, suspendLayout, markerOrdinalMap]);
 
     useEffect(() => {
         if (!suspendLayout) {
-            recalculateBgmHighlights();
-            recomputeSceneOverlays();
-            recomputeBgmLabelOverlays();
+            // A timeout gives React time to render the newly expanded content
+            setTimeout(() => {
+                recalculateBgmHighlights();
+                recomputeSceneOverlays();
+                recomputeBgmLabelOverlays();
+            }, 50);
         }
         lastMarkersRef.current = textMarkers;
-    }, [textMarkers, suspendLayout, recalculateBgmHighlights, recomputeSceneOverlays, recomputeBgmLabelOverlays]);
+    }, [textMarkers, suspendLayout, recalculateBgmHighlights, recomputeSceneOverlays, recomputeBgmLabelOverlays, expandedChapterId]);
     
     useEffect(() => {
         if (suspendLayout) return;
         
-        const scrollableParent = contentRef.current?.parentElement;
+        const scrollableParent = contentRef.current;
         if (!scrollableParent) return;
 
         let timeoutId: number;

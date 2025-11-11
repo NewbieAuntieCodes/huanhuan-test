@@ -334,7 +334,7 @@ export const useAudioFileMatcher = ({
             metadata = await mm.parseBlob(file);
         // FIX: Safely handle error object of type 'unknown'.
         } catch (e) {
-            // FIX: Safely handle error object of type 'unknown'.
+            // FIX: The 'e' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message'.
             const message = e instanceof Error ? e.message : String(e);
             const errorMsg = `音频文件解析失败: ${message}`;
             console.error(`Metadata parsing failed for ${file.name}:`, message);
@@ -443,7 +443,7 @@ export const useAudioFileMatcher = ({
 
     // FIX: Safely handle error object of type 'unknown'.
     } catch (error) {
-        // FIX: Safely handle error object of type 'unknown'.
+        // FIX: The 'error' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message' or 'name'.
         const message = error instanceof Error ? error.message : String(error);
         const errorMsg = `处理失败: ${message}`;
         console.error(`Error processing master audio file ${file.name}:`, message);

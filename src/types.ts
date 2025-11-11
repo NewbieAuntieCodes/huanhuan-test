@@ -20,6 +20,11 @@ export interface Character {
   mergedIntoCharacterId?: string; // If status is 'merged'
 }
 
+export interface IgnoredSoundKeyword {
+  keyword: string;
+  index: number; // The character index of the keyword in the line.text
+}
+
 export interface ScriptLine {
   id: string;
   text: string;
@@ -33,6 +38,7 @@ export interface ScriptLine {
   isMarkedForReturn?: boolean;
   feedback?: string;
   postSilence?: number; // Override for silence after this line, in seconds
+  ignoredSoundKeywords?: IgnoredSoundKeyword[];
 }
 
 export interface Chapter {

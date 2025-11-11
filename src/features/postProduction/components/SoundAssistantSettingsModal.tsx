@@ -21,9 +21,17 @@ const SoundAssistantSettingsModal: React.FC<{ isOpen: boolean; onClose: () => vo
     };
 
     const handleAddItem = () => {
-        const item = newItem.trim();
-        if (item && !list.includes(item)) {
-            setList([...list, item]);
+        const items = newItem.split(/[\n,]/)
+            .map(item => item.trim())
+            .filter(item => item); // remove empty items
+
+        if (items.length > 0) {
+            const currentListSet = new Set(list);
+            const newItemsToAdd = [...new Set(items)].filter(item => !currentListSet.has(item));
+            
+            if (newItemsToAdd.length > 0) {
+                setList([...list, ...newItemsToAdd].sort((a,b) => a.localeCompare(b, 'zh-Hans-CN')));
+            }
             setNewItem('');
         }
     };
@@ -42,16 +50,15 @@ const SoundAssistantSettingsModal: React.FC<{ isOpen: boolean; onClose: () => vo
                 
                 <p className="text-sm text-slate-400 mb-4">在此处添加关键词，编辑器将在台词中高亮这些词语，以提示您可能需要添加音效。</p>
 
-                <div className="flex items-center gap-2 mb-4">
-                    <input 
-                        type="text"
+                <div className="flex items-start gap-2 mb-4">
+                    <textarea 
                         value={newItem}
                         onChange={e => setNewItem(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') handleAddItem(); }}
-                        placeholder="添加新关键词..."
-                        className="flex-grow p-2 bg-slate-700 text-slate-100 rounded-md border border-slate-600"
+                        placeholder="添加新关键词，用换行或逗号分隔..."
+                        rows={3}
+                        className="flex-grow p-2 bg-slate-700 text-slate-100 rounded-md border border-slate-600 resize-y"
                     />
-                    <button onClick={handleAddItem} className="p-2 bg-sky-600 hover:bg-sky-700 rounded-md text-white">
+                    <button onClick={handleAddItem} className="p-2 bg-sky-600 hover:bg-sky-700 rounded-md text-white self-start">
                         <PlusIcon className="w-5 h-5" />
                     </button>
                 </div>

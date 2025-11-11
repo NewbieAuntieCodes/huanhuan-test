@@ -10,13 +10,15 @@ import AddBgmModal from './components/AddBgmModal';
 import EditMarkerModal from './components/EditMarkerModal';
 import SoundAssistantSettingsModal from './components/SoundAssistantSettingsModal';
 import { usePostProduction } from './hooks/usePostProduction';
+import { usePaginatedChapters } from '../../features/scriptEditor/hooks/usePaginatedChapters';
 
 const PostProductionPage: React.FC = () => {
-    const { navigateTo, soundLibrary, soundObservationList, characters } = useStore(state => ({
+    const { navigateTo, soundLibrary, soundObservationList, characters, selectedChapterId: initialChapterId } = useStore(state => ({
         navigateTo: state.navigateTo,
         soundLibrary: state.soundLibrary,
         soundObservationList: state.soundObservationList,
         characters: state.characters,
+        selectedChapterId: state.selectedChapterId,
     }));
 
     const {
@@ -43,6 +45,59 @@ const PostProductionPage: React.FC = () => {
     } = usePostProduction();
 
     const [isSoundAssistantSettingsOpen, setIsSoundAssistantSettingsOpen] = useState(false);
+    const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
+
+    const projectCharacters = useMemo(() => {
+        if (!currentProject) return [];
+        // Scope characters to the current project for accuracy.
+        return characters.filter(c => !c.projectId || c.projectId === currentProject.id);
+    }, [currentProject, characters]);
+
+    const silentCharId = useMemo(() => {
+        // Look for the silent character within the project-specific character list for a more robust lookup.
+        return projectCharacters.find(c => c.name === '[静音]')?.id;
+    }, [projectCharacters]);
+
+    const chaptersForDisplay = useMemo(() => {
+        if (!currentProject) return [];
+        // If no silent character ID is found, return chapters unfiltered.
+        if (!silentCharId) return currentProject.chapters;
+
+        // Filter out script lines assigned to the '[静音]' character.
+        return currentProject.chapters.map(chapter => ({
+            ...chapter,
+            scriptLines: chapter.scriptLines.filter(line => line.characterId !== silentCharId)
+        }));
+    }, [currentProject, silentCharId]);
+
+    const {
+      currentPage,
+      totalPages,
+      paginatedChapters,
+      handlePageChange,
+    } = usePaginatedChapters({
+      chapters: chaptersForDisplay,
+      projectId: currentProject?.id,
+      initialSelectedChapterIdForViewing: initialChapterId,
+      onSelectChapterForViewing: (id) => {
+        // When the hook navigates to a chapter, expand it.
+        if (id) {
+          setExpandedChapterId(id);
+        }
+      },
+      multiSelectedChapterIds: [],
+      setMultiSelectedChapterIdsContext: () => {},
+      onPageChangeSideEffects: () => {},
+      chaptersPerPage: 100,
+    });
+    
+    // Effect to expand the initial chapter from the store
+    useEffect(() => {
+        if (initialChapterId) {
+            setExpandedChapterId(initialChapterId);
+        }
+    }, [initialChapterId]);
+
 
     useEffect(() => {
         (window as any).__openEditMarker = openEditModal;
@@ -63,7 +118,6 @@ const PostProductionPage: React.FC = () => {
     
     const existingSceneNames = useMemo(() => Array.from(new Set(textMarkers.filter(m => m.type === 'scene' && m.name).map(m => m.name!))), [textMarkers]);
     const existingBgmNames = useMemo(() => Array.from(new Set(textMarkers.filter(m => m.type === 'bgm' && m.name).map(m => m.name!))), [textMarkers]);
-    const projectCharacters = useMemo(() => characters.filter(c => !c.projectId || c.projectId === currentProject.id), [characters, currentProject.id]);
 
     return (
         <div className="h-full flex flex-col bg-slate-900 text-slate-100">
@@ -87,7 +141,7 @@ const PostProductionPage: React.FC = () => {
                         <ResizablePanels
                             leftPanel={<SoundLibraryPanel />}
                             rightPanel={<DialogueContent 
-                                chapters={currentProject.chapters} 
+                                chapters={paginatedChapters} 
                                 allProjectChapters={currentProject.chapters} 
                                 characters={projectCharacters}
                                 onTextSelect={handleTextSelect}
@@ -95,6 +149,11 @@ const PostProductionPage: React.FC = () => {
                                 suspendLayout={suspendLayout}
                                 soundLibrary={soundLibrary}
                                 soundObservationList={soundObservationList}
+                                expandedChapterId={expandedChapterId}
+                                setExpandedChapterId={setExpandedChapterId}
+                                currentPage={currentPage}
+                                totalPages={totalPages}
+                                onPageChange={handlePageChange}
                             />}
                             initialLeftWidthPercent={30}
                         />
