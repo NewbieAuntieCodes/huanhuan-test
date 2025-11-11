@@ -55,27 +55,41 @@ export const useSoundHighlighter = (
     }, [soundLibrary, observationList]);
 
     const highlightedHtml = useMemo(() => {
-        if (!text) return '';
+        if (!text || !combinedRegex) return escapeHtml(text);
 
-        // Simple split and map approach
-        const parts = text.split(combinedRegex);
-        const matches = text.match(combinedRegex);
+        // Reset regex state for global regex
+        combinedRegex.lastIndex = 0;
 
-        let resultHtml = '';
-        parts.forEach((part, index) => {
-            resultHtml += escapeHtml(part);
-            if (matches && matches[index]) {
-                const match = matches[index];
-                if (match.startsWith('（') && match.endsWith('）')) {
-                    const title = match.slice(1, -1).replace('，', ', ');
-                    resultHtml += `<span class="manual-sound-marker" title="音效标记: ${escapeHtml(title)}">${escapeHtml(match)}</span>`;
-                } else {
-                    resultHtml += `<span class="sound-keyword-highlight" data-keyword="${escapeHtml(match)}">${escapeHtml(match)}</span>`;
-                }
+        let lastIndex = 0;
+        const parts = [];
+        let match;
+
+        while ((match = combinedRegex.exec(text)) !== null) {
+            const matchText = match[0];
+            const matchIndex = match.index;
+
+            // Add text before the match
+            if (matchIndex > lastIndex) {
+                parts.push(escapeHtml(text.substring(lastIndex, matchIndex)));
             }
-        });
-        
-        return resultHtml;
+
+            // Add the highlighted match
+            if (matchText.startsWith('（') && matchText.endsWith('）')) {
+                const title = matchText.slice(1, -1).replace('，', ', ');
+                parts.push(`<span class="manual-sound-marker" title="音效标记: ${escapeHtml(title)}">${escapeHtml(matchText)}</span>`);
+            } else {
+                parts.push(`<span class="sound-keyword-highlight" data-keyword="${escapeHtml(matchText)}">${escapeHtml(matchText)}</span>`);
+            }
+
+            lastIndex = matchIndex + matchText.length;
+        }
+
+        // Add any remaining text after the last match
+        if (lastIndex < text.length) {
+            parts.push(escapeHtml(text.substring(lastIndex)));
+        }
+
+        return parts.join('');
     }, [text, combinedRegex]);
 
     return highlightedHtml;

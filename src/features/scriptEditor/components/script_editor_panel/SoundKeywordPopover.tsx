@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useEditorContext } from '../../contexts/EditorContext';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { SoundLibraryItem } from '../../../../types';
 import { PlayIcon, PauseIcon } from '../../../../components/ui/icons';
 import LoadingSpinner from '../../../../components/ui/LoadingSpinner';
@@ -9,6 +8,9 @@ interface SoundKeywordPopoverProps {
     top: number;
     left: number;
     onClose: () => void;
+    onMouseEnter?: () => void;
+    onMouseLeave?: () => void;
+    soundLibrary: SoundLibraryItem[];
 }
 
 const formatDuration = (seconds: number) => {
@@ -18,14 +20,13 @@ const formatDuration = (seconds: number) => {
     return `${min}:${sec.toString().padStart(2, '0')}`;
 };
 
-const SoundKeywordPopover: React.FC<SoundKeywordPopoverProps> = ({ keyword, top, left, onClose }) => {
-    const { soundLibrary } = useEditorContext();
+const SoundKeywordPopover: React.FC<SoundKeywordPopoverProps> = ({ keyword, top, left, onClose, onMouseEnter, onMouseLeave, soundLibrary }) => {
     const [playingSoundId, setPlayingSoundId] = useState<number | null>(null);
     const [loadingSoundId, setLoadingSoundId] = useState<number | null>(null);
     const audioRef = useRef<HTMLAudioElement>(null);
     const popoverRef = useRef<HTMLDivElement>(null);
 
-    const matchingSounds = React.useMemo(() => {
+    const matchingSounds = useMemo(() => {
         const lowerKeyword = keyword.toLowerCase();
         return soundLibrary.filter(sound =>
             sound.name.toLowerCase().includes(lowerKeyword)
@@ -94,7 +95,8 @@ const SoundKeywordPopover: React.FC<SoundKeywordPopoverProps> = ({ keyword, top,
             ref={popoverRef}
             className="fixed z-50 bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-3 w-80 max-h-80 flex flex-col"
             style={{ top: position.top, left: position.left }}
-            onMouseLeave={onClose}
+            onMouseEnter={onMouseEnter}
+            onMouseLeave={onMouseLeave}
         >
             <audio ref={audioRef} />
             <h4 className="text-sm font-semibold text-sky-300 mb-2 border-b border-slate-700 pb-2">

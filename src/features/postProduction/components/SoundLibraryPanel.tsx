@@ -13,9 +13,12 @@ const CATEGORIES = [
     { key: 'ambience', name: '环境音' },
     { key: 'footsteps', name: '脚步声' },
     { key: 'fabric', name: '布料' },
+    { key: 'doors_windows', name: '门窗' },
+    { key: 'transportation', name: '交通' },
     { key: 'horror', name: '恐怖音效' },
     { key: 'variety', name: '综艺音效' },
-    { key: 'doors_windows', name: '门窗' },
+    { key: 'animals', name: '动物' },
+    { key: 'other_sfx', name: '其它音效' },
 ];
 
 const SoundLibraryPanel: React.FC = () => {

@@ -1,7 +1,9 @@
-import React, { useEffect } from 'react';
-import { Chapter, Character, TextMarker } from '../../../types';
+import React, { useEffect, useState, useRef } from 'react';
+import { Chapter, Character, TextMarker, SoundLibraryItem } from '../../../types';
 import { useMarkerRendering } from '../hooks/useMarkerRendering';
 import { MusicalNoteIcon } from '../../../components/ui/icons';
+import { useSoundHighlighter } from '../../scriptEditor/hooks/useSoundHighlighter';
+import SoundKeywordPopover from '../../scriptEditor/components/script_editor_panel/SoundKeywordPopover';
 
 const formatChapterNumber = (index: number) => {
   if (index < 0) return '';
@@ -16,7 +18,14 @@ interface DialogueContentProps {
   onTextSelect: (range: Range | null) => void;
   textMarkers: TextMarker[];
   suspendLayout?: boolean;
+  soundLibrary: SoundLibraryItem[];
+  soundObservationList: string[];
 }
+
+const HighlightedLine: React.FC<{ text: string; soundLibrary: SoundLibraryItem[]; soundObservationList: string[] }> = ({ text, soundLibrary, soundObservationList }) => {
+    const highlightedHtml = useSoundHighlighter(text, soundLibrary, soundObservationList);
+    return <p className="flex-grow leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: highlightedHtml }} />;
+};
 
 export const DialogueContent: React.FC<DialogueContentProps> = ({
   chapters,
@@ -24,8 +33,12 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
   onTextSelect,
   textMarkers,
   suspendLayout,
+  soundLibrary,
+  soundObservationList,
 }) => {
     const { contentRef, sceneOverlays, bgmLabelOverlays } = useMarkerRendering(textMarkers, chapters, suspendLayout);
+    const [popoverState, setPopoverState] = useState<{ visible: boolean; keyword: string; top: number; left: number } | null>(null);
+    const hidePopoverTimeout = useRef<number | null>(null);
     
     const handleMouseUp = () => {
         const selection = window.getSelection();
@@ -36,7 +49,32 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
             onTextSelect(null);
         }
     };
+
+    const handleMouseOver = (e: React.MouseEvent) => {
+        if (hidePopoverTimeout.current) clearTimeout(hidePopoverTimeout.current);
+        const target = e.target as HTMLElement;
+        if (target.classList.contains('sound-keyword-highlight')) {
+            const keyword = target.dataset.keyword;
+            if (keyword) {
+                const rect = target.getBoundingClientRect();
+                setPopoverState({ visible: true, keyword, top: rect.bottom, left: rect.left });
+            }
+        }
+    };
     
+    const handleMouseOut = (e: React.MouseEvent) => {
+        const target = e.target as HTMLElement;
+        if (target.classList.contains('sound-keyword-highlight')) {
+            hidePopoverTimeout.current = window.setTimeout(() => {
+                setPopoverState(null);
+            }, 200);
+        }
+    };
+    
+    const handlePopoverEnter = () => {
+        if (hidePopoverTimeout.current) clearTimeout(hidePopoverTimeout.current);
+    };
+
     useEffect(() => {
         const el = contentRef.current;
         if (!el) return;
@@ -56,7 +94,13 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
     }, [textMarkers]);
 
     return (
-        <div className="relative p-4 h-full" ref={contentRef} onMouseUp={handleMouseUp}>
+        <div 
+            className="relative p-4 h-full" 
+            ref={contentRef} 
+            onMouseUp={handleMouseUp}
+            onMouseOver={handleMouseOver}
+            onMouseOut={handleMouseOut}
+        >
             {/* Scene Brackets */}
             <div className="absolute inset-0 pointer-events-none z-10">
                 {sceneOverlays.map((overlay) => (
@@ -122,13 +166,24 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
                             {chapter.scriptLines.map((line, index) => (
                                 <div key={line.id} data-line-id={line.id} className="flex items-start gap-x-4">
                                     <div className="w-24 pt-1 text-right text-slate-500 select-none flex-shrink-0 font-mono text-xs">{index + 1}</div>
-                                    <p className="flex-grow leading-relaxed whitespace-pre-wrap">{line.text}</p>
+                                    <HighlightedLine text={line.text} soundLibrary={soundLibrary} soundObservationList={soundObservationList} />
                                 </div>
                             ))}
                         </div>
                     </div>
                 );
             })}
+             {popoverState?.visible && (
+                <SoundKeywordPopover
+                    keyword={popoverState.keyword}
+                    top={popoverState.top}
+                    left={popoverState.left}
+                    onClose={() => setPopoverState(null)}
+                    onMouseEnter={handlePopoverEnter}
+                    onMouseLeave={() => setPopoverState(null)}
+                    soundLibrary={soundLibrary}
+                />
+            )}
         </div>
     );
 };

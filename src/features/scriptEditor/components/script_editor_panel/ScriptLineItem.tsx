@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ScriptLine, Character } from '../../../../types';
 import { UserCircleIcon, ChevronDownIcon, XMarkIcon } from '../../../../components/ui/icons';
 import { isHexColor, getContrastingTextColor } from '../../../../lib/colorUtils';
@@ -59,6 +59,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
     top: number;
     left: number;
   } | null>(null);
+  const hidePopoverTimeout = useRef<number | null>(null);
 
   const highlightedHtml = useSoundHighlighter(line.text, soundLibrary, soundObservationList);
 
@@ -67,15 +68,21 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   
   const defaultSoundOptions = ['清除', 'OS', '电话音', '系统音', '广播'];
   const soundOptions = [...defaultSoundOptions, ...customSoundTypes, '自定义'];
-  
-  useLayoutEffect(() => {
+
+  // This effect ensures that if the line.text is updated from outside
+  // (e.g., by an undo/redo action), the contentEditable div reflects that change,
+  // but only if the user is not currently editing it.
+  useEffect(() => {
     const element = contentEditableRef.current;
-    if (element && element.innerText !== line.text) {
-        if (document.activeElement !== element) {
-            element.innerText = line.text;
-        }
+    if (element && document.activeElement !== element) {
+      // Create a temporary div to compare innerText from HTML
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = highlightedHtml;
+      if (element.innerText !== tempDiv.innerText) {
+        element.innerHTML = highlightedHtml;
+      }
     }
-  }, [line.text]);
+  }, [line.text, highlightedHtml]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -134,37 +141,36 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   
   const isNarrator = !character || character.name === 'Narrator';
   let contentEditableStyle: React.CSSProperties = {};
-  let contentEditableClasses = 'flex-grow p-2 rounded-md min-h-[40px] focus:ring-1 focus:ring-sky-500 outline-none whitespace-pre-wrap transparent-text relative z-10';
-  
-  // Base background and text color for the overlay
-  let overlayStyle: React.CSSProperties = {};
-  let overlayClasses = 'absolute top-0 left-0 w-full h-full p-2 rounded-md whitespace-pre-wrap pointer-events-none';
+  let contentEditableClasses = 'flex-grow p-2 rounded-md min-h-[40px] focus:ring-1 focus:ring-sky-500 outline-none whitespace-pre-wrap caret-slate-100';
   
   if (isSilentLine) {
-    overlayClasses += ' bg-slate-800 text-slate-500 italic';
-    contentEditableClasses += ' bg-slate-800';
+    contentEditableClasses += ' bg-slate-800 text-slate-500 italic';
   } else if (isNarrator) {
-    overlayClasses += ' bg-slate-700 text-slate-100';
-    contentEditableClasses += ' bg-slate-700';
+    contentEditableClasses += ' bg-slate-700 text-slate-100';
   } else if (character) {
     const charBg = character.color;
     const charText = character.textColor;
-    if (isHexColor(charBg)) overlayStyle.backgroundColor = charBg;
-    else overlayClasses += ` ${charBg || 'bg-slate-700'}`;
-
-    if (isHexColor(charBg)) contentEditableStyle.backgroundColor = charBg;
-    else contentEditableClasses += ` ${charBg || 'bg-slate-700'}`;
+    if (isHexColor(charBg)) {
+      contentEditableStyle.backgroundColor = charBg;
+    } else {
+      contentEditableClasses += ` ${charBg || 'bg-slate-700'}`;
+    }
     
     if (charText) {
-      if (isHexColor(charText)) overlayStyle.color = charText;
-      else overlayStyle.color = tailwindToHex[charText] || '#F1F5F9';
+      if (isHexColor(charText)) {
+        contentEditableStyle.color = charText;
+      } else {
+        contentEditableStyle.color = tailwindToHex[charText] || '#F1F5F9';
+      }
     } else {
       const bgColorAsHex = isHexColor(charBg) ? charBg : (tailwindToHex[charBg] || '#334155');
-      overlayStyle.color = getContrastingTextColor(bgColorAsHex);
+      contentEditableStyle.color = getContrastingTextColor(bgColorAsHex);
     }
+    // Set caret color to contrast with background
+    contentEditableStyle.caretColor = getContrastingTextColor(isHexColor(charBg) ? charBg : tailwindToHex[charBg] || '#334155');
+
   } else {
-    overlayClasses += ' bg-slate-700 text-slate-100';
-    contentEditableClasses += ' bg-slate-700';
+    contentEditableClasses += ' bg-slate-700 text-slate-100';
   }
 
   const handleToggleOS = () => onUpdateSoundType(line.id, line.soundType === 'OS' ? '' : 'OS');
@@ -179,6 +185,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   const isShortcutActive = shortcutActiveLineId === line.id;
   
   const handleMouseOver = (e: React.MouseEvent) => {
+    if (hidePopoverTimeout.current) clearTimeout(hidePopoverTimeout.current);
     const target = e.target as HTMLElement;
     if (target.classList.contains('sound-keyword-highlight')) {
         const keyword = target.dataset.keyword;
@@ -192,8 +199,14 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   const handleMouseOut = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
     if (target.classList.contains('sound-keyword-highlight')) {
-        setPopoverState(null);
+        hidePopoverTimeout.current = window.setTimeout(() => {
+            setPopoverState(null);
+        }, 200);
     }
+  };
+  
+  const handlePopoverEnter = () => {
+    if (hidePopoverTimeout.current) clearTimeout(hidePopoverTimeout.current);
   };
 
   return (
@@ -219,11 +232,34 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
           </div>
         </div>
       </div>
-      <div className="relative flex-grow" onMouseOver={handleMouseOver} onMouseOut={handleMouseOut}>
-        <div ref={contentEditableRef} contentEditable suppressContentEditableWarning onFocus={handleDivFocus} onBlur={handleDivBlur} className={contentEditableClasses} style={contentEditableStyle} aria-label={`脚本行文本: ${line.text.substring(0,50)}... ${character ? `角色: ${character.name}` : '未分配角色'}`} />
-        <div className={overlayClasses} style={overlayStyle} dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+      <div 
+        className="relative flex-grow" 
+        onMouseOver={handleMouseOver} 
+        onMouseOut={handleMouseOut}
+      >
+        <div
+            ref={contentEditableRef}
+            contentEditable
+            suppressContentEditableWarning
+            onFocus={handleDivFocus}
+            onBlur={handleDivBlur}
+            className={contentEditableClasses}
+            style={contentEditableStyle}
+            aria-label={`脚本行文本: ${line.text.substring(0,50)}... ${character ? `角色: ${character.name}` : '未分配角色'}`}
+            dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+        />
       </div>
-      {popoverState?.visible && <SoundKeywordPopover keyword={popoverState.keyword} top={popoverState.top} left={popoverState.left} onClose={() => setPopoverState(null)} />}
+      {popoverState?.visible && (
+        <SoundKeywordPopover
+            keyword={popoverState.keyword}
+            top={popoverState.top}
+            left={popoverState.left}
+            onClose={() => setPopoverState(null)}
+            onMouseEnter={handlePopoverEnter}
+            onMouseLeave={() => setPopoverState(null)}
+            soundLibrary={soundLibrary}
+        />
+      )}
       <div className="relative flex-shrink-0" style={{width: '6rem'}} ref={soundTypeDropdownRef}>
         <div className="flex w-full h-9 rounded-md border border-slate-600 overflow-hidden">
           <button onClick={handleToggleOS} className={`flex-grow h-full flex items-center justify-center px-2 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:z-10 ${isLit ? 'bg-orange-500 text-white font-semibold' : 'bg-slate-700 hover:bg-slate-600 text-slate-200'}`}>
