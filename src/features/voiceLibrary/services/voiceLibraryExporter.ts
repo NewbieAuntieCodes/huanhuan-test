@@ -123,7 +123,6 @@ export const exportCharacterClips = async (
             alert(`成功导出 ${rowsToExport.length} 个音频片段到 ${filename}`);
             return; // Success, exit function
         } catch (err) {
-            // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'name'.
             if (err instanceof Error && err.name === 'AbortError') {
                 console.log('用户取消了保存文件。');
                 return; // User cancelled, do nothing.

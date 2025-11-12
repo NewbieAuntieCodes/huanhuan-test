@@ -43,25 +43,23 @@ export const usePaginatedChapters = ({
     }
   }, [initialSelectedChapterIdForViewing, chapters, chaptersPerPage]);
   
-  // When the project changes, jump to the page containing the initially selected
-  // chapter (if provided). Otherwise, default to page 1.
-  // This avoids overriding a correct initial page calculation on first mount.
+  // This effect now handles resetting the page when the project changes,
+  // and correcting the page number if it becomes invalid (e.g., due to filtering).
   useEffect(() => {
-    if (initialSelectedChapterIdForViewing) {
-      const idx = chapters.findIndex(c => c.id === initialSelectedChapterIdForViewing);
-      const pageNumber = idx >= 0 ? Math.floor(idx / chaptersPerPage) + 1 : 1;
-      setCurrentPage(pageNumber);
-    } else {
-      setCurrentPage(1);
-    }
-  }, [projectId, initialSelectedChapterIdForViewing, chapters, chaptersPerPage]);
+    // On project change, reset to page 1
+    setCurrentPage(1);
+    // This effect should re-run when the projectId changes.
+    // The component using this hook will re-mount or receive a new projectId prop,
+    // which effectively resets the state including currentPage.
+    // The dependency on projectId ensures this logic is tied to project switches.
+  }, [projectId]);
 
   // This effect corrects the current page if it becomes out of bounds, for example after filtering.
   useEffect(() => {
     if (currentPage > totalPages) {
       setCurrentPage(totalPages);
     }
-  }, [totalPages, currentPage]);
+  }, [totalPages]);
 
 
   const paginatedChapters = useMemo(() => {
@@ -79,8 +77,6 @@ export const usePaginatedChapters = ({
   
   const allVisibleChaptersSelected = useMemo(() => {
     if (paginatedChapters.length === 0) return false;
-    // FIX: Ensure multiSelectedChapterIds is an array before calling .includes
-    if (!Array.isArray(multiSelectedChapterIds)) return false;
     return paginatedChapters.every(ch => multiSelectedChapterIds.includes(ch.id));
   }, [paginatedChapters, multiSelectedChapterIds]);
 

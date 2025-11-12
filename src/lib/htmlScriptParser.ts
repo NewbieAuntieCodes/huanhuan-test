@@ -35,9 +35,8 @@ export const parseHtmlWorkbook = (
     if (/^(静音|silence|mute)$/i.test(normalized)) {
       charName = '[静音]';
       cvName = undefined;
-    } else if (/^(\[?音效\]?|sfx|fx|音效描述)$/i.test(normalized)) {
-      // 统一标准显示为 [音效]
-      charName = '[音效]';
+    } else if (/^(音效|sfx|fx|音效描述)$/i.test(normalized)) {
+      charName = '音效';
       cvName = undefined;
     }
     const lowerName = charName.toLowerCase();
@@ -55,7 +54,7 @@ export const parseHtmlWorkbook = (
 
     const isNarrator = charName.toLowerCase() === 'narrator';
     const isSilence = charName === '[静音]';
-    const isSfx = (charName === '音效' || charName === '[音效]');
+    const isSfx = charName === '音效';
 
     const newChar = onAddCharacter({
       name: charName,
@@ -85,7 +84,7 @@ export const parseHtmlWorkbook = (
   const elements = Array.from(doc.body.children);
 
   // 角色说明块（可选）
-  const descriptionHeading = elements.find(el => el.tagName === 'H2' && el.textContent?.trim() === '主要角色介绍');
+  const descriptionHeading = elements.find(el => el.tagName === 'H2' && el.textContent?.trim() === '��Ҫ��ɫ����');
   if (descriptionHeading) {
     const descriptionContainer = descriptionHeading.nextElementSibling;
     if (descriptionContainer) {
@@ -93,13 +92,13 @@ export const parseHtmlWorkbook = (
       descriptionParagraphs.forEach(p => {
         const strongTag = p.querySelector('strong');
         if (strongTag) {
-          const nameMatch = strongTag.textContent?.trim().match(/【(.*?)】/);
+          const nameMatch = strongTag.textContent?.trim().match(/\u201C(.*?)\u201D/);
           if (nameMatch && nameMatch[1]) {
             const charName = nameMatch[1];
             const pClone = p.cloneNode(true) as HTMLParagraphElement;
             const strongClone = pClone.querySelector('strong');
             if (strongClone) pClone.removeChild(strongClone);
-            const description = pClone.textContent?.trim().replace(/^：/, '').trim();
+            const description = pClone.textContent?.trim().replace(/^\u201C/, '').trim();
             if (charName && description) {
               characterDescriptions.set(charName, description);
             }
@@ -137,38 +136,41 @@ export const parseHtmlWorkbook = (
 
       for (const lineEl of lineElements) {
         const dialogueSpan = lineEl.querySelector('.dialogue-line');
-        const fullRaw = (dialogueSpan || lineEl).textContent || '';
-        const fullText = fullRaw.replace(/\uFEFF/g, '').replace(/\u00A0/g, ' ').replace(/\u200B/g, '').trim();
-        rawContentParts.push(fullText);
-
-        let text: string;
+        let text = '';
         let characterId: string;
-        let soundType: string | undefined = undefined;
-        const soundTypeRegex = /^\s*[\(（]([^）\)]+)[\)）]\s*/;
 
-        const bracketMatch = fullText.match(/^\s*[\u3010\[](.+?)[\u3011\]]\s*([\s\S]*)/);
-        
-        if (bracketMatch) {
+        if (dialogueSpan) {
+          const fullRaw = dialogueSpan.textContent || '';
+          const fullText = fullRaw.replace(/\uFEFF/g, '').replace(/\u00A0/g, ' ').replace(/\u200B/g, '').trim();
+          rawContentParts.push(fullText);
+
+          // 仅支持方括号记名格式：【CV-角色】或【角色】 + 台词文本（台词中的引号不参与说话人解析）
+          const bracketMatch = fullText.match(/^\s*[\u3010\[](.+?)[\u3011\]]\s*([\s\S]*)/);
+          if (bracketMatch) {
             const speakerTag = bracketMatch[1].trim();
-            let textAfterTag = bracketMatch[2].trim();
-            const soundTypeMatch = textAfterTag.match(soundTypeRegex);
-            if (soundTypeMatch) {
-                soundType = soundTypeMatch[1].trim();
-                text = textAfterTag.replace(soundTypeRegex, '').trim();
-            } else {
-                text = textAfterTag;
-            }
+            text = bracketMatch[2].trim();
             const character = getCharacter(speakerTag);
             characterId = character.id;
-        } else {
-            const soundTypeMatch = fullText.match(soundTypeRegex);
-            if (soundTypeMatch) {
-                soundType = soundTypeMatch[1].trim();
-                text = fullText.replace(soundTypeRegex, '').trim();
-            } else {
-                text = fullText;
-            }
+          } else {
+            text = fullText;
             characterId = getCharacter('Narrator').id;
+          }
+
+        } else {
+          const fullRaw = lineEl.textContent || '';
+          const fullText = fullRaw.replace(/\uFEFF/g, '').replace(/\u00A0/g, ' ').replace(/\u200B/g, '').trim();
+          rawContentParts.push(fullText);
+          // 即使没有特定 span，也尝试用方括号格式解析
+          const bracketMatch = fullText.match(/^\s*[\u3010\[](.+?)[\u3011\]]\s*([\s\S]*)/);
+          if (bracketMatch) {
+            const speakerTag = bracketMatch[1].trim();
+            text = bracketMatch[2].trim();
+            const character = getCharacter(speakerTag);
+            characterId = character.id;
+          } else {
+            text = fullText;
+            characterId = getCharacter('Narrator').id;
+          }
         }
 
         if (text && !isNoise(text)) {
@@ -176,7 +178,6 @@ export const parseHtmlWorkbook = (
             id: `imported_line_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             text: text,
             characterId: characterId,
-            soundType: soundType,
             isAiAudioLoading: false,
             isAiAudioSynced: false,
             isTextModifiedManual: false,

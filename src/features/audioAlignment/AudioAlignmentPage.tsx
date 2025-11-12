@@ -105,7 +105,7 @@ const AudioAlignmentPage: React.FC = () => {
 
   const nonAudioCharacterIds = useMemo(() => {
     return characters
-      .filter(c => c.name === '[静音]' || c.name === '音效' || c.name === '[音效]')
+      .filter(c => c.name === '[静音]' || c.name === '音效')
       .map(c => c.id);
   }, [characters]);
 

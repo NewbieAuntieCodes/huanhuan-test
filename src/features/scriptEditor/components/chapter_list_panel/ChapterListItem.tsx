@@ -114,18 +114,16 @@ const ChapterListItem: React.FC<ChapterListItemProps> = ({
           aria-label={`Editing title for chapter ${chapter.title}`}
         />
       ) : (
-        <div
-          role="button"
+        <button
           onClick={onSelectForViewing}
-          aria-pressed={isSelectedForViewing}
-          tabIndex={0}
+          disabled={isAnyOperationLoading || isProcessingThisChapter}
           className={`flex-grow text-left px-3 py-2 rounded-md text-sm transition-colors disabled:opacity-50 flex justify-between items-center 
                       ${isProcessingThisChapter ? 'cursor-not-allowed' : 'cursor-pointer'}
                       ${isSelectedForViewing && !isProcessingThisChapter
                         ? 'bg-sky-500 text-white font-semibold'
                         : 'bg-slate-700 hover:bg-slate-600 text-slate-200 hover:text-sky-300'
                       }`}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectForViewing(); } }}
+          aria-pressed={isSelectedForViewing}
         >
           <span className="truncate block" title={displayTitle}>
             {displayTitle}
@@ -177,7 +175,7 @@ const ChapterListItem: React.FC<ChapterListItemProps> = ({
               )}
             </div>
           )}
-        </div>
+        </button>
       )}
     </div>
   );

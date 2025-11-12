@@ -9,10 +9,16 @@
 
 import { db, MiscData } from '../db';
 import { MergeHistoryEntry, PresetColor, AudioAssistantState, DirectoryHandleEntry } from '../types';
-// FIX: The ApiSettings interface was outdated. Imported the correct, comprehensive interface from uiSlice to ensure type consistency for API settings across the app.
-import { type ApiSettings } from '../store/slices/uiSlice';
-export type { ApiSettings };
 
+/**
+ * API 设置类型
+ */
+export interface ApiSettings {
+  geminiApiKey?: string;
+  openaiApiKey?: string;
+  openaiBaseUrl?: string;
+  customTtsUrl?: string;
+}
 
 /**
  * 字符快捷键映射类型
@@ -60,23 +66,6 @@ export class MiscRepository {
       console.error(`❌ [MiscRepository] 删除数据失败 (${key}):`, error);
       throw new Error(`删除数据失败: ${key}`);
     }
-  }
-
-  // ==================== 音效助手 ====================
-  
-  /**
-   * 获取音效关键词观察列表
-   */
-  async getSoundObservationList(): Promise<string[]> {
-      const list = await this.getRaw<string[]>('soundObservationList');
-      return list || [];
-  }
-
-  /**
-   * 保存音效关键词观察列表
-   */
-  async saveSoundObservationList(list: string[]): Promise<void> {
-      await this.setRaw('soundObservationList', list);
   }
 
   // ==================== 合并历史 ====================
@@ -142,12 +131,7 @@ export class MiscRepository {
    */
   async getApiSettings(): Promise<ApiSettings> {
     const settings = await this.getRaw<ApiSettings>('apiSettings');
-    return settings || {
-        gemini: { apiKey: '' },
-        openai: { apiKey: '', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4-turbo' },
-        moonshot: { apiKey: '', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
-        deepseek: { apiKey: '', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-    };
+    return settings || {};
   }
 
   /**
@@ -281,7 +265,6 @@ export class MiscRepository {
     apiSettings: ApiSettings;
     selectedAiProvider: string;
     characterShortcuts: CharacterShortcuts;
-    soundObservationList: string[];
   }> {
     try {
       const [
@@ -291,7 +274,6 @@ export class MiscRepository {
         apiSettings,
         selectedAiProvider,
         characterShortcuts,
-        soundObservationList,
       ] = await Promise.all([
         this.getMergeHistory(),
         this.getCvColorPresets(),
@@ -299,7 +281,6 @@ export class MiscRepository {
         this.getApiSettings(),
         this.getSelectedAiProvider(),
         this.getCharacterShortcuts(),
-        this.getSoundObservationList(),
       ]);
 
       return {
@@ -309,7 +290,6 @@ export class MiscRepository {
         apiSettings,
         selectedAiProvider,
         characterShortcuts,
-        soundObservationList,
       };
     } catch (error) {
       console.error('❌ [MiscRepository] 批量获取配置失败:', error);

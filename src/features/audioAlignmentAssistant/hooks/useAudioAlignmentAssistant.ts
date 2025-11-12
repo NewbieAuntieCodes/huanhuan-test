@@ -63,8 +63,7 @@ export const useAudioAlignmentAssistant = () => {
         return { allCvNames: cvs, projectCharacters: projChars };
     }, [currentProject, characters]);
     
-    // FIX: Add 'any' type to 'handle' parameter to address TypeScript errors related to experimental File System Access API types. This ensures compatibility across different environments where types might not be fully defined.
-    const scanDirectory = React.useCallback(async (handle: any, resetState: boolean) => {
+    const scanDirectory = React.useCallback(async (handle: FileSystemDirectoryHandle, resetState: boolean) => {
         setIsLoading(true);
         if (resetState) {
             setScannedFiles([]);
@@ -73,7 +72,6 @@ export const useAudioAlignmentAssistant = () => {
 
         try {
             const parsedFiles: ParsedFileInfo[] = [];
-            // FIX: Add 'any' type to 'entry' to prevent TypeScript errors when accessing properties like 'kind' and 'getFile' from the experimental File System Access API. This allows the code to compile while handling values from this API.
             for await (const entry of handle.values()) {
                 if ((entry as any).kind === 'file') {
                     const file = await (entry as any).getFile();
@@ -119,9 +117,8 @@ export const useAudioAlignmentAssistant = () => {
             setDirectoryName(handle.name);
             setScannedFiles(parsedFiles);
         } catch (err) {
-            // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message' or 'name'.
             console.error("Error scanning directory:", err);
-            // FIX: Safely handle error object of type 'unknown' before accessing its 'message' property.
+            // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
             alert(`扫描文件夹时出错: ${err instanceof Error ? err.message : String(err)}`);
         } finally {
             setIsLoading(false);
@@ -191,11 +188,8 @@ export const useAudioAlignmentAssistant = () => {
             setDirectoryHandle(handle);
             await scanDirectory(handle, true);
         } catch (err) {
-            // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'name'.
-            // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'name'.
-            // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'name'.
+            // FIX: Add a type guard to the catch block to safely access the 'name' property on the error object.
             if (err instanceof Error && err.name === 'AbortError') {
-                // User cancelled, do nothing.
             } else {
                 console.error("Error picking directory:", err);
             }
@@ -270,9 +264,8 @@ export const useAudioAlignmentAssistant = () => {
             setScannedFiles(parsedFiles);
 
         } catch (err) {
-            // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message'.
             console.error("Error processing directory files:", err);
-            // FIX: The 'err' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message'.
+            // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
             alert(`Error processing files: ${err instanceof Error ? err.message : String(err)}`);
             setDirectoryName(null);
             setScannedFiles([]);

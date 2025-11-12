@@ -155,8 +155,7 @@ export class WebSocketService {
     };
 
     this.socket.onerror = (event: Event) => {
-      // Don't log the raw event object as it's not descriptive. The onclose event provides more info.
-      console.error('❌ WebSocket 错误:', `无法连接到 ${this.config.url}. 请确保热键服务正在运行。`);
+      console.error('❌ WebSocket 错误:', event);
       this.callbacks.onError?.(event);
     };
 
@@ -169,7 +168,7 @@ export class WebSocketService {
         // 只在第一次显示警告，避免控制台刷屏
         if (!this.hasWarnedConnection) {
           const delay = this.config.reconnectDelay / 1000;
-          console.warn(`WebSocket 连接断开 (Code: ${event.code}). ${this.config.autoReconnect ? `${delay}秒后将尝试重连...` : ''}`);
+          console.warn(`WebSocket 连接断开。${this.config.autoReconnect ? `${delay}秒后将尝试重连...` : ''}`);
           this.hasWarnedConnection = true;
         }
       }

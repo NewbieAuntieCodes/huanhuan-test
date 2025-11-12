@@ -3,10 +3,9 @@ import React from 'react';
 import * as mm from 'music-metadata-browser';
 import { Project, Character, Chapter, ScriptLine, MasterAudio } from '../../../types';
 import { bufferToWav } from '../../../lib/wavEncoder';
+import { db } from '../../../db';
 // FIX: Import `Buffer` to resolve "Cannot find name 'Buffer'" error.
 import { Buffer } from 'buffer';
-// FIX: Import the 'db' instance to resolve 'Cannot find name 'db''.
-import { db } from '../../../db';
 
 interface UseAudioFileMatcherProps {
   currentProject: Project | undefined;
@@ -178,7 +177,7 @@ export const useAudioFileMatcher = ({
 
   const nonAudioCharacterIds = React.useMemo(() => {
     return characters
-      .filter(c => c.name === '[静音]' || c.name === '音效' || c.name === '[音效]')
+      .filter(c => c.name === '[静音]' || c.name === '音效')
       .map(c => c.id);
   }, [characters]);
 
@@ -333,7 +332,7 @@ export const useAudioFileMatcher = ({
         try {
             metadata = await mm.parseBlob(file);
         } catch (e) {
-            // FIX: The 'e' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message'.
+            // FIX: The 'e' object in a catch block is of type 'unknown'. Use a type guard to safely access its properties before attempting to read a message from it.
             const message = e instanceof Error ? e.message : String(e);
             const errorMsg = `音频文件解析失败: ${message}`;
             console.error(`Metadata parsing failed for ${file.name}:`, message);
@@ -441,7 +440,7 @@ export const useAudioFileMatcher = ({
         };
 
     } catch (error) {
-        // FIX: The 'error' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message' or 'name'.
+        // FIX: Add type guard for 'unknown' error object before accessing properties.
         const message = error instanceof Error ? error.message : String(error);
         const errorMsg = `处理失败: ${message}`;
         console.error(`Error processing master audio file ${file.name}:`, message);

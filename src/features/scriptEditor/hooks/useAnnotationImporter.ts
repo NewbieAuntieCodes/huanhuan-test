@@ -1,5 +1,4 @@
 
-
 import { useState, useCallback } from 'react';
 import { Project, Character, ScriptLine } from '../../../types';
 import useStore from '../../../store/useStore';
@@ -126,7 +125,7 @@ export const useAnnotationImporter = ({
 
     } catch (error) {
       console.error("Annotation import failed:", error);
-      // Comment: Safely handle error object of type 'unknown'.
+      // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
       alert(`Annotation import failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       return new Map();
     } finally {

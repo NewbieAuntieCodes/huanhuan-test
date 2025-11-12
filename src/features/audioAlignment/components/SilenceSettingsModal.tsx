@@ -14,19 +14,18 @@ interface SilenceSettingsModalProps {
 const pairLabels: { key: SilencePairing, labels: [string, string] }[] = [
     { key: 'narration-to-narration', labels: ['旁白', '旁白'] },
     { key: 'narration-to-dialogue', labels: ['旁白', '对白'] },
-    { key: 'narration-to-sfx', labels: ['旁白', '[音效]'] },
+    { key: 'narration-to-sfx', labels: ['旁白', '音效'] },
     { key: 'dialogue-to-dialogue', labels: ['对白', '对白'] },
     { key: 'dialogue-to-narration', labels: ['对白', '旁白'] },
-    { key: 'dialogue-to-sfx', labels: ['对白', '[音效]'] },
-    { key: 'sfx-to-dialogue', labels: ['[音效]', '对白'] },
-    { key: 'sfx-to-narration', labels: ['[音效]', '旁白'] },
-    { key: 'sfx-to-sfx', labels: ['[音效]', '[音效]'] },
+    { key: 'dialogue-to-sfx', labels: ['对白', '音效'] },
+    { key: 'sfx-to-dialogue', labels: ['音效', '对白'] },
+    { key: 'sfx-to-narration', labels: ['音效', '旁白'] },
+    { key: 'sfx-to-sfx', labels: ['音效', '音效'] },
 ];
 
 const typeColors: Record<string, string> = {
     '旁白': 'bg-purple-800 text-purple-200',
     '对白': 'bg-sky-800 text-sky-200',
-    '[音效]': 'bg-amber-800 text-amber-200',
     '音效': 'bg-amber-800 text-amber-200'
 };
 
