@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { SoundLibraryItem } from '../../../../types';
-import { PlayIcon, PauseIcon } from '../../../../components/ui/icons';
+import { PlayIcon, PauseIcon, BookmarkIcon } from '../../../../components/ui/icons';
 import LoadingSpinner from '../../../../components/ui/LoadingSpinner';
 
 interface SoundKeywordPopoverProps {
@@ -11,6 +11,8 @@ interface SoundKeywordPopoverProps {
     onMouseEnter?: () => void;
     onMouseLeave?: () => void;
     soundLibrary: SoundLibraryItem[];
+    pinnedSoundId?: number | null;
+    onPinSound?: (soundId: number | null, soundName: string | null) => void;
 }
 
 const formatDuration = (seconds: number) => {
@@ -20,7 +22,7 @@ const formatDuration = (seconds: number) => {
     return `${min}:${sec.toString().padStart(2, '0')}`;
 };
 
-const SoundKeywordPopover: React.FC<SoundKeywordPopoverProps> = ({ keyword, top, left, onClose, onMouseEnter, onMouseLeave, soundLibrary }) => {
+const SoundKeywordPopover: React.FC<SoundKeywordPopoverProps> = ({ keyword, top, left, onClose, onMouseEnter, onMouseLeave, soundLibrary, pinnedSoundId, onPinSound }) => {
     const [playingSoundId, setPlayingSoundId] = useState<number | null>(null);
     const [loadingSoundId, setLoadingSoundId] = useState<number | null>(null);
     const audioRef = useRef<HTMLAudioElement>(null);
@@ -118,6 +120,15 @@ const SoundKeywordPopover: React.FC<SoundKeywordPopoverProps> = ({ keyword, top,
                                 <button onClick={() => handlePreview(sound)} className="p-1.5 rounded-full bg-slate-600 hover:bg-sky-600 text-white">
                                     {loadingSoundId === sound.id ? <LoadingSpinner /> : (playingSoundId === sound.id ? <PauseIcon className="w-4 h-4" /> : <PlayIcon className="w-4 h-4" />)}
                                 </button>
+                                {onPinSound && sound.id && (
+                                    <button 
+                                        onClick={() => onPinSound(pinnedSoundId === sound.id ? null : sound.id!, pinnedSoundId === sound.id ? null : sound.name)} 
+                                        className="p-1.5 rounded-full text-slate-400 hover:text-amber-400"
+                                        title={pinnedSoundId === sound.id ? "取消钉住" : "钉住此音效"}
+                                    >
+                                        <BookmarkIcon className={`w-4 h-4 ${pinnedSoundId === sound.id ? 'text-amber-400 fill-current' : ''}`} />
+                                    </button>
+                                )}
                             </div>
                         </li>
                     ))}

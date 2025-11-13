@@ -47,6 +47,7 @@ const PostProductionPage: React.FC = () => {
         handleRenameMarker,
         handleUpdateRangeFromSelection,
         handleUpdateColor,
+        handlePinSound,
     } = usePostProduction();
 
     const [isSoundAssistantSettingsOpen, setIsSoundAssistantSettingsOpen] = useState(false);
@@ -178,6 +179,8 @@ const PostProductionPage: React.FC = () => {
                                 totalPages={totalPages}
                                 onPageChange={handlePageChange}
                                 onContextMenuRequest={handleContextMenuRequest}
+                                currentProject={currentProject}
+                                onPinSound={handlePinSound}
                             />}
                             initialLeftWidthPercent={30}
                         />

@@ -94,13 +94,13 @@ export const useAiChapterAnnotator = ({
 
     } catch (error) {
       console.error("AI annotation failed:", error);
-      // Comment: Safely handle error object of type 'unknown'.
+      // FIX: Safely handle error object of type 'unknown'.
       alert(`AI annotation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setIsLoadingAiAnnotation(false);
       chapterIds.forEach(removeAiProcessingChapterId);
     }
-  }, [currentProject, onAddCharacter, applyUndoableProjectUpdate, addAiProcessingChapterId, removeAiProcessingChapterId, setMultiSelectedChapterIdsAfterProcessing, apiSettings, selectedAiProvider]);
+  }, [currentProject, onAddCharacter, applyUndoableProjectUpdate, addAiProcessingChapterId, removeAiProcessingChapterId, apiSettings, selectedAiProvider]);
 
   return {
     isLoadingAiAnnotation,

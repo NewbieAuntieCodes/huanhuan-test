@@ -63,18 +63,20 @@ export const useAudioAlignmentAssistant = () => {
         return { allCvNames: cvs, projectCharacters: projChars };
     }, [currentProject, characters]);
     
-    const scanDirectory = React.useCallback(async (handle: any, resetState: boolean) => {
+    const scanDirectory = React.useCallback(async (handle: FileSystemDirectoryHandle, resetState: boolean) => {
         setIsLoading(true);
         if (resetState) {
             setScannedFiles([]);
             setManualOverrides({});
         }
-
-        try {
-            const parsedFiles: ParsedFileInfo[] = [];
-            for await (const entry of handle.values()) {
-                if ((entry as any).kind === 'file') {
-                    const file = await (entry as any).getFile();
+    
+        const parsedFiles: ParsedFileInfo[] = [];
+    
+        async function processDirectory(dirHandle: FileSystemDirectoryHandle) {
+            for await (const entry of dirHandle.values()) {
+                if (entry.kind === 'file') {
+                    // FIX: Cast entry to FileSystemFileHandle to access getFile method.
+                    const file = await (entry as FileSystemFileHandle).getFile();
                     if (file.name.endsWith('.mp3') || file.name.endsWith('.wav')) {
                         const name = file.name.replace(/\.(mp3|wav)$/i, '');
                         const parts = name.split(/[_]/);
@@ -112,11 +114,19 @@ export const useAudioAlignmentAssistant = () => {
         
                         parsedFiles.push({ chapters: chapterNumbers, characterName, cvName });
                     }
+                } else if (entry.kind === 'directory') {
+                    // Recursive call for subdirectories
+                    await processDirectory(entry);
                 }
             }
+        }
+    
+        try {
+            await processDirectory(handle);
             setDirectoryName(handle.name);
             setScannedFiles(parsedFiles);
         } catch (err) {
+            // FIX: The 'err' variable is of type 'unknown'. Use 'instanceof Error' to safely access the 'message' property.
             const errorMessage = err instanceof Error ? err.message : String(err);
             console.error("Error scanning directory:", errorMessage);
             alert(`扫描文件夹时出错: ${errorMessage}`);
@@ -134,13 +144,16 @@ export const useAudioAlignmentAssistant = () => {
                         const handleEntry = await db.directoryHandles.get(currentProject.id);
                         if (handleEntry) {
                             const handle = handleEntry.handle;
-                            const permission = await (handle as any).queryPermission({ mode: 'read' });
-                            setDirectoryHandle(handle);
-                            if (permission === 'granted') {
-                                await scanDirectory(handle, true);
-                                return;
-                            } else {
-                                setDirectoryName(handle.name);
+                            // FIX: Add type guard to ensure handle is a directory handle before using its specific methods.
+                            if (handle.kind === 'directory') {
+                                const permission = await handle.queryPermission({ mode: 'read' });
+                                setDirectoryHandle(handle);
+                                if (permission === 'granted') {
+                                    await scanDirectory(handle, true);
+                                    return;
+                                } else {
+                                    setDirectoryName(handle.name);
+                                }
                             }
                         }
                     }

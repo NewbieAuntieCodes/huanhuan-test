@@ -178,7 +178,7 @@ export const useEditorPageLogic = (props: EditorPageProps) => {
             }
         } catch (error) {
             console.error("读取或解析文件时出错:", error);
-            // FIX: Added 'instanceof Error' check to safely access properties on the 'error' object.
+            // FIX: The 'error' variable is of type 'unknown'. Use 'instanceof Error' to safely access the 'message' property.
             const detailedMessage = error instanceof Error ? error.message : String(error);
             let errorMessage = `读取或解析文件时出错: ${detailedMessage}`;
             if (typeof detailedMessage === 'string' && detailedMessage.toLowerCase().includes('central directory')) {

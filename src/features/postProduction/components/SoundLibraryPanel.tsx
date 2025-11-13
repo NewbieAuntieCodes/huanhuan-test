@@ -17,6 +17,8 @@ const CATEGORIES = [
     { key: 'transportation', name: '交通' },
     { key: 'horror', name: '恐怖音效' },
     { key: 'variety', name: '综艺音效' },
+    { key: 'fantasy', name: '玄幻音效' },
+    { key: 'sci_fi', name: '科幻音效' },
     { key: 'animals', name: '动物' },
     { key: 'other_sfx', name: '其它音效' },
 ];
@@ -51,23 +53,31 @@ const SoundLibraryPanel: React.FC = () => {
                 // 全量扫描：清空后添加
                 await soundLibraryRepository.clearSounds(categoryKey);
                 const newSounds: SoundLibraryItem[] = [];
-                for await (const entry of handle.values()) {
-                    if (entry.kind === 'file' && (entry.name.endsWith('.mp3') || entry.name.endsWith('.wav'))) {
-                        try {
-                            const file = await (entry as any).getFile();
-                            const metadata = await mm.parseBlob(file);
-                            newSounds.push({
-                                name: file.name,
-                                handle: entry as any,
-                                tags: [],
-                                duration: metadata.format.duration || 0,
-                                category: categoryKey,
-                            });
-                        } catch (e) {
-                            console.warn(`无法解析文件元数据: ${entry.name}`, e);
+
+                async function processDirectory(dirHandle: FileSystemDirectoryHandle, currentPath: string) {
+                    for await (const entry of dirHandle.values()) {
+                        if (entry.kind === 'file' && (entry.name.endsWith('.mp3') || entry.name.endsWith('.wav'))) {
+                            try {
+                                const file = await (entry as FileSystemFileHandle).getFile();
+                                const metadata = await mm.parseBlob(file);
+                                newSounds.push({
+                                    name: currentPath + file.name,
+                                    handle: entry as FileSystemFileHandle,
+                                    tags: [],
+                                    duration: metadata.format.duration || 0,
+                                    category: categoryKey,
+                                });
+                            } catch (e) {
+                                console.warn(`无法解析文件元数据: ${currentPath + entry.name}`, e);
+                            }
+                        } else if (entry.kind === 'directory') {
+                            await processDirectory(entry, currentPath + entry.name + '/');
                         }
                     }
                 }
+
+                await processDirectory(handle, '');
+
                 if (newSounds.length > 0) {
                     await soundLibraryRepository.addSounds(newSounds);
                 }
@@ -78,27 +88,35 @@ const SoundLibraryPanel: React.FC = () => {
                 const newSounds: SoundLibraryItem[] = [];
                 const foundFileNames = new Set<string>();
 
-                for await (const entry of handle.values()) {
-                    if (entry.kind === 'file' && (entry.name.endsWith('.mp3') || entry.name.endsWith('.wav'))) {
-                        foundFileNames.add(entry.name);
-                        if (!existingSoundMap.has(entry.name)) {
-                            // 文件是新增的
-                            try {
-                                const file = await (entry as any).getFile();
-                                const metadata = await mm.parseBlob(file);
-                                newSounds.push({
-                                    name: file.name,
-                                    handle: entry as any,
-                                    tags: [],
-                                    duration: metadata.format.duration || 0,
-                                    category: categoryKey,
-                                });
-                            } catch (e) {
-                                console.warn(`无法解析新文件元数据: ${entry.name}`, e);
+                async function processDirectory(dirHandle: FileSystemDirectoryHandle, currentPath: string) {
+                    for await (const entry of dirHandle.values()) {
+                        const fullPath = currentPath + entry.name;
+                        if (entry.kind === 'file' && (entry.name.endsWith('.mp3') || entry.name.endsWith('.wav'))) {
+                            foundFileNames.add(fullPath);
+                            if (!existingSoundMap.has(fullPath)) {
+                                // 文件是新增的
+                                try {
+                                    const file = await (entry as FileSystemFileHandle).getFile();
+                                    const metadata = await mm.parseBlob(file);
+                                    newSounds.push({
+                                        name: fullPath,
+                                        handle: entry as FileSystemFileHandle,
+                                        tags: [],
+                                        duration: metadata.format.duration || 0,
+                                        category: categoryKey,
+                                    });
+                                } catch (e) {
+                                    console.warn(`无法解析新文件元数据: ${fullPath}`, e);
+                                }
                             }
+                        } else if (entry.kind === 'directory') {
+                            await processDirectory(entry, fullPath + '/');
                         }
                     }
                 }
+
+                await processDirectory(handle, '');
+
 
                 const soundsToDelete = existingSounds.filter(s => !foundFileNames.has(s.name));
                 const idsToDelete = soundsToDelete.map(s => s.id).filter((id): id is number => id !== undefined);
@@ -127,7 +145,10 @@ const SoundLibraryPanel: React.FC = () => {
             const handle = await (window as any).showDirectoryPicker();
             await soundLibraryRepository.saveHandle(categoryKey, handle);
             setHandles(prev => ({ ...prev, [categoryKey]: handle }));
-            await scanDirectory(categoryKey, handle, 'full'); // 首次关联或更换文件夹时执行全量扫描
+            // FIX: Argument of type 'FileSystemHandle' is not assignable to parameter of type 'FileSystemDirectoryHandle'.
+            if (handle.kind === 'directory') {
+                await scanDirectory(categoryKey, handle, 'full'); // 首次关联或更换文件夹时执行全量扫描
+            }
         } catch (err) {
             if (err instanceof Error && err.name === 'AbortError') {
                 // User cancelled, do nothing.
@@ -143,7 +164,11 @@ const SoundLibraryPanel: React.FC = () => {
             '此操作将对所有已关联的文件夹执行全量扫描，清空并重新加载所有音频文件。确定要继续吗？',
             async () => {
                 for (const categoryKey in handles) {
-                    await scanDirectory(categoryKey, handles[categoryKey], 'full');
+                    // FIX: Argument of type 'FileSystemHandle' is not assignable to parameter of type 'FileSystemDirectoryHandle'.
+                    const handle = handles[categoryKey];
+                    if (handle.kind === 'directory') {
+                        await scanDirectory(categoryKey, handle, 'full');
+                    }
                 }
             },
             '全部刷新',
@@ -198,7 +223,7 @@ const SoundLibraryPanel: React.FC = () => {
                                     <p className="text-xs text-slate-400 truncate pr-2" title={handles[key]?.name}>已关联: {handles[key]?.name}</p>
                                     <div className="flex items-center space-x-2 flex-shrink-0">
                                       <button onClick={() => handleLinkFolder(key)} className="text-xs text-sky-400 hover:underline">更换</button>
-                                      <button onClick={() => scanDirectory(key, handles[key]!, 'incremental')} className="text-xs text-sky-400 hover:underline">更新</button>
+                                      <button onClick={() => { if (handles[key]?.kind === 'directory') scanDirectory(key, handles[key]!, 'incremental') }} className="text-xs text-sky-400 hover:underline">更新</button>
                                     </div>
                                 </div>
                             ) : (

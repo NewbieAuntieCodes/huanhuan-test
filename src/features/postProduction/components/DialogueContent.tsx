@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useRef, useLayoutEffect } from 'react';
-import { Chapter, Character, TextMarker, SoundLibraryItem } from '../../../types';
+import React, { useEffect, useState, useRef, useLayoutEffect, useMemo } from 'react';
+import { Chapter, Character, TextMarker, SoundLibraryItem, Project } from '../../../types';
 import { useMarkerRendering } from '../hooks/useMarkerRendering';
 import { MusicalNoteIcon, ChevronDownIcon } from '../../../components/ui/icons';
 import { useSoundHighlighter } from '../../scriptEditor/hooks/useSoundHighlighter';
@@ -27,6 +27,8 @@ interface DialogueContentProps {
   totalPages: number;
   onPageChange: (page: number) => void;
   onContextMenuRequest: (event: React.MouseEvent, range: Range) => void;
+  currentProject: Project | null;
+  onPinSound: (lineId: string, chapterId: string, charIndex: number, keyword: string, soundId: number | null, soundName: string | null) => void;
 }
 
 const HighlightedLine: React.FC<{ text: string; soundLibrary: SoundLibraryItem[]; soundObservationList: string[] }> = ({ text, soundLibrary, soundObservationList }) => {
@@ -86,9 +88,11 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
   totalPages,
   onPageChange,
   onContextMenuRequest,
+  currentProject,
+  onPinSound,
 }) => {
     const { contentRef, sceneOverlays, bgmLabelOverlays } = useMarkerRendering(textMarkers, chapters, suspendLayout, expandedChapterId);
-    const [popoverState, setPopoverState] = useState<{ visible: boolean; keyword: string; top: number; left: number } | null>(null);
+    const [popoverState, setPopoverState] = useState<{ visible: boolean; keyword: string; top: number; left: number; lineId: string; chapterId: string; index: number; } | null>(null);
     const hidePopoverTimeout = useRef<number | null>(null);
     
     const handleMouseUp = () => {
@@ -108,9 +112,16 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
         const target = e.target as HTMLElement;
         if (target.classList.contains('sound-keyword-highlight')) {
             const keyword = target.dataset.keyword;
-            if (keyword) {
+            const indexStr = target.dataset.index;
+            // FIX: Cast 'Element' from 'closest' to 'HTMLElement' before accessing 'dataset' property to resolve TypeScript error.
+            const lineEl = target.closest('[data-line-id]') as HTMLElement;
+            const lineId = lineEl?.dataset.lineId;
+            // FIX: Cast 'Element' from 'closest' to 'HTMLElement' before accessing 'dataset' property to resolve TypeScript error.
+            const chapterEl = target.closest('[data-chapter-id]') as HTMLElement;
+            const chapterId = chapterEl?.dataset.chapterId;
+            if (keyword && lineId && indexStr && chapterId) {
                 const rect = target.getBoundingClientRect();
-                setPopoverState({ visible: true, keyword, top: rect.bottom, left: rect.left });
+                setPopoverState({ visible: true, keyword, top: rect.bottom, left: rect.left, lineId, chapterId, index: parseInt(indexStr, 10) });
             }
         }
     };
@@ -188,6 +199,20 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
         if (t.startsWith('[') && t.endsWith(']')) return t; // 幂等
         return `[${t}]`;
     };
+
+    const currentPinnedSound = useMemo(() => {
+        if (!popoverState || !currentProject) return null;
+        const chapter = currentProject.chapters.find(ch => ch.id === popoverState.chapterId);
+        const line = chapter?.scriptLines.find(l => l.id === popoverState.lineId);
+        if (!line || !line.pinnedSounds) return null;
+        return line.pinnedSounds.find(p => p.keyword === popoverState.keyword && p.index === popoverState.index);
+    }, [popoverState, currentProject]);
+    
+    const handlePin = (soundId: number | null, soundName: string | null) => {
+        if (popoverState) {
+            onPinSound(popoverState.lineId, popoverState.chapterId, popoverState.index, popoverState.keyword, soundId, soundName);
+        }
+    }
 
     return (
         <div 
@@ -300,6 +325,8 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
                     onMouseEnter={handlePopoverEnter}
                     onMouseLeave={() => setPopoverState(null)}
                     soundLibrary={soundLibrary}
+                    pinnedSoundId={currentPinnedSound?.soundId || null}
+                    onPinSound={handlePin}
                 />
             )}
             <div className="flex-shrink-0 mt-4">

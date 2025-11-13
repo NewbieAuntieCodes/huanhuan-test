@@ -79,9 +79,9 @@ export const useSoundHighlighter = (
         parts.push(`<span class=\"manual-sound-marker\" title=\"音效标记: ${escapeHtml(title)}\">${escapeHtml(matchText)}</span>`);
       } else if (matchText.startsWith('[') && matchText.endsWith(']')) {
         const inner = matchText.slice(1, -1);
-        parts.push(`<span class=\"sound-keyword-highlight\" data-keyword=\"${escapeHtml(inner)}\">${escapeHtml(matchText)}</span>`);
+        parts.push(`<span class=\"sound-keyword-highlight\" data-keyword=\"${escapeHtml(inner)}\" data-index=\"${match.index}\">${escapeHtml(matchText)}</span>`);
       } else {
-        parts.push(`<span class=\"sound-keyword-highlight\" data-keyword=\"${escapeHtml(matchText)}\">${escapeHtml(matchText)}</span>`);
+        parts.push(`<span class=\"sound-keyword-highlight\" data-keyword=\"${escapeHtml(matchText)}\" data-index=\"${match.index}\">${escapeHtml(matchText)}</span>`);
       }
 
       lastIndex = matchIndex + matchText.length;
@@ -96,4 +96,3 @@ export const useSoundHighlighter = (
 
   return highlightedHtml;
 };
-

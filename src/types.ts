@@ -25,6 +25,13 @@ export interface IgnoredSoundKeyword {
   index: number; // The character index of the keyword in the line.text
 }
 
+export interface PinnedSound {
+  keyword: string;
+  index: number; // The character index of the keyword in the line.text
+  soundId: number;
+  soundName: string;
+}
+
 export interface ScriptLine {
   id: string;
   text: string;
@@ -40,6 +47,7 @@ export interface ScriptLine {
   feedback?: string;
   postSilence?: number; // Override for silence after this line, in seconds
   ignoredSoundKeywords?: IgnoredSoundKeyword[];
+  pinnedSounds?: PinnedSound[];
 }
 
 export interface Chapter {

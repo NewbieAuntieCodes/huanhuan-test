@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useStore } from '../../../store/useStore';
-import { TextMarker } from '../../../types';
+import { TextMarker, PinnedSound } from '../../../types';
 
 // Helper to find lineId and offset from a Range endpoint
 const findLineIdAndOffset = (container: Node, offset: number): { lineId: string; offset: number } | null => {
@@ -32,11 +32,13 @@ export const usePostProduction = () => {
         projects,
         updateProjectTextMarkers,
         updateLineText,
+        updateProject,
     } = useStore((state) => ({
         selectedProjectId: state.selectedProjectId,
         projects: state.projects,
         updateProjectTextMarkers: state.updateProjectTextMarkers,
         updateLineText: state.updateLineText,
+        updateProject: state.updateProject,
     }));
 
     const [selectedRange, setSelectedRange] = useState<Range | null>(null);
@@ -193,6 +195,42 @@ export const usePostProduction = () => {
         setEditingMarker((prev) => (prev ? ({ ...prev, color } as TextMarker) : prev));
     }, [currentProject, textMarkers, updateProjectTextMarkers]);
     
+    const handlePinSound = useCallback((lineId: string, chapterId: string, charIndex: number, keyword: string, soundId: number | null, soundName: string | null) => {
+        if (!currentProject) return;
+    
+        const updatedProject = {
+            ...currentProject,
+            chapters: currentProject.chapters.map(ch => {
+                if (ch.id !== chapterId) return ch;
+                return {
+                    ...ch,
+                    scriptLines: ch.scriptLines.map(line => {
+                        if (line.id === lineId) {
+                            const existingPinned = line.pinnedSounds || [];
+                            // Remove any existing pin for this keyword instance
+                            const filtered = existingPinned.filter(p => !(p.keyword === keyword && p.index === charIndex));
+                            
+                            if (soundId !== null && soundName !== null) {
+                                const newPin: PinnedSound = { keyword, index: charIndex, soundId, soundName };
+                                return {
+                                    ...line,
+                                    pinnedSounds: [...filtered, newPin]
+                                };
+                            } else { // unpinning
+                                return {
+                                    ...line,
+                                    pinnedSounds: filtered.length > 0 ? filtered : undefined // remove array if empty
+                                };
+                            }
+                        }
+                        return line;
+                    })
+                };
+            })
+        };
+        updateProject(updatedProject);
+    }, [currentProject, updateProject]);
+
     return {
         currentProject,
         textMarkers,
@@ -218,5 +256,6 @@ export const usePostProduction = () => {
         handleUpdateRangeFromSelection,
         handleUpdateColor,
         isSfxModalOpen,
+        handlePinSound,
     };
 };

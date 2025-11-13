@@ -126,13 +126,13 @@ export const useAnnotationImporter = ({
 
     } catch (error) {
       console.error("Annotation import failed:", error);
-      // Comment: Safely handle error object of type 'unknown'.
+      // FIX: Safely handle error object of type 'unknown'.
       alert(`Annotation import failed: ${error instanceof Error ? error.message : "Unknown error"}`);
       return new Map();
     } finally {
       setIsLoadingImportAnnotation(false);
     }
-  }, [currentProject, selectedChapterId, multiSelectedChapterIds, onAddCharacter, applyUndoableProjectUpdate, setMultiSelectedChapterIdsAfterProcessing]);
+  }, [currentProject, selectedChapterId, multiSelectedChapterIds, onAddCharacter, applyUndoableProjectUpdate]);
 
   return {
     isLoadingImportAnnotation,
