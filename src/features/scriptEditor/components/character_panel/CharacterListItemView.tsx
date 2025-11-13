@@ -114,9 +114,9 @@ const CharacterListItemView: React.FC<CharacterListItemViewProps> = ({
       >
         <span
           className="font-medium truncate"
-          title={character.name}
+          title={character.name === '音效' ? '[音效]' : character.name}
         >
-          {character.name}
+          {character.name === '音效' ? '[音效]' : character.name}
         </span>
       </div>
 

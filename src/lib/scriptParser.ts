@@ -1,4 +1,3 @@
-
 import { Chapter } from '../types';
 
 export const internalParseScriptToChapters = (scriptText: string, bookName: string): Chapter[] => {
@@ -6,8 +5,8 @@ export const internalParseScriptToChapters = (scriptText: string, bookName: stri
   if (!scriptText || scriptText.trim() === "") return [];
 
   const lines = scriptText.split(/\r?\n/);
-  // More robust regex for chapter titles, including common Chinese patterns
-  const chapterTitleLineRegex = /^(?:##\d+\s*\.\s*)?(Chapter\s+\d+|Part\s+\d+|第\s*[一二三四五六七八九十百千万零\d]+\s*[章章节回卷篇部]|楔子|序章|引子|尾声|Prologue|Epilogue|前言|后记)/i;
+  // More robust regex for chapter titles, including common Chinese patterns and full-width spaces
+  const chapterTitleLineRegex = /^(?:##\d+\s*\.\s*)?(Chapter\s+\d+|Part\s+\d+|第[\s\u3000]*[一二三四五六七八九十百千万零\d]+[\s\u3000]*[章章节回卷篇部]|楔子|序章|引子|尾声|Prologue|Epilogue|前言|后记)/i;
 
   let currentChapterTitleCandidate: string | null = null;
   let currentChapterContent: string[] = [];

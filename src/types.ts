@@ -20,6 +20,11 @@ export interface Character {
   mergedIntoCharacterId?: string; // If status is 'merged'
 }
 
+export interface IgnoredSoundKeyword {
+  keyword: string;
+  index: number; // The character index of the keyword in the line.text
+}
+
 export interface ScriptLine {
   id: string;
   text: string;
@@ -30,9 +35,11 @@ export interface ScriptLine {
   isAiAudioSynced: boolean; // True if current text matches generated/assigned audio
   isTextModifiedManual: boolean; // True if user manually edited text after initial load/AI annotation
   soundType?: string; // Off-screen / Off-stage sound type (e.g., 'OS', '电话音')
+  emotion?: string;
   isMarkedForReturn?: boolean;
   feedback?: string;
   postSilence?: number; // Override for silence after this line, in seconds
+  ignoredSoundKeywords?: IgnoredSoundKeyword[];
 }
 
 export interface Chapter {
@@ -55,6 +62,11 @@ export interface SilenceSettings {
   pairs: Record<SilencePairing, number>;
 }
 
+export interface PostProductionTimeline {
+  tracks: PostProductionTrack[];
+  // Other global settings
+}
+
 export interface Project {
   id: string;
   name: string; // Book name
@@ -69,6 +81,8 @@ export interface Project {
   customSoundTypes?: string[];
   lastViewedChapterId?: string;
   silenceSettings?: SilenceSettings;
+  postProductionTimeline?: PostProductionTimeline;
+  textMarkers?: TextMarker[];
 }
 
 // For Gemini service response parsing
@@ -126,7 +140,7 @@ export interface MergeHistoryEntry {
 }
 
 // Fix: Moved from App.tsx to break circular dependencies
-export type AppView = "upload" | "dashboard" | "editor" | "audioAlignment" | "cvManagement" | "voiceLibrary" | "audioAlignmentAssistant";
+export type AppView = "upload" | "dashboard" | "editor" | "audioAlignment" | "cvManagement" | "voiceLibrary" | "audioAlignmentAssistant" | "postProduction";
 
 export interface CVStyle {
   bgColor: string;
@@ -157,4 +171,49 @@ export interface AudioAssistantState {
 export interface DirectoryHandleEntry {
   projectId: string;
   handle: FileSystemDirectoryHandle;
+}
+
+// Post Production Types
+export interface SoundLibraryItem {
+    id?: number;
+    name: string;
+    handle: FileSystemFileHandle;
+    tags: string[];
+    duration: number;
+    category: string;
+}
+
+export type SoundLibraryHandleMap = Record<string, FileSystemDirectoryHandle>;
+
+export interface AudioClip {
+    id: string;
+    soundLibraryId: number;
+    startTime: number; // in seconds on the timeline
+    duration: number;
+    // Optional properties for trimming within the clip
+    trimStartTime?: number;
+    trimEndTime?: number;
+    volume: number;
+}
+
+export interface PostProductionTrack {
+    id: string;
+    name: string;
+    type: 'music' | 'sfx' | 'ambience' | 'dialogue'; // dialogue is read-only
+    clips: AudioClip[];
+    isMuted: boolean;
+    isSolo: boolean;
+    volume: number; // 0-1
+}
+
+// FIX: Added TextMarker type to resolve import error in PostProductionPage.
+export interface TextMarker {
+  id: string;
+  type: 'bgm' | 'sfx' | 'scene';
+  name?: string;
+  startLineId: string;
+  startOffset?: number;
+  endLineId: string;
+  endOffset?: number;
+  color?: string; // 可选：自定义高亮颜色（BGM 用）
 }

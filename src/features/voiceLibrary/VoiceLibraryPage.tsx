@@ -7,6 +7,9 @@ import ExportVoiceLibraryModal from './components/ExportVoiceLibraryModal';
 import { useVoiceLibrary } from './hooks/useVoiceLibrary';
 import { VoiceLibraryRowState } from './hooks/useVoiceLibrary'; // Import type from hook
 import { ScriptLine } from '../../types';
+import AudioTrimmerModal from './components/AudioTrimmerModal';
+import BatchEmotionAssistantModal from './components/BatchEmotionAssistantModal';
+
 
 const VoiceLibraryPage: React.FC = () => {
   const { navigateTo } = useStore(state => ({
@@ -17,6 +20,7 @@ const VoiceLibraryPage: React.FC = () => {
     rows,
     currentProject,
     charactersInProject,
+    allCharacters, // Get all characters including Narrator
     selectedCharacter,
     isGenerating,
     isExporting,
@@ -30,6 +34,8 @@ const VoiceLibraryPage: React.FC = () => {
     handleGenerateSingle,
     handleUpload,
     handleTextChange,
+    handleEmotionChange,
+    handleApplyBatchEmotions,
     removeRow,
     addEmptyRow,
     handleDeleteGeneratedAudio,
@@ -38,19 +44,29 @@ const VoiceLibraryPage: React.FC = () => {
     handleExportCharacterClips,
     generatedAudioUrls,
     persistedPromptUrls,
+    trimmingRow,
+    handleTrimRequest,
+    handleCloseTrimmer,
+    handleConfirmTrim,
   } = useVoiceLibrary();
 
   const [isCharacterDropdownOpen, setIsCharacterDropdownOpen] = useState(false);
   const [characterSearchTerm, setCharacterSearchTerm] = useState('');
   const characterDropdownRef = useRef<HTMLDivElement>(null);
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isBatchEmotionModalOpen, setIsBatchEmotionModalOpen] = useState(false);
   const [activePlayerKey, setActivePlayerKey] = useState<string | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
+  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
 
   useEffect(() => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    setAudioContext(ctx);
+
+    return () => {
+        if (ctx.state !== 'closed') {
+            ctx.close().catch(console.error);
+        }
+    };
   }, []);
   
   const onGoBack = () => {
@@ -183,6 +199,14 @@ const VoiceLibraryPage: React.FC = () => {
             disabled={!currentProject}
           />
         </div>
+        <button
+            onClick={() => setIsBatchEmotionModalOpen(true)}
+            disabled={!chapterFilter.trim() || rows.length === 0}
+            className="flex items-center text-sm text-amber-300 hover:text-amber-100 px-3 py-1.5 bg-amber-800/50 hover:bg-amber-700/50 rounded-md disabled:opacity-50"
+            title={!chapterFilter.trim() || rows.length === 0 ? "请先筛选章节以使用此功能" : "批量为当前筛选出的台词添加情绪"}
+        >
+            <SparklesIcon className="w-4 h-4 mr-1" /> 情绪辅助
+        </button>
         <button onClick={addEmptyRow} className="flex items-center text-sm text-green-300 hover:text-green-100 px-3 py-1.5 bg-green-800/50 hover:bg-green-700/50 rounded-md">
           <PlusIcon className="w-4 h-4 mr-1" /> 添加空行
         </button>
@@ -198,8 +222,9 @@ const VoiceLibraryPage: React.FC = () => {
       </div>
 
       <main className="flex-grow overflow-y-auto">
-        <div className="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-x-4 px-4 py-2 text-sm font-semibold text-slate-400 border-b border-slate-800 sticky top-0 bg-slate-900 z-10">
-          <div>参考音频 (拖拽上传)</div>
+        <div className="grid grid-cols-[1fr_120px_1fr_1fr_auto] items-center gap-x-4 px-4 py-2 text-sm font-semibold text-slate-400 border-b border-slate-800 sticky top-0 bg-slate-900 z-10">
+          <div>参考音频</div>
+          <div>情绪</div>
           <div>台词文本 {selectedCharacter && <span className="text-sky-400 font-semibold ml-2">【{selectedCharacter.name}】</span>}</div>
           <div>生成结果</div>
           <div className="w-8"></div>
@@ -213,15 +238,11 @@ const VoiceLibraryPage: React.FC = () => {
           ) : (
             rows.map(row => {
               const line = row.originalLineId ? lineMap.get(row.originalLineId) : null;
-              // FIX: Type '{}' is missing the following properties from type 'Character': id, name, color
-              // The `character` prop for `VoiceLibraryRow` expects `Character | null`.
-              // The expression `(characterMap.get(line.characterId) || {})` could result in `{}`, which is not assignable.
-              // Changed the fallback from `{}` to `null` to satisfy the type.
               const characterForRow = line?.characterId ? (characterMap.get(line.characterId) || null) : null;
               return (
               <VoiceLibraryRow
                 key={row.id}
-                row={{ ...row, audioUrl: generatedAudioUrls[row.id] || null, promptAudioUrl: row.promptAudioUrl || (persistedPromptUrls ? persistedPromptUrls[row.id] : null) }}
+                row={{ ...row, audioUrl: generatedAudioUrls[row.id] || null, promptAudioUrl: row.promptAudioUrl || (persistedPromptUrls ? persistedPromptUrls[row.id] : null), characterId: characterForRow?.id }}
                 character={characterForRow}
                 isBatchGenerating={isGenerating}
                 onTextChange={(text) => handleTextChange(row.id, text)}
@@ -230,9 +251,11 @@ const VoiceLibraryPage: React.FC = () => {
                 onGenerateSingle={() => handleGenerateSingle(row.id)}
                 onDeleteGeneratedAudio={() => handleDeleteGeneratedAudio(row.id)}
                 onDeletePromptAudio={() => handleDeletePromptAudio(row.id)}
-                audioContext={audioContextRef.current}
+                onTrim={() => handleTrimRequest(row.id)}
+                audioContext={audioContext}
                 activePlayerKey={activePlayerKey}
                 setActivePlayerKey={setActivePlayerKey}
+                onEmotionChange={handleEmotionChange}
               />
             )})
           )}
@@ -243,6 +266,21 @@ const VoiceLibraryPage: React.FC = () => {
         onClose={() => setIsExportModalOpen(false)}
         onConfirm={handleExport}
         exportCount={rows.filter(r => generatedAudioUrls[r.id] && r.originalLineId).length}
+      />
+      {trimmingRow && (
+          <AudioTrimmerModal
+              isOpen={!!trimmingRow}
+              onClose={handleCloseTrimmer}
+              audioUrl={trimmingRow.urlToTrim}
+              onConfirmTrim={handleConfirmTrim}
+          />
+      )}
+      <BatchEmotionAssistantModal
+        isOpen={isBatchEmotionModalOpen}
+        onClose={() => setIsBatchEmotionModalOpen(false)}
+        rows={rows}
+        characters={allCharacters}
+        onApply={handleApplyBatchEmotions}
       />
     </div>
   );

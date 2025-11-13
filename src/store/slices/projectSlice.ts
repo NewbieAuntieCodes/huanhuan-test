@@ -1,6 +1,6 @@
 import { StateCreator } from 'zustand';
 import { AppState } from '../useStore';
-import { Project, Collaborator, Chapter, AudioBlob, ScriptLine, Character, SilenceSettings, MasterAudio } from '../../types';
+import { Project, Collaborator, Chapter, AudioBlob, ScriptLine, Character, SilenceSettings, MasterAudio, TextMarker, IgnoredSoundKeyword } from '../../types';
 import { db } from '../../db';
 import { bufferToWav } from '../../lib/wavEncoder';
 // FIX: Import `defaultSilenceSettings` to resolve reference error.
@@ -10,7 +10,7 @@ const defaultCharConfigs = [
   { name: '[静音]', color: 'bg-slate-700', textColor: 'text-slate-400', description: '用于标记无需录制的旁白提示' },
   { name: 'Narrator', color: 'bg-slate-600', textColor: 'text-slate-100', description: '默认旁白角色' },
   { name: '待识别角色', color: 'bg-orange-400', textColor: 'text-black', description: '由系统自动识别但尚未分配的角色' },
-  { name: '音效', color: 'bg-transparent', textColor: 'text-red-500', description: '用于标记音效的文字描述' },
+  { name: '[音效]', color: 'bg-transparent', textColor: 'text-red-500', description: '用于标记音效的文字描述' },
 ];
 
 export interface ProjectSlice {
@@ -27,6 +27,10 @@ export interface ProjectSlice {
   updateLineFeedback: (projectId: string, chapterId: string, lineId: string, feedback: string) => Promise<void>;
   updateProjectSilenceSettings: (projectId: string, settings: SilenceSettings) => Promise<void>;
   updateLinePostSilence: (projectId: string, chapterId: string, lineId: string, silence?: number) => Promise<void>;
+  updateProjectTextMarkers: (projectId: string, markers: TextMarker[]) => Promise<void>;
+  addIgnoredSoundKeyword: (projectId: string, chapterId: string, lineId: string, keyword: IgnoredSoundKeyword) => Promise<void>;
+  updateLineText: (projectId: string, chapterId: string, lineId: string, newText: string) => Promise<void>;
+  updateLineEmotion: (projectId: string, chapterId: string, lineId: string, emotion: string) => Promise<void>;
 }
 
 export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = (set, get, _api) => ({
@@ -354,6 +358,105 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
     await db.projects.put(updatedProject);
     set(state => ({
         projects: state.projects.map(p => p.id === projectId ? updatedProject : p),
+    }));
+  },
+  updateLineText: async (projectId, chapterId, lineId, newText) => {
+    const project = get().projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const updatedProject: Project = {
+      ...project,
+      chapters: project.chapters.map(ch => {
+        if (ch.id === chapterId) {
+          return {
+            ...ch,
+            scriptLines: ch.scriptLines.map(line => {
+              if (line.id === lineId) {
+                const isSynced = line.text === newText;
+                return { ...line, text: newText, isTextModifiedManual: true, isAiAudioSynced: isSynced } as ScriptLine;
+              }
+              return line;
+            })
+          };
+        }
+        return ch;
+      }),
+      lastModified: Date.now(),
+    };
+    await db.projects.put(updatedProject);
+    set(state => ({
+      projects: state.projects.map(p => p.id === projectId ? updatedProject : p),
+    }));
+  },
+  updateProjectTextMarkers: async (projectId, markers) => {
+    const project = get().projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const updatedProject = {
+      ...project,
+      textMarkers: markers,
+      lastModified: Date.now(),
+    };
+
+    // 优化：只更新变更字段，避免写入整条大型项目对象
+    await db.projects.update(projectId, { textMarkers: markers, lastModified: updatedProject.lastModified });
+    set(state => ({
+      projects: state.projects.map(p => (p.id === projectId ? updatedProject : p)),
+    }));
+  },
+  addIgnoredSoundKeyword: async (projectId, chapterId, lineId, keyword) => {
+    const project = get().projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const updatedProject = {
+      ...project,
+      chapters: project.chapters.map(ch => {
+        if (ch.id === chapterId) {
+          return {
+            ...ch,
+            scriptLines: ch.scriptLines.map(line => {
+              if (line.id === lineId) {
+                const ignored = line.ignoredSoundKeywords || [];
+                // Avoid duplicates
+                if (!ignored.some(ik => ik.keyword === keyword.keyword && ik.index === keyword.index)) {
+                  return { ...line, ignoredSoundKeywords: [...ignored, keyword] };
+                }
+              }
+              return line;
+            })
+          };
+        }
+        return ch;
+      }),
+      lastModified: Date.now(),
+    };
+
+    await db.projects.put(updatedProject);
+    set({
+      projects: get().projects.map(p => p.id === projectId ? updatedProject : p),
+    });
+  },
+  updateLineEmotion: async (projectId, chapterId, lineId, emotion) => {
+    const project = get().projects.find(p => p.id === projectId);
+    if (!project) return;
+    const updatedProject = {
+        ...project,
+        chapters: project.chapters.map(ch => {
+            if (ch.id === chapterId) {
+                return {
+                    ...ch,
+                    scriptLines: ch.scriptLines.map(line =>
+                        line.id === lineId ? { ...line, emotion } : line
+                    )
+                };
+            }
+            return ch;
+        }),
+        lastModified: Date.now()
+    };
+    await db.projects.put(updatedProject);
+    set(state => ({
+        projects: state.projects.map(p => p.id === projectId ? updatedProject : p)
     }));
   },
 });

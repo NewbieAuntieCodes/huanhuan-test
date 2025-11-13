@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 // Fix: Import from types.ts to break circular dependency
-import { AppView, CVStylesMap, PresetColor } from '../types';
+import { AppView, CVStylesMap, PresetColor, SoundLibraryItem, IgnoredSoundKeyword } from '../types';
 import { Project, Character, MergeHistoryEntry } from '../types';
 
 // Import slice creators and their state/action types
@@ -11,21 +11,27 @@ import { createCharacterSlice, CharacterSlice } from './slices/characterSlice';
 import { createMergeSlice, MergeSlice } from './slices/mergeSlice';
 import { db } from '../db'; // Import the Dexie database instance
 import { defaultCvPresetColors, defaultCharacterPresetColors } from '../lib/colorPresets';
+import { soundLibraryRepository } from '../repositories/soundLibraryRepository';
+import { miscRepository } from '../repositories';
 
 // Define the combined state shape by extending all slice types
 export interface AppState extends UiSlice, ProjectSlice, ProjectAudioSlice, CharacterSlice, MergeSlice {
   cvColorPresets: PresetColor[];
   characterColorPresets: PresetColor[];
+  soundLibrary: SoundLibraryItem[];
   loadInitialData: () => Promise<void>;
   updateCvColorPresets: (presets: PresetColor[]) => Promise<void>;
   updateCharacterColorPresets: (presets: PresetColor[]) => Promise<void>;
+  refreshSoundLibrary: () => Promise<void>;
+  addIgnoredSoundKeyword: (projectId: string, chapterId: string, lineId: string, keyword: IgnoredSoundKeyword) => Promise<void>;
+  updateLineEmotion: (projectId: string, chapterId: string, lineId: string, emotion: string) => Promise<void>;
 }
 
 const defaultCharConfigs = [
   { name: '[静音]', color: 'bg-slate-700', textColor: 'text-slate-400', description: '用于标记无需录制的旁白提示' },
   { name: 'Narrator', color: 'bg-slate-600', textColor: 'text-slate-100', description: '默认旁白角色' },
   { name: '待识别角色', color: 'bg-orange-400', textColor: 'text-black', description: '由系统自动识别但尚未分配的角色' },
-  { name: '音效', color: 'bg-transparent', textColor: 'text-red-500', description: '用于标记音效的文字描述' },
+  { name: '[音效]', color: 'bg-transparent', textColor: 'text-red-500', description: '用于标记音效的文字描述' },
 ];
 
 export const useStore = create<AppState>((set, get, api) => ({
@@ -39,48 +45,54 @@ export const useStore = create<AppState>((set, get, api) => ({
   // State for global color presets
   cvColorPresets: [],
   characterColorPresets: [],
+  soundLibrary: [],
 
   // Global actions
+  refreshSoundLibrary: async () => {
+    try {
+      const sounds = await soundLibraryRepository.getSounds();
+      set({ soundLibrary: sounds });
+    } catch (error) {
+      console.error("Failed to load sound library:", error);
+      set({ soundLibrary: [] });
+    }
+  },
   loadInitialData: async () => {
     try {
       const [
         projectsFromDb,
         charactersFromDb,
-        mergeHistoryItem,
-        cvColorPresetsItem,
-        characterColorPresetsItem,
-        apiSettingsItem,
-        selectedAiProviderItem,
-        characterShortcutsItem,
+        miscData,
         lufsSettingsItem,
       ] = await db.transaction('r', db.projects, db.characters, db.misc, async () => {
         return Promise.all([
           db.projects.orderBy('lastModified').reverse().toArray(),
           db.characters.toArray(),
-          db.misc.get('mergeHistory'),
-          db.misc.get('cvColorPresets'),
-          db.misc.get('characterColorPresets'),
-          db.misc.get('apiSettings'),
-          db.misc.get('selectedAiProvider'),
-          db.misc.get('characterShortcuts'),
+          miscRepository.getBulkConfig(),
           db.misc.get('lufsSettings'),
         ]);
       });
 
+      const {
+        mergeHistory,
+        cvColorPresets: cvColorPresetsFromDb,
+        characterColorPresets: characterColorPresetsFromDb,
+        apiSettings,
+        selectedAiProvider,
+        characterShortcuts,
+        soundObservationList,
+      } = miscData;
+
       const projects = projectsFromDb.map(p => ({ ...p, cvStyles: p.cvStyles || {} }));
-      const mergeHistory = mergeHistoryItem?.value || [];
-      const apiSettings = apiSettingsItem?.value || get().apiSettings;
-      const selectedAiProvider = selectedAiProviderItem?.value || 'gemini';
-      const characterShortcuts = characterShortcutsItem?.value || {};
       const lufsSettings = lufsSettingsItem?.value || { enabled: false, target: -18 };
       
-      let cvColorPresets = cvColorPresetsItem?.value;
+      let cvColorPresets = cvColorPresetsFromDb;
       if (!cvColorPresets || !Array.isArray(cvColorPresets) || cvColorPresets.length === 0) {
         cvColorPresets = defaultCvPresetColors;
         await db.misc.put({ key: 'cvColorPresets', value: cvColorPresets });
       }
 
-      let characterColorPresets = characterColorPresetsItem?.value;
+      let characterColorPresets = characterColorPresetsFromDb;
       if (!characterColorPresets || !Array.isArray(characterColorPresets) || characterColorPresets.length === 0) {
         characterColorPresets = defaultCharacterPresetColors;
         await db.misc.put({ key: 'characterColorPresets', value: characterColorPresets });
@@ -96,7 +108,8 @@ export const useStore = create<AppState>((set, get, api) => ({
       const isSfxName = (name?: string) => {
         if (!name) return false;
         const n = name.trim().toLowerCase();
-        return n === '音效' || n === 'sfx' || n === '��Ч'.toLowerCase();
+        // 兼容旧数据与新显示格式
+        return n === '音效' || n === '[音效]' || n === 'sfx';
       };
       const fixedCharacters: Character[] = processedCharacters.map((c) => {
         if (isSfxName(c.name)) {
@@ -124,15 +137,13 @@ export const useStore = create<AppState>((set, get, api) => ({
         await db.characters.bulkPut(sfxUpdates);
       }
 
-      // --- Faulty migration logic removed ---
-      // This block was causing duplicate default characters on every load.
-      // The correct logic for creating default characters is handled in `addProject`.
-
       let initialView: AppView = "dashboard";
       if (projects.length === 0) {
         initialView = "upload";
       }
       
+      const soundsFromDb = await soundLibraryRepository.getSounds();
+
       set({
         projects,
         characters: fixedCharacters,
@@ -143,10 +154,12 @@ export const useStore = create<AppState>((set, get, api) => ({
         selectedAiProvider,
         characterShortcuts,
         lufsSettings,
+        soundObservationList,
         currentView: initialView,
         aiProcessingChapterIds: [], // Reset on load
         selectedProjectId: get().selectedProjectId || null,
         isLoading: false,
+        soundLibrary: soundsFromDb,
       });
     } catch (error) {
       console.error("Failed to load data from Dexie database:", error);
@@ -158,6 +171,8 @@ export const useStore = create<AppState>((set, get, api) => ({
         characterColorPresets: defaultCharacterPresetColors,
         currentView: "upload",
         isLoading: false,
+        soundLibrary: [],
+        soundObservationList: [],
       });
     }
   },

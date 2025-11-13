@@ -1,4 +1,5 @@
 
+
 import { useState, useCallback } from 'react';
 import { Project, Character, Chapter } from '../../../types';
 import { getAiAnnotatedScript } from '../../../services/geminiService';
@@ -93,7 +94,7 @@ export const useAiChapterAnnotator = ({
 
     } catch (error) {
       console.error("AI annotation failed:", error);
-      // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
+      // Comment: Safely handle error object of type 'unknown'.
       alert(`AI annotation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setIsLoadingAiAnnotation(false);

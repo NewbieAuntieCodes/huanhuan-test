@@ -52,3 +52,96 @@
     .force-text-color * {
       color: inherit !important;
     }
+
+    /* Scene bracket styles */
+    .scene-bracket {
+        position: absolute;
+        width: 18px; /* bracket visual width */
+        pointer-events: none;
+    }
+    .scene-bracket-line {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 100%;
+        height: 100%;
+        border-right-width: 2px;
+        border-color: inherit;
+    }
+    .scene-bracket-line::before,
+    .scene-bracket-line::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        width: 50%;
+        height: 0;
+        border-top-width: 2px;
+        border-color: inherit;
+    }
+    .scene-bracket-line::before {
+        top: 0;
+    }
+    .scene-bracket-line::after {
+        bottom: -2px; /* Adjust for border width */
+    }
+    .scene-bracket-label {
+        position: absolute;
+        top: 0;
+        left: 100%; /* 移动到括号右侧 */
+        margin-left: 8px; /* 增加间距 */
+        transform: none;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.75rem; /* text-xs */
+        font-weight: 600; /* font-semibold */
+        white-space: nowrap;
+        color: #1e293b; /* slate-800, good contrast for pastels */
+        z-index: 20;
+    }
+
+    /* BGM label styles */
+    .bgm-label {
+        position: absolute;
+        display: flex;
+        align-items: flex-start;
+        padding: 4px 6px;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        line-height: 1.1;
+        font-weight: 600;
+        max-width: 80px;
+        z-index: 25;
+        cursor: pointer;
+        box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.2), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        transition: transform 0.1s ease-in-out, box-shadow 0.1s ease-in-out;
+    }
+    .bgm-label:hover {
+        transform: scale(1.05);
+        box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.2), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    }
+    .bgm-label .truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        width: 100%;
+    }
+
+    /* Sound Assistant Styles */
+    .sound-keyword-highlight {
+      color: #ff0000; /* pure red */
+      cursor: pointer;
+    }
+
+    .manual-sound-marker {
+      border-bottom: 2px dashed #60a5fa; /* blue-400 */
+      color: #93c5fd; /* blue-300 */
+      font-weight: 500;
+      cursor: help;
+    }
+
+    /* Caret color for transparent contentEditable */
+    .transparent-text {
+      color: transparent;
+      caret-color: #f1f5f9; /* slate-100 */
+    }

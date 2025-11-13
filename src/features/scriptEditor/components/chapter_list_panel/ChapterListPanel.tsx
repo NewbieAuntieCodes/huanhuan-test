@@ -1,4 +1,3 @@
-import useStore from '../../../../store/useStore';
 import React, { useState, useCallback, useMemo } from 'react';
 import { Chapter } from '../../../../types';
 import { useEditorContext } from '../../contexts/EditorContext';
@@ -14,8 +13,10 @@ import ChapterPagination from './ChapterPagination';
 import BatchModifyModal from './BatchModifyModal';
 import MergeChaptersModal from './MergeChaptersModal';
 import ExportScriptModal, { ExportOption } from './ExportScriptModal';
-import { exportChaptersToDocx } from '../../services/docxExporter'; // Import the new service
+import { exportChaptersToDocx } from '../../services/docxExporter';
 import BatchAddChaptersModal from './BatchAddChaptersModal';
+// FIX: Import `useStore` to resolve "Cannot find name 'useStore'" error.
+import { useStore } from '../../../../store/useStore';
 
 const ChapterListPanel: React.FC = () => {
     const {
@@ -58,15 +59,8 @@ const ChapterListPanel: React.FC = () => {
             .map(c => c.id);
         
         const filterFn = (chapter: Chapter) => {
-            // If the chapter is the one being viewed, always keep it.
-            if (chapter.id === selectedChapterId) {
-                return true;
-            }
-            // If no characters match the CV, then only the selected chapter can be shown.
-            if (characterIdsForCv.length === 0) {
-                return false;
-            }
-            // Otherwise, check if the chapter contains lines from the filtered CV.
+            if (chapter.id === selectedChapterId) return true;
+            if (characterIdsForCv.length === 0) return false;
             return chapter.scriptLines.some(line => 
                 line.characterId && characterIdsForCv.includes(line.characterId)
             );
@@ -165,8 +159,6 @@ const ChapterListPanel: React.FC = () => {
     }, [multiSelectedChapterIds, deleteChapters]);
 
     const canMerge = useMemo(() => {
-        // The underlying merge logic correctly sorts chapters by their original project order,
-        // so we can allow merging non-contiguous chapters. The only requirement is at least 2 chapters.
         return multiSelectedChapterIds.length >= 2;
     }, [multiSelectedChapterIds.length]);
 
@@ -181,7 +173,6 @@ const ChapterListPanel: React.FC = () => {
     }, [multiSelectedChapterIds, currentProject]);
 
     const handleOpenMergeModal = useCallback(() => {
-        // 打开前做一次校验，避免误触发无效合并
         if (!canMerge) {
             alert('请至少选择两个章节再进行合并');
             return;
@@ -196,38 +187,18 @@ const ChapterListPanel: React.FC = () => {
         }
         mergeChapters(multiSelectedChapterIds, targetChapterId);
         setIsMergeModalOpen(false);
-        // 给予用户明确反馈
         alert('合并完成');
     }, [multiSelectedChapterIds, mergeChapters]);
 
     const handleExportConfirm = (option: ExportOption) => {
         if (!currentProject) return;
-
         let chaptersToExport: Chapter[] = [];
-        
         switch (option) {
-            case 'all':
-                chaptersToExport = currentProject.chapters;
-                break;
-            case 'multi':
-                if (multiSelectedChapterIds.length > 0) {
-                    chaptersToExport = currentProject.chapters.filter(ch => multiSelectedChapterIds.includes(ch.id));
-                }
-                break;
-            case 'view':
-                if (selectedChapterId) {
-                    const chapter = currentProject.chapters.find(ch => ch.id === selectedChapterId);
-                    if (chapter) chaptersToExport = [chapter];
-                }
-                break;
+            case 'all': chaptersToExport = currentProject.chapters; break;
+            case 'multi': if (multiSelectedChapterIds.length > 0) chaptersToExport = currentProject.chapters.filter(ch => multiSelectedChapterIds.includes(ch.id)); break;
+            case 'view': if (selectedChapterId) { const chapter = currentProject.chapters.find(ch => ch.id === selectedChapterId); if (chapter) chaptersToExport = [chapter]; } break;
         }
-
-        exportChaptersToDocx({
-            project: currentProject,
-            chaptersToExport,
-            characters,
-        });
-
+        exportChaptersToDocx({ project: currentProject, chaptersToExport, characters });
         setIsExportModalOpen(false);
     };
 
@@ -239,122 +210,27 @@ const ChapterListPanel: React.FC = () => {
 
     return (
         <div className="p-4 h-full flex flex-col bg-slate-800 text-slate-100">
-            <ChapterListHeader
-                project={currentProject}
-                currentPage={currentPage}
-                totalPages={totalPages}
-                filteredCount={filteredChapters.length}
-            />
-            <ChapterListActions
-                project={currentProject}
-                onParseProject={undoableParseProjectChapters}
-                chapterActions={chapterActions}
-                onOpenExportModal={() => setIsExportModalOpen(true)}
-            />
-            
+            <ChapterListHeader project={currentProject} currentPage={currentPage} totalPages={totalPages} filteredCount={filteredChapters.length} />
+            <ChapterListActions project={currentProject} onParseProject={undoableParseProjectChapters} chapterActions={chapterActions} onOpenExportModal={() => setIsExportModalOpen(true)} />
             <div className="flex items-center space-x-2 mb-2 pt-3 border-t border-slate-700">
-                <input
-                    type="checkbox"
-                    id="select-all-on-page"
-                    checked={allVisibleChaptersSelected}
-                    onChange={handleToggleSelectAllOnPage}
-                    disabled={isAnyOperationLoading || paginatedChapters.length === 0}
-                    className="form-checkbox h-4 w-4 text-sky-500 bg-slate-700 border-slate-600 rounded focus:ring-sky-400 cursor-pointer disabled:opacity-50"
-                />
-                <label htmlFor="select-all-on-page" className="text-sm text-slate-300 select-none">
-                    全选当前页 ({multiSelectedChapterIds.length} / {currentProject.chapters.length})
-                </label>
-                <button 
-                    onClick={() => setIsBatchModifyModalOpen(true)}
-                    className="ml-auto text-xs text-sky-300 hover:text-sky-100 bg-slate-700 px-2 py-1 rounded"
-                >
-                    批量操作...
-                </button>
+                <input type="checkbox" id="select-all-on-page" checked={allVisibleChaptersSelected} onChange={handleToggleSelectAllOnPage} disabled={isAnyOperationLoading || paginatedChapters.length === 0} className="form-checkbox h-4 w-4 text-sky-500 bg-slate-700 border-slate-600 rounded focus:ring-sky-400 cursor-pointer disabled:opacity-50" />
+                <label htmlFor="select-all-on-page" className="text-sm text-slate-300 select-none">全选当前页 ({multiSelectedChapterIds.length} / {currentProject.chapters.length})</label>
+                <button onClick={() => setIsBatchModifyModalOpen(true)} className="ml-auto text-xs text-sky-300 hover:text-sky-100 bg-slate-700 px-2 py-1 rounded">批量操作...</button>
             </div>
-
             <div className="flex-grow overflow-y-auto space-y-1 pr-1 -mr-1">
                 {paginatedChapters.map(chapter => {
                     const chapterIndex = currentProject.chapters.findIndex(c => c.id === chapter.id);
                     return (
-                    <ChapterListItem
-                        key={chapter.id}
-                        chapter={chapter}
-                        chapterIndex={chapterIndex}
-                        isSelectedForViewing={selectedChapterId === chapter.id}
-                        isMultiSelected={multiSelectedChapterIds.includes(chapter.id)}
-                        isAnyOperationLoading={isAnyOperationLoading}
-                        onToggleMultiSelect={(event) => {
-                            event.stopPropagation();
-                            handleToggleMultiSelect(chapter.id, event);
-                        }}
-                        onSelectForViewing={() => handleSelectForViewing(chapter.id)}
-                        isEditingThisItem={editingChapterId === chapter.id}
-                        editingTitleValue={editingTitleInput}
-                        onStartEditTitle={() => handleStartEditChapterTitle(chapter)}
-                        onTitleInputChange={handleEditingTitleInputChange}
-                        onSaveTitle={() => handleSaveChapterTitle(chapter.id)}
-                        onCancelEditTitle={handleCancelEditChapterTitle}
-                        onInsertChapterAfter={() => insertChapterAfter(chapter.id)}
-                    />
+                    <ChapterListItem key={chapter.id} chapter={chapter} chapterIndex={chapterIndex} isSelectedForViewing={selectedChapterId === chapter.id} isMultiSelected={multiSelectedChapterIds.includes(chapter.id)} isAnyOperationLoading={isAnyOperationLoading} onToggleMultiSelect={(event) => { event.stopPropagation(); handleToggleMultiSelect(chapter.id, event); }} onSelectForViewing={() => handleSelectForViewing(chapter.id)} isEditingThisItem={editingChapterId === chapter.id} editingTitleValue={editingTitleInput} onStartEditTitle={() => handleStartEditChapterTitle(chapter)} onTitleInputChange={handleEditingTitleInputChange} onSaveTitle={() => handleSaveChapterTitle(chapter.id)} onCancelEditTitle={handleCancelEditChapterTitle} onInsertChapterAfter={() => insertChapterAfter(chapter.id)} />
                 )})}
             </div>
-
-            <ChapterPagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                onPageChange={handlePageChange}
-                isAnyOperationLoading={isAnyOperationLoading}
-                isEditingTitle={isEditingTitle}
-            />
-
-            <BatchModifyModal
-                isOpen={isBatchModifyModalOpen}
-                onClose={() => setIsBatchModifyModalOpen(false)}
-                selectedCount={multiSelectedChapterIds.length}
-                onBatchDelete={handleBatchDelete}
-                onBatchMerge={handleOpenMergeModal}
-                canMerge={canMerge}
-                onBatchAdd={() => {
-                    setIsBatchModifyModalOpen(false);
-                    setIsBatchAddModalOpen(true);
-                }}
-            />
-            <BatchAddChaptersModal
-                isOpen={isBatchAddModalOpen}
-                onClose={() => setIsBatchAddModalOpen(false)}
-                onSave={async (count) => {
-                    if (currentProject) {
-                        setCvFilter(null);
-                        await batchAddChapters(count);
-                        const pid = currentProject?.id;
-                        if (pid) {
-                          const latest = useStore.getState().projects.find(p => p.id === pid);
-                          const lastId = latest?.chapters[latest.chapters.length - 1]?.id;
-                          if (lastId) setSelectedChapterId(lastId);
-                        }
-                    }
-                    setIsBatchAddModalOpen(false);
-                }}
-            />
-            <MergeChaptersModal
-                isOpen={isMergeModalOpen}
-                onClose={() => setIsMergeModalOpen(false)}
-                chaptersToMerge={chaptersToMerge}
-                allChapters={currentProject.chapters}
-                onConfirmMerge={handleConfirmMerge}
-            />
-            <ExportScriptModal
-                isOpen={isExportModalOpen}
-                onClose={() => setIsExportModalOpen(false)}
-                onConfirm={handleExportConfirm}
-                multiSelectCount={multiSelectedChapterIds.length}
-                currentChapterIndex={currentChapterIndex > -1 ? currentChapterIndex : null}
-                currentChapterTitle={currentProject.chapters.find(c => c.id === selectedChapterId)?.title || null}
-                projectTitle={currentProject.name}
-            />
+            <ChapterPagination currentPage={currentPage} totalPages={totalPages} onPageChange={handlePageChange} isAnyOperationLoading={isAnyOperationLoading} isEditingTitle={isEditingTitle} />
+            <BatchModifyModal isOpen={isBatchModifyModalOpen} onClose={() => setIsBatchModifyModalOpen(false)} selectedCount={multiSelectedChapterIds.length} onBatchDelete={handleBatchDelete} onBatchMerge={handleOpenMergeModal} canMerge={canMerge} onBatchAdd={() => { setIsBatchModifyModalOpen(false); setIsBatchAddModalOpen(true); }} />
+            <BatchAddChaptersModal isOpen={isBatchAddModalOpen} onClose={() => setIsBatchAddModalOpen(false)} onSave={async (count) => { if (currentProject) { setCvFilter(null); await batchAddChapters(count); const pid = currentProject?.id; if (pid) { const latest = useStore.getState().projects.find(p => p.id === pid); const lastId = latest?.chapters[latest.chapters.length - 1]?.id; if (lastId) setSelectedChapterId(lastId); } } setIsBatchAddModalOpen(false); }} />
+            <MergeChaptersModal isOpen={isMergeModalOpen} onClose={() => setIsMergeModalOpen(false)} chaptersToMerge={chaptersToMerge} allChapters={currentProject.chapters} onConfirmMerge={handleConfirmMerge} />
+            <ExportScriptModal isOpen={isExportModalOpen} onClose={() => setIsExportModalOpen(false)} onConfirm={handleExportConfirm} multiSelectCount={multiSelectedChapterIds.length} currentChapterIndex={currentChapterIndex > -1 ? currentChapterIndex : null} currentChapterTitle={currentProject.chapters.find(c => c.id === selectedChapterId)?.title || null} projectTitle={currentProject.name} />
         </div>
     );
 };
 
 export default ChapterListPanel;
-

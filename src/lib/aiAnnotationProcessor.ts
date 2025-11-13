@@ -67,8 +67,10 @@ export const processAiScriptAnnotations = (
 
     const rawTextFromAI = item.line_text;
     let displayText = rawTextFromAI;
-    // Add quotes for dialogue lines if not already present and not narrator
-    if (characterForLine && characterForLine.name.toLowerCase() !== 'narrator' && rawTextFromAI.trim() !== '') {
+    const nameForCheck = (characterForLine?.name || '').replace(/[\[\]()]/g, '').trim().toLowerCase();
+    const isSfxOrSilent = nameForCheck === '音效' || nameForCheck === '静音' || nameForCheck === 'sfx' || nameForCheck === 'silence' || nameForCheck === 'mute';
+    // Add quotes for dialogue lines if not already present and not narrator/SFX/Silence
+    if (characterForLine && characterForLine.name.toLowerCase() !== 'narrator' && !isSfxOrSilent && rawTextFromAI.trim() !== '') {
       const t = rawTextFromAI.trim();
       if (!((t.startsWith('“') && t.endsWith('”')) || (t.startsWith('"') && t.endsWith('"')))) {
          displayText = `“${rawTextFromAI}”`;
@@ -77,6 +79,7 @@ export const processAiScriptAnnotations = (
       }
     }
 
+    // SFX/Silence: 保留原文引号形态（不做额外处理）
     return {
       id: Date.now().toString() + "_line_ai_" + index + Math.random().toString(36).substr(2, 5),
       text: displayText,

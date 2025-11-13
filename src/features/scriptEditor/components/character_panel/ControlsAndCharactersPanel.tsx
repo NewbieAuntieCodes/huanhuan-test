@@ -1,11 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Character, ScriptLine, CharacterFilterMode } from '../../../../types';
-// DetailsModal and CvDetailsContent are no longer used here
-// Fix: Import from types.ts to break circular dependency
-import { CVStylesMap } from '../../../../types';
-// FIX: Corrected import path for EditorContext
+import React, { useState, useMemo } from 'react';
+import { Character } from '../../../../types';
 import { useEditorContext } from '../../contexts/EditorContext';
-
 import CharacterListHeaderControls from './CharacterListHeaderControls'; 
 import CharacterListItemView from './CharacterListItemView'; 
 import { useStore } from '../../../../store/useStore'; 
@@ -13,20 +8,14 @@ import MergeCharactersModal from '../editor_page_modal/MergeCharactersModal';
 
 interface ControlsAndCharactersPanelProps {
   onDeleteCharacter: (characterId: string) => void; 
-  onToggleCharacterStyleLock: (characterId: string) => void;
-  onBulkUpdateCharacterStylesForCV: (cvName: string, newBgColor: string, newTextColor: string) => void;
 }
-
-// Interface CharacterEditingContextForCvReturn is no longer needed
 
 export const ControlsAndCharactersPanel: React.FC<ControlsAndCharactersPanelProps> = ({
   onDeleteCharacter,
-  onToggleCharacterStyleLock,
-  onBulkUpdateCharacterStylesForCV,
 }) => {
   const {
     currentProject,
-    // characters: charactersFromContext, // Sourced from Zustand store below
+    characters,
     cvStyles,   
     selectedChapterId,
     openCharacterSidePanel,
@@ -43,80 +32,40 @@ export const ControlsAndCharactersPanel: React.FC<ControlsAndCharactersPanelProp
   const deleteCharactersAction = useStore(state => state.deleteCharacters);
   const openConfirmModal = useStore(state => state.openConfirmModal);
   const [searchTerm, setSearchTerm] = useState('');
-
-  // State for CV Details Modal is removed
-  // const [isCvDetailsModalOpen, setIsCvDetailsModalOpen] = useState(false);
-  // const [cvDetailsModalTitle, setCvDetailsModalTitle] = useState('');
-  // const [currentCvNameForDetailsModal, setCurrentCvNameForDetailsModal] = useState<string | null>(null);
-  // const [characterEditingContextForCvReturn, setCharacterEditingContextForCvReturn] = useState<CharacterEditingContextForCvReturn | null>(null);
   const [selectedCharacterIdsForMerge, setSelectedCharacterIdsForMerge] = useState<string[]>([]);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
 
-
   const charactersToDisplay = useMemo(() => {
-    let filteredChars = storeCharacters.filter(c => (!c.projectId || c.projectId === currentProject?.id) && c.status !== 'merged');
+    let relevantChars = storeCharacters.filter(c => (!c.projectId || c.projectId === currentProject?.id) && c.status !== 'merged');
+    const uniqueCharsMap = new Map<string, Character>();
+    relevantChars.forEach(char => {
+        const lowerCaseName = char.name.toLowerCase();
+        const existingChar = uniqueCharsMap.get(lowerCaseName);
+        if (!existingChar || (char.projectId && !existingChar.projectId)) {
+            uniqueCharsMap.set(lowerCaseName, char);
+        }
+    });
+    let uniqueChars = Array.from(uniqueCharsMap.values());
     
     if (characterFilterMode === 'currentChapter' && currentProject && selectedChapterId) {
       const chapter = currentProject.chapters.find(ch => ch.id === selectedChapterId);
-      const characterIdsInChapter = new Set(
-        chapter?.scriptLines.map(line => line.characterId).filter(Boolean) as string[]
-      );
-      filteredChars = filteredChars.filter(char => characterIdsInChapter.has(char.id));
+      const characterIdsInChapter = new Set(chapter?.scriptLines.map(line => line.characterId).filter(Boolean) as string[]);
+      uniqueChars = uniqueChars.filter(char => characterIdsInChapter.has(char.id));
     }
 
     if (searchTerm.trim() !== '') {
         const lowercasedSearchTerm = searchTerm.toLowerCase();
-        filteredChars = filteredChars.filter(char => 
+        uniqueChars = uniqueChars.filter(char => 
             char.name.toLowerCase().includes(lowercasedSearchTerm) ||
             (char.cvName && char.cvName.toLowerCase().includes(lowercasedSearchTerm))
         );
     }
-
-    return filteredChars;
+    return uniqueChars;
   }, [storeCharacters, characterFilterMode, currentProject, selectedChapterId, searchTerm]);
-
-
-  // Effects and functions related to CV Details Modal are removed
-  // useEffect(() => {
-  //   if (!isCvDetailsModalOpen) {
-  //     setCurrentCvNameForDetailsModal(null);
-  //     setCharacterEditingContextForCvReturn(null);
-  //   }
-  // }, [isCvDetailsModalOpen]);
-  
-  // const editCharacterFromCvDetails = (char: Character, cvNameContext: string) => {
-  //   setIsCvDetailsModalOpen(false); 
-  //   setCharacterEditingContextForCvReturn({ characterId: char.id, originalCvName: cvNameContext });
-  //   openCharacterEditModal(char); 
-  // };
-
-  // useEffect(() => {
-  //   if (characterEditingContextForCvReturn && !isCvDetailsModalOpen && !document.querySelector('.fixed.inset-0.bg-black.bg-opacity-75')) { 
-  //     const { originalCvName } = characterEditingContextForCvReturn;
-  //     const charForCvContext = storeCharacters.find(c => c.cvName === originalCvName); 
-      
-  //     if (charForCvContext) {
-  //       openCvDetailsModalAndSetContext(originalCvName, charForCvContext);
-  //     }
-  //     setCharacterEditingContextForCvReturn(null); 
-  //   }
-  // }, [characterEditingContextForCvReturn, isCvDetailsModalOpen, storeCharacters, openCharacterEditModal]);
 
   const handleAddNewCharacterClick = () => {
     openCharacterEditModal(null); 
   };
-
-  // openCvDetailsModalAndSetContext is removed
-  // const openCvDetailsModalAndSetContext = (cvNameFromButton: string, characterContext: Character) => {
-  //   const actualCvName = characterContext.cvName || cvNameFromButton;
-  //   if (!actualCvName) {
-  //     alert("CV名称未设定，无法查看详情。");
-  //     return;
-  //   }
-  //   setCurrentCvNameForDetailsModal(actualCvName);
-  //   setCvDetailsModalTitle(`CV详情: ${actualCvName}`);
-  //   setIsCvDetailsModalOpen(true);
-  // };
   
   const handleToggleSelectForMerge = (characterId: string) => {
     setSelectedCharacterIdsForMerge(prev =>
@@ -158,7 +107,6 @@ export const ControlsAndCharactersPanel: React.FC<ControlsAndCharactersPanelProp
         alert("请先勾选要删除的角色。");
         return;
     }
-
     openConfirmModal(
         `批量删除角色确认`,
         `您确定要删除选中的 ${selectedCharacterIdsForMerge.length} 个角色吗？\n所有项目中引用这些角色的台词行，其角色将被重置为“未分配”。此操作无法撤销。`,
@@ -170,7 +118,6 @@ export const ControlsAndCharactersPanel: React.FC<ControlsAndCharactersPanelProp
         "取消"
     );
   };
-
 
   return (
     <div className="p-4 h-full flex flex-col bg-slate-800 text-slate-100">
@@ -186,7 +133,6 @@ export const ControlsAndCharactersPanel: React.FC<ControlsAndCharactersPanelProp
         searchTerm={searchTerm}
         onSearchTermChange={setSearchTerm}
       />
-      
       <div className="flex-grow overflow-y-auto space-y-1.5 pr-1">
         {charactersToDisplay.length === 0 ? (
           <p className="text-slate-400 text-sm text-center py-3">
@@ -199,7 +145,6 @@ export const ControlsAndCharactersPanel: React.FC<ControlsAndCharactersPanelProp
               character={char}
               cvStyles={cvStyles} 
               onOpenCvModal={openCvModal} 
-              // onOpenCvDetailsModal prop removed
               onOpenCharacterSidePanel={openCharacterSidePanel} 
               onEditCharacter={openCharacterEditModal} 
               onDeleteCharacter={onDeleteCharacter} 
@@ -209,24 +154,6 @@ export const ControlsAndCharactersPanel: React.FC<ControlsAndCharactersPanelProp
           ))
         )}
       </div>
-
-      {/* CV Details Modal rendering is removed */}
-      {/* {currentCvNameForDetailsModal && (
-        <DetailsModal
-          isOpen={isCvDetailsModalOpen}
-          onClose={() => setIsCvDetailsModalOpen(false)}
-          title={cvDetailsModalTitle}
-        >
-          <CvDetailsContent
-            cvName={currentCvNameForDetailsModal}
-            characters={storeCharacters} 
-            cvStyles={cvStyles}    
-            onToggleCharacterStyleLock={onToggleCharacterStyleLock} 
-            onEditCharacterFromCvDetails={editCharacterFromCvDetails} 
-            onBulkUpdateCharacterStylesForCV={onBulkUpdateCharacterStylesForCV} 
-          />
-        </DetailsModal>
-      )} */}
       {isMergeModalOpen && selectedCharacterIdsForMerge.length > 0 && (
         <MergeCharactersModal
           isOpen={isMergeModalOpen}

@@ -147,19 +147,33 @@ export const exportChaptersToDocx = async ({
                 ${chapter.scriptLines.map(line => {
                     const character = line.characterId ? characterMap.get(line.characterId) : null;
                     const isNarrator = !character || character.name.toLowerCase() === 'narrator';
+                    const soundTypePrefix = line.soundType ? `(${line.soundType}) ` : '';
 
                     if (isNarrator) {
-                        return `<div class="line">${line.text.replace(/\n/g, '<br>')}</div>`;
+                        return `<div class="line">${soundTypePrefix}${line.text.replace(/\n/g, '<br>')}</div>`;
                     }
                     
-                    const speakerTag = character.cvName ? `【${character.cvName}-${character.name}】` : `【${character.name}】`;
+                    const displayCharName = character ? (character.name === '音效' ? '[音效]' : character.name) : '';
+                    const speakerTag = character?.cvName ? `【${character.cvName}-${displayCharName}】` : `【${displayCharName}】`;
                     const bgColor = getColorAsHex(character?.color, '#334155');
                     const textColor = character?.textColor ? getColorAsHex(character.textColor, '#f1f5f9') : getContrastingTextColor(bgColor);
+                    const isSfx = character?.name === '音效' || character?.name === '[音效]' || character?.name === '��Ч' || character?.name === '[��Ч]';
+                    if (isSfx) {
+                        const core = (line.text || '').trim();
+                        const bracketed = (core.startsWith('[') && core.endsWith(']')) ? core : `[${core}]`;
+                        return `
+                            <div class="line">
+                                <span class="dialogue-line" style="background-color: transparent; color: ${textColor};">
+                                    ${speakerTag} ${bracketed}
+                                </span>
+                            </div>
+                        `;
+                    }
                     
                     return `
                         <div class="line">
                             <span class="dialogue-line" style="background-color: ${bgColor}; color: ${textColor};">
-                                ${speakerTag}${line.text}
+                                ${speakerTag}${soundTypePrefix}${line.text}
                             </span>
                         </div>
                     `;

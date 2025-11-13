@@ -44,6 +44,8 @@ const AudioAlignmentPage: React.FC = () => {
     setMultiSelectedChapterIds: state.setAudioAlignmentMultiSelectedChapterIds,
     lufsSettings: state.lufsSettings,
     setLufsSettings: state.setLufsSettings,
+    isRecordingMode: state.isRecordingMode,
+    setRecordingMode: state.setRecordingMode,
   }));
 
   const {
@@ -52,7 +54,8 @@ const AudioAlignmentPage: React.FC = () => {
     openConfirmModal, clearAudioFromChapters, waveformEditorState, openWaveformEditor,
     closeWaveformEditor, cvFilter, setCvFilter, characterFilter, setCharacterFilter,
     activeRecordingLineId, setActiveRecordingLineId, webSocketStatus,
-    multiSelectedChapterIds, setMultiSelectedChapterIds, lufsSettings, setLufsSettings
+    multiSelectedChapterIds, setMultiSelectedChapterIds, lufsSettings, setLufsSettings,
+    isRecordingMode, setRecordingMode
   } = store;
 
   const lineRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -62,8 +65,6 @@ const AudioAlignmentPage: React.FC = () => {
   const [isExportingToReaper, setIsExportingToReaper] = useState(false);
   const [isSilenceSettingsModalOpen, setIsSilenceSettingsModalOpen] = useState(false);
   const [lastSelectedChapterForShiftClick, setLastSelectedChapterForShiftClick] = useState<string | null>(null);
-  const [isRecordingMode, setIsRecordingMode] = useState(false);
-  
   const currentProject = projects.find(p => p.id === selectedProjectId);
 
   useEffect(() => {
@@ -80,10 +81,13 @@ const AudioAlignmentPage: React.FC = () => {
     handleFileSelectionForSmartMatch,
     isChapterMatchLoading,
     handleFileSelectionForChapterMatch,
+    isReturnMatchLoading,
+    handleFileSelectionForReturnMatch,
   } = useAudioFileMatcher({
     currentProject,
     characters,
     assignAudioToLine,
+    multiSelectedChapterIds,
   });
 
   const { projectCharacters, projectCvNames } = useMemo<{ projectCharacters: Character[], projectCvNames: string[] }>(() => {
@@ -105,7 +109,7 @@ const AudioAlignmentPage: React.FC = () => {
 
   const nonAudioCharacterIds = useMemo(() => {
     return characters
-      .filter(c => c.name === '[静音]' || c.name === '音效')
+      .filter(c => c.name === '[静音]' || c.name === '音效' || c.name === '[音效]')
       .map(c => c.id);
   }, [characters]);
 
@@ -315,7 +319,7 @@ const AudioAlignmentPage: React.FC = () => {
             currentProjectName={currentProject.name}
             webSocketStatus={webSocketStatus}
             isRecordingMode={isRecordingMode}
-            onToggleRecordingMode={() => setIsRecordingMode(!isRecordingMode)}
+            onToggleRecordingMode={() => setRecordingMode(!isRecordingMode)}
             cvFilter={cvFilter}
             onCvFilterChange={setCvFilter}
             characterFilter={characterFilter}
@@ -337,6 +341,8 @@ const AudioAlignmentPage: React.FC = () => {
             onGoBack={onGoBack}
             onFileSelectionForSmartMatch={handleFileSelectionForSmartMatch}
             onFileSelectionForChapterMatch={handleFileSelectionForChapterMatch}
+            isReturnMatchLoading={isReturnMatchLoading}
+            onFileSelectionForReturnMatch={handleFileSelectionForReturnMatch}
         />
         <div className="flex flex-grow overflow-hidden">
             <ResizablePanels

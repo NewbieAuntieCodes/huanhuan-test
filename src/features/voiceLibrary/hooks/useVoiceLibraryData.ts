@@ -12,6 +12,8 @@ export interface VoiceLibraryRowState {
   audioUrl: string | null;
   error: string | null;
   originalLineId?: string;
+  emotion?: string;
+  characterId?: string;
 }
 
 interface UseVoiceLibraryDataProps {
@@ -32,13 +34,14 @@ export const useVoiceLibraryData = ({ selectedCharacterId, chapterFilter }: UseV
 
     const charactersInProject = useMemo(() => {
         if (!selectedProjectId) {
-            return characters.filter(c => !c.projectId && c.status !== 'merged' && c.name !== '[静音]' && c.name !== '音效' && c.name !== 'Narrator');
+            return characters.filter(c => !c.projectId && c.status !== 'merged' && c.name !== '[静音]' && c.name !== '音效' && c.name !== '[音效]' && c.name !== 'Narrator');
         }
         return characters.filter(c =>
             (c.projectId === selectedProjectId || !c.projectId) &&
             c.status !== 'merged' && 
             c.name !== '[静音]' && 
             c.name !== '音效' &&
+            c.name !== '[音效]' &&
             c.name !== 'Narrator'
         );
     }, [characters, selectedProjectId]);
@@ -70,7 +73,7 @@ export const useVoiceLibraryData = ({ selectedCharacterId, chapterFilter }: UseV
         };
         
         const nonAudioCharacterIds = characters
-            .filter(c => c.name === '[静音]' || c.name === '音效')
+            .filter(c => c.name === '[静音]' || c.name === '音效' || c.name === '[音效]')
             .map(c => c.id);
 
         const scriptLines = currentProject.chapters.flatMap((chapter, index) => {
@@ -92,6 +95,8 @@ export const useVoiceLibraryData = ({ selectedCharacterId, chapterFilter }: UseV
             promptFilePath: null, promptAudioUrl: null, promptFileName: null,
             text: line.text, status: 'idle', audioUrl: null, error: null,
             originalLineId: line.id,
+            emotion: line.emotion || '',
+            characterId: line.characterId,
         })));
     }, [selectedCharacterId, chapterFilter, currentProject, characters]);
 

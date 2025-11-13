@@ -3,14 +3,16 @@ import React from 'react';
 import * as mm from 'music-metadata-browser';
 import { Project, Character, Chapter, ScriptLine, MasterAudio } from '../../../types';
 import { bufferToWav } from '../../../lib/wavEncoder';
-import { db } from '../../../db';
 // FIX: Import `Buffer` to resolve "Cannot find name 'Buffer'" error.
 import { Buffer } from 'buffer';
+// FIX: Import the 'db' instance to resolve 'Cannot find name 'db''.
+import { db } from '../../../db';
 
 interface UseAudioFileMatcherProps {
   currentProject: Project | undefined;
   characters: Character[];
   assignAudioToLine: (projectId: string, chapterId: string, lineId: string, audioBlob: Blob, sourceAudioId?: string, sourceAudioFilename?: string) => Promise<void>;
+  multiSelectedChapterIds?: string[];
 }
 
 const parseChapterIdentifier = (identifier: string): number[] => {
@@ -150,8 +152,9 @@ const parseXmpCuePoints = (metadata: any, audioDuration: number): { startTime: n
         console.log(`从XMP中解析到 ${segments.length} 个音频段落（包含起始段）`);
         return segments;
 
-    } catch (error) {
-        console.error('解析XMP CuePoint标记失败:', error);
+    } catch (error: unknown) {
+        // FIX: The 'error' variable is of type 'unknown' in a catch block. Safely convert it to a string for logging to prevent a runtime crash.
+        console.error('解析XMP CuePoint标记失败:', String(error));
         return null;
     }
 };
@@ -171,13 +174,15 @@ export const useAudioFileMatcher = ({
   currentProject,
   characters,
   assignAudioToLine,
+  multiSelectedChapterIds,
 }: UseAudioFileMatcherProps) => {
   const [isSmartMatchLoading, setIsSmartMatchLoading] = React.useState(false);
   const [isChapterMatchLoading, setIsChapterMatchLoading] = React.useState(false);
+  const [isReturnMatchLoading, setIsReturnMatchLoading] = React.useState(false);
 
   const nonAudioCharacterIds = React.useMemo(() => {
     return characters
-      .filter(c => c.name === '[静音]' || c.name === '音效')
+      .filter(c => c.name === '[静音]' || c.name === '音效' || c.name === '[音效]')
       .map(c => c.id);
   }, [characters]);
 
@@ -331,8 +336,8 @@ export const useAudioFileMatcher = ({
         let metadata;
         try {
             metadata = await mm.parseBlob(file);
-        } catch (e) {
-            // FIX: The 'e' object in a catch block is of type 'unknown'. Use a type guard to safely access its properties before attempting to read a message from it.
+        } catch (e: unknown) {
+            // FIX: The 'e' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message' to prevent runtime errors.
             const message = e instanceof Error ? e.message : String(e);
             const errorMsg = `音频文件解析失败: ${message}`;
             console.error(`Metadata parsing failed for ${file.name}:`, message);
@@ -439,11 +444,12 @@ export const useAudioFileMatcher = ({
           errorMessage: warningMessage || undefined
         };
 
-    } catch (error) {
-        // FIX: Add type guard for 'unknown' error object before accessing properties.
+    } catch (error: unknown) {
+        // FIX: The 'error' variable is of type 'unknown'. Use 'instanceof Error' to safely access properties like 'message', or convert to string for logging. This prevents runtime errors.
         const message = error instanceof Error ? error.message : String(error);
         const errorMsg = `处理失败: ${message}`;
-        console.error(`Error processing master audio file ${file.name}:`, message);
+        // FIX: The 'error' variable is of type 'unknown'. It should be converted to a string before being logged to avoid a runtime crash.
+        console.error(`Error processing master audio file ${file.name}:`, String(error));
         return {
           filename: file.name,
           success: false,
@@ -455,6 +461,124 @@ export const useAudioFileMatcher = ({
     }
   }, [currentProject, characters, nonAudioCharacterIds, assignAudioToLine]);
 
+
+  const handleFileSelectionForReturnMatch = React.useCallback(async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const files = event.target.files;
+    if (!files || files.length === 0 || !currentProject) return;
+
+    setIsReturnMatchLoading(true);
+
+    try {
+        const file = files[0]; // Process only the first file for return matching
+
+        const chaptersToSearch = (multiSelectedChapterIds && multiSelectedChapterIds.length > 0)
+            ? currentProject.chapters.filter(ch => multiSelectedChapterIds.includes(ch.id))
+            : [];
+        
+        if (chaptersToSearch.length === 0) {
+            throw new Error('请先在左侧章节列表中选择一个或多个章节范围。');
+        }
+
+        const targetLines = chaptersToSearch.flatMap(chapter =>
+            chapter.scriptLines
+                .filter(line => line.isMarkedForReturn)
+                .map(line => ({ line, chapterId: chapter.id }))
+        );
+
+        if (targetLines.length === 0) {
+            throw new Error('在选定范围内未找到标记为“返音”的句子。');
+        }
+
+        console.log(`返音匹配: 找到 ${targetLines.length} 条目标行`);
+
+        const sourceAudioId = `${currentProject.id}_return_${file.name}_${Date.now()}`;
+
+        const oldBlobs = await db.audioBlobs.where('sourceAudioId').equals(sourceAudioId).toArray();
+        if (oldBlobs.length > 0) {
+            await db.audioBlobs.bulkDelete(oldBlobs.map(b => b.id));
+        }
+
+        let metadata;
+        try {
+            metadata = await mm.parseBlob(file);
+        } catch (e: unknown) {
+            // FIX: The 'e' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message' to prevent runtime errors.
+            throw new Error(`音频文件解析失败: ${e instanceof Error ? e.message : String(e)}`);
+        }
+        
+        const duration = metadata.format.duration || 0;
+        const audioSegments = parseXmpCuePoints(metadata, duration);
+
+        if (!audioSegments || audioSegments.length === 0) {
+            throw new Error(`音频文件中未找到标记点 (Cue Points)。`);
+        }
+
+        let warningMessage = '';
+        if (audioSegments.length !== targetLines.length) {
+            warningMessage = `⚠️ 数量不匹配：找到 ${audioSegments.length} 个音频片段，但有 ${targetLines.length} 句返音。将按顺序匹配前 ${Math.min(audioSegments.length, targetLines.length)} 句。`;
+            console.warn(warningMessage);
+        }
+
+        const masterAudioEntry: MasterAudio = { id: sourceAudioId, projectId: currentProject.id, data: file };
+        await db.masterAudios.put(masterAudioEntry);
+
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const mainAudioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+
+        let matchedCount = 0;
+        const limit = Math.min(targetLines.length, audioSegments.length);
+
+        for (let i = 0; i < limit; i++) {
+            const segment = audioSegments[i];
+            const lineInfo = targetLines[i];
+            
+            const segmentDuration = segment.endTime - segment.startTime;
+            if (segmentDuration <= 0) continue;
+
+            const startSample = Math.floor(segment.startTime * mainAudioBuffer.sampleRate);
+            const endSample = Math.floor(segment.endTime * mainAudioBuffer.sampleRate);
+            
+            const segmentBuffer = audioContext.createBuffer(mainAudioBuffer.numberOfChannels, endSample - startSample, mainAudioBuffer.sampleRate);
+            for (let ch = 0; ch < mainAudioBuffer.numberOfChannels; ch++) {
+                segmentBuffer.copyToChannel(mainAudioBuffer.getChannelData(ch).subarray(startSample, endSample), ch);
+            }
+
+            const segmentBlob = bufferToWav(segmentBuffer);
+            await assignAudioToLine(currentProject.id, lineInfo.chapterId, lineInfo.line.id, segmentBlob, sourceAudioId, file.name);
+            matchedCount++;
+        }
+
+        audioContext.close();
+
+        const result: FileProcessResult = {
+            filename: file.name,
+            success: matchedCount === targetLines.length && audioSegments.length === targetLines.length,
+            matched: matchedCount,
+            expected: targetLines.length,
+            foundSegments: audioSegments.length,
+            errorMessage: warningMessage || undefined
+        };
+        
+        let message = `返音匹配完成: ${result.filename}\n\n`;
+        if (result.success) {
+            message += `✅ 成功匹配所有 ${result.matched} 条返音。`;
+        } else {
+            message += `匹配: ${result.matched}/${result.expected} 行\n`;
+            message += `找到片段: ${result.foundSegments}\n`;
+            if (result.errorMessage) message += `原因: ${result.errorMessage}`;
+        }
+        alert(message);
+        
+    } catch (error: unknown) {
+        // FIX: The 'error' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message' to prevent a runtime crash.
+        alert(`返音匹配失败: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+        setIsReturnMatchLoading(false);
+        if (event.target) event.target.value = '';
+    }
+  }, [currentProject, multiSelectedChapterIds, assignAudioToLine]);
 
   const handleFileSelection = React.useCallback(async (
     event: React.ChangeEvent<HTMLInputElement>,
@@ -560,5 +684,7 @@ export const useAudioFileMatcher = ({
     handleFileSelectionForSmartMatch,
     isChapterMatchLoading,
     handleFileSelectionForChapterMatch,
+    isReturnMatchLoading,
+    handleFileSelectionForReturnMatch,
   };
 };

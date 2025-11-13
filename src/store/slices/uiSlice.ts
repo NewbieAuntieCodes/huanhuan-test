@@ -3,6 +3,7 @@ import { AppState } from '../useStore'; // Import AppState for cross-slice type 
 import { AppView, ScriptLine, Character } from '../../types';
 import React from 'react';
 import { db } from '../../db';
+import { miscRepository } from '../../repositories';
 
 export type AiProvider = 'gemini' | 'openai' | 'moonshot' | 'deepseek';
 export type WebSocketStatus = 'connecting' | 'connected' | 'disconnected';
@@ -66,6 +67,10 @@ export interface UiSlice {
   activeRecordingLineId: string | null;
   webSocketStatus: WebSocketStatus;
   lufsSettings: LufsSettings;
+  soundObservationList: string[];
+  isRecordingMode: boolean;
+
+
 
 
   navigateTo: (view: AppView) => void;
@@ -102,6 +107,8 @@ export interface UiSlice {
   setActiveRecordingLineId: (id: string | null) => void;
   setWebSocketStatus: (status: WebSocketStatus) => void;
   setLufsSettings: (settings: Partial<LufsSettings>) => Promise<void>;
+  setSoundObservationList: (list: string[]) => Promise<void>;
+  setRecordingMode: (enabled: boolean) => void;
   goToNextLine: () => Promise<void>;
 }
 
@@ -131,6 +138,8 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   activeRecordingLineId: null,
   webSocketStatus: 'disconnected',
   lufsSettings: { enabled: false, target: -18 },
+  soundObservationList: [],
+  isRecordingMode: false,
 
   navigateTo: (view) => set({ currentView: view }),
   setIsLoading: (loading) => set({ isLoading: loading }),
@@ -222,6 +231,10 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
     await db.misc.put({ key: 'characterShortcuts', value: shortcuts });
     set({ characterShortcuts: shortcuts });
   },
+  setSoundObservationList: async (list) => {
+    await miscRepository.saveSoundObservationList(list);
+    set({ soundObservationList: list });
+  },
   setAudioAlignmentCvFilter: (filter) => set({ audioAlignmentCvFilter: filter }),
   setAudioAlignmentCharacterFilter: (filter) => set({ audioAlignmentCharacterFilter: filter }),
   setAudioAlignmentMultiSelectedChapterIds: (ids) => set({ audioAlignmentMultiSelectedChapterIds: ids }),
@@ -232,6 +245,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
     await db.misc.put({ key: 'lufsSettings', value: newSettings });
     set({ lufsSettings: newSettings });
   },
+  setRecordingMode: (enabled) => set({ isRecordingMode: enabled }),
   goToNextLine: async () => {
     const {
         projects, selectedProjectId, selectedChapterId, characters, activeRecordingLineId,
@@ -243,7 +257,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
     if (!project) return;
     
     const nonAudioCharacterIds = characters
-        .filter(c => c.name === '[静音]' || c.name === '音效')
+        .filter(c => c.name === '[静音]' || c.name === '音效' || c.name === '[音效]')
         .map(c => c.id);
 
     const isLineMatch = (line: ScriptLine): boolean => {

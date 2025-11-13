@@ -94,9 +94,14 @@ export const exportCharacterClips = async (
                 const character = line.characterId ? characterMap.get(line.characterId) : null;
                 if (!character) continue;
 
-                const baseName = character.cvName
-                    ? `【${character.cvName}-${character.name}】${line.text}`
-                    : `【${character.name}】${line.text}`;
+                const emotionValue = row.emotion?.trim();
+                const emotionTag = emotionValue ? `(${emotionValue})` : '';
+                const cleanText = line.text.trim();
+                const quotedText = cleanText
+                    ? (cleanText.startsWith('“') && cleanText.endsWith('”') ? cleanText : `“${cleanText}”`)
+                    : line.text;
+                const speakerLabel = character.cvName ? `${character.cvName}-${character.name}` : character.name;
+                const baseName = `【${speakerLabel}】${emotionTag}${quotedText}`;
                 zip.file(`${sanitizeFilename(baseName)}.mp3`, audioBlob.data);
             }
         }
@@ -123,11 +128,13 @@ export const exportCharacterClips = async (
             alert(`成功导出 ${rowsToExport.length} 个音频片段到 ${filename}`);
             return; // Success, exit function
         } catch (err) {
+            // FIX: Added 'instanceof Error' check to safely access properties on the 'err' object.
             if (err instanceof Error && err.name === 'AbortError') {
                 console.log('用户取消了保存文件。');
                 return; // User cancelled, do nothing.
             }
-            console.error('使用 showSaveFilePicker 失败，将回退到传统下载:', err);
+            const errorMessage = String(err);
+            console.error('使用 showSaveFilePicker 失败，将回退到传统下载:', errorMessage);
             alert("保存文件失败，将回退到传统下载方式。");
         }
     } else {

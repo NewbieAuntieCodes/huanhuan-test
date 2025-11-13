@@ -23,7 +23,7 @@ const getLineType = (line: ScriptLine | undefined, characters: Character[]): Lin
     if (!line || !line.characterId) return 'narration';
     const character = characters.find(c => c.id === line.characterId);
     if (!character || character.name === 'Narrator' || character.name === '[静音]') return 'narration';
-    if (character.name === '音效') return 'sfx';
+    if (character.name === '音效' || character.name === '[音效]') return 'sfx';
     return 'dialogue';
 };
 

@@ -11,6 +11,7 @@ import {
   CheckCircleIcon,
   XMarkIcon,
   ArrowDownOnSquareIcon,
+  ReturnIcon,
 } from '../../../components/ui/icons';
 import LoadingSpinner from '../../../components/ui/LoadingSpinner';
 import { Character } from '../../../types';
@@ -44,6 +45,8 @@ interface AudioAlignmentHeaderProps {
   onGoBack: () => void;
   onFileSelectionForSmartMatch: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onFileSelectionForChapterMatch: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  isReturnMatchLoading: boolean;
+  onFileSelectionForReturnMatch: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 const StatusIndicator: React.FC<{ status: WebSocketStatus }> = ({ status }) => {
@@ -84,12 +87,16 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
   onGoBack,
   onFileSelectionForSmartMatch,
   onFileSelectionForChapterMatch,
+  isReturnMatchLoading,
+  onFileSelectionForReturnMatch,
 }) => {
     const chapterMatchFileInputRef = useRef<HTMLInputElement>(null);
     const smartMatchFileInputRef = useRef<HTMLInputElement>(null);
+    const returnMatchFileInputRef = useRef<HTMLInputElement>(null);
 
     const handleChapterMatchClick = () => chapterMatchFileInputRef.current?.click();
     const handleSmartMatchClick = () => smartMatchFileInputRef.current?.click();
+    const handleReturnMatchClick = () => returnMatchFileInputRef.current?.click();
 
   return (
     <header className="flex items-center justify-between p-4 border-b border-slate-800 flex-shrink-0 flex-wrap gap-2">
@@ -114,6 +121,13 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
               accept="audio/*"
               ref={smartMatchFileInputRef}
               onChange={onFileSelectionForSmartMatch}
+              className="hidden"
+          />
+          <input
+              type="file"
+              accept="audio/*"
+              ref={returnMatchFileInputRef}
+              onChange={onFileSelectionForReturnMatch}
               className="hidden"
           />
           <button
@@ -153,7 +167,7 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
                       >
                           <option value="">所有角色</option>
                           {projectCharacters
-                              .filter(c => c.name !== '[静音]' && c.name !== '音效' && c.name !== 'Narrator')
+                              .filter(c => c.name !== '[静音]' && c.name !== '音效' && c.name !== '[音效]' && c.name !== 'Narrator')
                               .sort((a,b) => a.name.localeCompare(b.name, 'zh-Hans-CN'))
                               .map(char => <option key={char.id} value={char.id}>{char.name}</option>)}
                       </select>
@@ -202,6 +216,16 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
           >
               {isChapterMatchLoading ? <LoadingSpinner /> : <ListBulletIcon className="w-4 h-4 mr-1" />}
               {isChapterMatchLoading ? '匹配中...' : '按章节匹配'}
+          </button>
+          <button
+              onClick={handleReturnMatchClick}
+              disabled={isReturnMatchLoading}
+              className="flex items-center text-sm text-amber-300 hover:text-amber-100 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-50"
+              aria-label="按返音匹配批量上传"
+              title="根据返音标记和所选章节范围，匹配并替换音频"
+          >
+              {isReturnMatchLoading ? <LoadingSpinner /> : <ReturnIcon className="w-4 h-4 mr-1" />}
+              {isReturnMatchLoading ? '匹配中...' : '按返音匹配'}
           </button>
           <button
               onClick={onOpenExportModal}

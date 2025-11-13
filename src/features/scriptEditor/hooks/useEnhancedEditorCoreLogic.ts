@@ -103,11 +103,11 @@ export const useEnhancedEditorCoreLogic = ({
   }, [applyUndoableProjectUpdate]);
 
   const insertChapterAfter = useCallback((afterChapterId: string) => {
-    // 先清空 CV 筛选，确保新插入章节立即可见
+    // ����� CV ɸѡ��ȷ���²����½������ɼ�
     setCvFilter(null);
     const newChapter: Chapter = {
         id: `ch_${Date.now()}_${Math.random()}`,
-        title: `新章节`,
+        title: `���½�`,
         rawContent: '',
         scriptLines: [],
     };
@@ -130,10 +130,10 @@ export const useEnhancedEditorCoreLogic = ({
       };
     });
 
-    // 选中新插入的章节。为避免在项目异步更新落库前被“无效选中”逻辑清空，这里稍作延迟。
+    // ѡ���²�����½ڡ�Ϊ��������Ŀ�첽�������ǰ������Чѡ�С��߼���գ����������ӳ١�
     setTimeout(() => setSelectedChapterId(newChapter.id), 50);
-    // 如果当前应用了 CV 过滤，新建章节通常没有行会被过滤掉；
-    // 选中章节已经会被强制保留，但为了更直观，这里同时清空一次 CV 过滤。
+    // �����ǰӦ���� CV ���ˣ��½��½�ͨ��û���лᱻ���˵���
+    // ѡ���½��Ѿ��ᱻǿ�Ʊ�������Ϊ�˸�ֱ�ۣ�����ͬʱ���һ�� CV ���ˡ�
     setCvFilter(null);
   }, [applyUndoableProjectUpdate, setSelectedChapterId, setCvFilter]);
 
@@ -146,7 +146,7 @@ export const useEnhancedEditorCoreLogic = ({
         .filter(ch => chapterIds.includes(ch.id))
         .sort((a,b) => prevProject.chapters.findIndex(c => c.id === a.id) - prevProject.chapters.findIndex(c => c.id === b.id));
 
-      // Fallback: 如果章节的 rawContent 为空，则用台词文本拼接，避免“看起来没变化”的问题
+      // Fallback: ����½ڵ� rawContent Ϊ�գ�����̨���ı�ƴ�ӣ����⡰������û�仯��������
       const getSafeRawContent = (ch: Chapter): string => {
         const trimmed = (ch.rawContent || '').trim();
         if (trimmed.length > 0) return trimmed;
@@ -169,6 +169,44 @@ export const useEnhancedEditorCoreLogic = ({
       return { ...prevProject, chapters: newChapters };
     });
     setSelectedChapterId(targetChapterId);
+    setMultiSelectedChapterIds([]);
+  }, [applyUndoableProjectUpdate, setSelectedChapterId, setMultiSelectedChapterIds]);
+
+  const splitChapterAtLine = useCallback((chapterId: string, lineId: string) => {
+    const newChapterId = `ch_${Date.now()}_${Math.random()}`;
+    applyUndoableProjectUpdate(prevProject => {
+      const chapterIndex = prevProject.chapters.findIndex(ch => ch.id === chapterId);
+      if (chapterIndex === -1) return prevProject;
+      const chapter = prevProject.chapters[chapterIndex];
+      const lineIndex = chapter.scriptLines.findIndex(l => l.id === lineId);
+      if (lineIndex === -1) return prevProject;
+
+      const beforeLines = chapter.scriptLines.slice(0, lineIndex);
+      const afterLines = chapter.scriptLines.slice(lineIndex);
+      const beforeRaw = beforeLines.map(l => l.text).join('\n');
+      const afterRaw = afterLines.map(l => l.text).join('\n');
+
+      const newChapter: Chapter = {
+        id: newChapterId,
+        title: `${chapter.title || '新章节'}（下）`,
+        rawContent: afterRaw,
+        scriptLines: afterLines,
+      };
+
+      const updatedCurrent: Chapter = {
+        ...chapter,
+        rawContent: beforeRaw,
+        scriptLines: beforeLines,
+      };
+
+      const newChapters = [...prevProject.chapters];
+      newChapters[chapterIndex] = updatedCurrent;
+      newChapters.splice(chapterIndex + 1, 0, newChapter);
+
+      return { ...prevProject, chapters: newChapters };
+    });
+
+    setTimeout(() => setSelectedChapterId(newChapterId), 50);
     setMultiSelectedChapterIds([]);
   }, [applyUndoableProjectUpdate, setSelectedChapterId, setMultiSelectedChapterIds]);
 
@@ -197,6 +235,6 @@ export const useEnhancedEditorCoreLogic = ({
     canRedo,
     insertChapterAfter,
     mergeChapters,
+    splitChapterAtLine,
   };
 };
-

@@ -63,7 +63,7 @@ export const useAudioAlignmentAssistant = () => {
         return { allCvNames: cvs, projectCharacters: projChars };
     }, [currentProject, characters]);
     
-    const scanDirectory = React.useCallback(async (handle: FileSystemDirectoryHandle, resetState: boolean) => {
+    const scanDirectory = React.useCallback(async (handle: any, resetState: boolean) => {
         setIsLoading(true);
         if (resetState) {
             setScannedFiles([]);
@@ -117,9 +117,9 @@ export const useAudioAlignmentAssistant = () => {
             setDirectoryName(handle.name);
             setScannedFiles(parsedFiles);
         } catch (err) {
-            console.error("Error scanning directory:", err);
-            // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
-            alert(`扫描文件夹时出错: ${err instanceof Error ? err.message : String(err)}`);
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            console.error("Error scanning directory:", errorMessage);
+            alert(`扫描文件夹时出错: ${errorMessage}`);
         } finally {
             setIsLoading(false);
         }
@@ -188,10 +188,11 @@ export const useAudioAlignmentAssistant = () => {
             setDirectoryHandle(handle);
             await scanDirectory(handle, true);
         } catch (err) {
-            // FIX: Add a type guard to the catch block to safely access the 'name' property on the error object.
+            // FIX: The 'err' variable is of type 'unknown' in a catch block. Add an 'instanceof Error' check to safely access the 'name' property.
             if (err instanceof Error && err.name === 'AbortError') {
+                // User cancelled, do nothing.
             } else {
-                console.error("Error picking directory:", err);
+                console.error("Error picking directory:", String(err));
             }
         }
     };
@@ -264,9 +265,10 @@ export const useAudioAlignmentAssistant = () => {
             setScannedFiles(parsedFiles);
 
         } catch (err) {
-            console.error("Error processing directory files:", err);
-            // FIX: Add a type guard to the catch block to safely access the 'message' property on the error object.
-            alert(`Error processing files: ${err instanceof Error ? err.message : String(err)}`);
+            // FIX: The 'err' variable is of type 'unknown'. Use 'instanceof Error' to safely access the 'message' property.
+            const errorMessage = err instanceof Error ? err.message : String(err);
+            console.error("Error processing directory files:", errorMessage);
+            alert(`Error processing files: ${errorMessage}`);
             setDirectoryName(null);
             setScannedFiles([]);
             setManualOverrides({});
@@ -323,7 +325,6 @@ export const useAudioAlignmentAssistant = () => {
                 return;
             }
 
-            // FIX: Add explicit type annotation to the callback parameter of `every` to resolve "Type 'unknown' cannot be used as an index type" error.
             const isChapterComplete = Array.from(charIdsInChapter).every((charId: string) => {
                 const character = projectCharacters.find(c => c.id === charId);
                 if (!character) return true;
@@ -352,7 +353,6 @@ export const useAudioAlignmentAssistant = () => {
                 const relevantFiles = fileCoverage.get(chapterNum) || [];
                 const charIdsInChapter = new Set(chapter.scriptLines.map(l => l.characterId).filter((id): id is string => !!id));
 
-                // FIX: Replace `for...of` loop with a typed `forEach` to resolve "Type 'unknown' cannot be used as an index type" errors.
                 charIdsInChapter.forEach((charId: string) => {
                     const character = projectCharacters.find(c => c.id === charId);
                     if (!character) return; // continue equivalent

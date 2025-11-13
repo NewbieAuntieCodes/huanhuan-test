@@ -174,7 +174,7 @@ export const createProjectAudioSlice: StateCreator<AppState, [], [], ProjectAudi
     
                 if (lastAffectedIndexInAll !== -1) {
                     const nonAudioCharacterIds = get().characters
-                        .filter(c => c.name === '[静音]' || c.name === '音效')
+                        .filter(c => c.name === '[静音]' || c.name === '音效' || c.name === '[音效]')
                         .map(c => c.id);
     
                     const potentialNextLines = allLinesWithChapter

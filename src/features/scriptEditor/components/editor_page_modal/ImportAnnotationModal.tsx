@@ -1,50 +1,64 @@
 import React, { useState, useEffect } from 'react';
-import { InformationCircleIcon } from '../../../../components/ui/icons';
+import { InformationCircleIcon, ClipboardIcon, CheckCircleIcon } from '../../../../components/ui/icons';
 
 interface ImportAnnotationModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSubmit: (annotatedText: string) => void;
   isLoading: boolean;
+  chapterContentToCopy: string;
 }
 
-const ImportAnnotationModal: React.FC<ImportAnnotationModalProps> = ({ isOpen, onClose, onSubmit, isLoading }) => {
+const ImportAnnotationModal: React.FC<ImportAnnotationModalProps> = ({ isOpen, onClose, onSubmit, isLoading, chapterContentToCopy }) => {
   const [annotatedText, setAnnotatedText] = useState('');
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle');
 
   useEffect(() => {
     if (isOpen) {
       setAnnotatedText(''); // Clear text area when modal opens
+      setCopyStatus('idle');
     }
   }, [isOpen]);
 
-  const handleSubmit = () => {
-    if (annotatedText.trim()) {
-      onSubmit(annotatedText);
-    } else {
-      alert("请粘贴一些已标注的文本。");
+  const aiPrompt = `为了帮助小助手们更精准地标注角色，请将每个对话行详细标注成【角色】“台词内容”或者【CV-角色】“台词内容”的格式，并请勿误判非对话行。
+
+**重要提醒：请不要合并同一个角色在原文中的每一段话到同一个标注里，并且请原样保留引号（“”）内的所有字符，包括逗号、句号或其他标点符号，切勿修改或删减引号内部内容。**
+
+比如原始文本是
+“风雪交加”，
+“他抬起头，微笑着。”
+
+填写后应该是
+“风雪交加”，
+“他抬起头，微笑着。”
+
+精准的标注示例
+“风雪交加”，
+“他抬起头，微笑着。”
+
+你的数据是
+[你的章节原文]`;  const handleCopyClick = () => {
+    const fullPrompt = aiPrompt.replace('[你的章节原文]', chapterContentToCopy || '');
+    if (!chapterContentToCopy) {
+      alert("没有要复制的章节内容。请在编辑器中选择一个章节。");
+      return;
     }
+    navigator.clipboard.writeText(fullPrompt).then(() => {
+      setCopyStatus('copied');
+      setTimeout(() => setCopyStatus('idle'), 2000);
+    }).catch(err => {
+      console.error('Failed to copy text: ', err);
+      alert('复制失败，请手动复制。');
+    });
+  };
+
+  // FIX: Define the handleSubmit function to call the onSubmit prop.
+  const handleSubmit = () => {
+    onSubmit(annotatedText);
   };
 
   if (!isOpen) return null;
   
-  const aiPrompt = `请为以下小说文稿的“对话行”进行角色标注。严格按照【角色】“台词内容”或【CV-角色】“台词内容”的格式返回，非对话行请忽略。
-
-**重要规则：绝对禁止合并同一个角色的连续对话行。原文中的每一句独立对话都必须作为单独的一行返回。**
-
-例如，对于以下原文：
-白瑶：“你好。”
-白瑶：“你怎么样？”
-
-错误的合并做法：
-【白瑶】“你好。你怎么样？”
-
-正确的独立做法：
-【白瑶】“你好。”
-【白瑶】“你怎么样？”
-
-文稿内容：
-[你的章节原文]`;
-
   return (
     <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
       <div className="bg-slate-800 p-6 rounded-lg shadow-xl w-full max-w-2xl">
@@ -56,13 +70,35 @@ const ImportAnnotationModal: React.FC<ImportAnnotationModalProps> = ({ isOpen, o
           </p>
 
           <div className="bg-slate-700 p-3 rounded-md">
-            <h3 className="font-semibold text-base text-sky-300 mb-2">第一步：让 AI 处理你的文本</h3>
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="font-semibold text-base text-sky-300">第一步：让 AI 处理你的文本</h3>
+              <button
+                onClick={handleCopyClick}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-sky-600 hover:bg-sky-700 text-white rounded-md disabled:opacity-50 transition-colors"
+                title="复制完整提示词"
+                disabled={!chapterContentToCopy}
+              >
+                {copyStatus === 'copied' ? (
+                  <>
+                    <CheckCircleIcon className="w-4 h-4" />
+                    <span>已复制</span>
+                  </>
+                ) : (
+                  <>
+                    <ClipboardIcon className="w-4 h-4" />
+                    <span>复制提示</span>
+                  </>
+                )}
+              </button>
+            </div>
             <p className="text-xs mb-2 text-slate-300">
-              复制下面的提示词，将 <strong>[你的章节原文]</strong> 替换成章节内容后，发送给 AI。
+              点击上方按钮，将包含章节原文的完整提示词复制到剪贴板，然后发送给 AI。
             </p>
-            <pre className="mt-1 p-2 bg-slate-900 rounded text-xs overflow-x-auto text-sky-200 select-all">
-              {aiPrompt}
-            </pre>
+            <div className="relative">
+              <pre className="mt-1 p-2 bg-slate-900 rounded text-xs overflow-x-auto text-sky-200 select-all">
+                {aiPrompt}
+              </pre>
+            </div>
           </div>
           
           <div className="bg-slate-700 p-3 rounded-md">

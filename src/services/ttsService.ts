@@ -27,7 +27,6 @@ export const uploadTtsPrompt = async (file: File): Promise<string> => {
     return data.filePath;
 };
 
-// FIX: Export TtsBatchItem to make it available for import in other modules.
 export interface TtsBatchItem {
     promptAudio: string | null;
     text: string;
@@ -46,7 +45,7 @@ export const generateTtsBatch = async (items: TtsBatchItem[]): Promise<TtsBatchR
         body: JSON.stringify({ 
             items: items.map(item => ({
                 promptAudio: item.promptAudio,
-                text: item.text
+                text: item.text // Emotion should be pre-pended to the text here, e.g., (happy) Hello world.
             })),
             options: { do_sample: true, top_p: 0.8 } 
         }),

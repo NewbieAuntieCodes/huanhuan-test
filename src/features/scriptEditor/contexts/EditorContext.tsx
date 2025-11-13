@@ -1,6 +1,5 @@
 import React, { createContext, useContext } from 'react';
-import { Project, Character, ScriptLine, Chapter, CharacterFilterMode } from '../../../types';
-// Fix: Import from types.ts to break circular dependency
+import { Project, Character, ScriptLine, Chapter, CharacterFilterMode, SoundLibraryItem, IgnoredSoundKeyword } from '../../../types';
 import { CVStylesMap } from '../../../types';
 
 export interface EditorContextType {
@@ -16,6 +15,7 @@ export interface EditorContextType {
   deleteChapters: (chapterIds: string[]) => void;
   mergeChapters: (chapterIds: string[], targetChapterId: string) => void;
   insertChapterAfter: (afterChapterId: string) => void;
+  splitChapterAtLine: (chapterId: string, lineId: string) => void;
   batchAddChapters: (count: number) => void;
   
   undo: () => void;
@@ -41,7 +41,7 @@ export interface EditorContextType {
   runManualParseForChapters: (chapterIds: string[]) => Promise<void>;
   openImportModal: () => void;
   openAddChaptersModal: () => void;
-  openScriptImport: () => void; // New function to trigger script import
+  openScriptImport: () => void;
   saveNewChapters: (pastedText: string) => void;
   openShortcutSettingsModal: () => void;
 
@@ -50,11 +50,15 @@ export interface EditorContextType {
   cvFilter: string | null;
   setCvFilter: (cvName: string | null) => void;
   openCharacterSidePanel: (character: Character) => void;
-  // These will now call the onOpenCharacterAndCvStyleModal prop from App.tsx
   openCvModal: (character: Character | null) => void; 
   openCharacterEditModal: (character: Character | null) => void;
   addCustomSoundType: (soundType: string) => void;
   deleteCustomSoundType: (soundType: string) => void;
+  addIgnoredSoundKeyword: (projectId: string, chapterId: string, lineId: string, keyword: IgnoredSoundKeyword) => Promise<void>;
+
+  // Sound Assistant
+  soundLibrary: SoundLibraryItem[];
+  soundObservationList: string[];
 }
 
 export const EditorContext = createContext<EditorContextType | undefined>(undefined);
