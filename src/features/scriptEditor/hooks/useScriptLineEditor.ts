@@ -135,29 +135,15 @@ export const useScriptLineEditor = (
             }
 
         } else {
-            // Handle changing FROM Narrator TO a character
+            // When changing FROM Narrator TO a character, add quotes, but not for SFX characters.
+            // The logic to automatically add brackets for SFX characters has been removed to fix a rendering issue.
             let newText = currentLine.text;
             const isOriginallyNarrator = !originalCharacter || originalCharacter.id === narratorCharacter?.id;
-            // 当赋予 [音效] 时：自动包英文 []（幂等），保留引号
             const __nameCheck = (newCharacter?.name || '').replace(/[\[\]()]/g, '').trim().toLowerCase();
             const __isSfx = __nameCheck === '音效' || __nameCheck === 'sfx';
-            if (__isSfx) {
-                const __lead = (newText.match(/^\s*/)?.[0] || '');
-                const __trail = (newText.match(/\s*$/)?.[0] || '');
-                let __core = newText.trim();
-                if (!(__core.startsWith('[') && __core.endsWith(']'))) {
-                __core = '[' + __core + ']';
-                }
-                newText = `${__lead}${__core}${__trail}`;
-            } else
+            const isNewCharSfx = __isSfx || sfxCharIds.includes(newCharacterId);
             
-            if (sfxCharIds.includes(newCharacterId)) {
-                const lead = (newText.match(/^\s*/)?.[0] || '');
-                const trail = (newText.match(/\s*$/)?.[0] || '');
-                let core = newText.trim();
-                if (!(core.startsWith('[') && core.endsWith(']'))) { core = '[' + core + ']'; }
-                newText = `${lead}${core}${trail}`;
-            } else if (isOriginallyNarrator) {
+            if (isOriginallyNarrator && !isNewCharSfx) {
                 const trimmedText = newText.trim();
                 const isAlreadyDialogue = (trimmedText.startsWith('“') && trimmedText.endsWith('”')) || (trimmedText.startsWith('「') && trimmedText.endsWith('」'));
 
