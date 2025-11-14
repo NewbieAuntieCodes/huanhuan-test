@@ -1,5 +1,3 @@
-
-
 import { useState, useCallback } from 'react';
 import { Project, Character, Chapter } from '../../../types';
 import { getAiAnnotatedScript } from '../../../services/geminiService';
@@ -92,10 +90,11 @@ export const useAiChapterAnnotator = ({
         return { ...prevProject, chapters: updatedChapters };
       });
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("AI annotation failed:", error);
       // FIX: Safely handle error object of type 'unknown'.
       alert(`AI annotation failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+      throw error;
     } finally {
       setIsLoadingAiAnnotation(false);
       chapterIds.forEach(removeAiProcessingChapterId);

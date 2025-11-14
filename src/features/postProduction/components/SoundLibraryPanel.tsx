@@ -71,7 +71,8 @@ const SoundLibraryPanel: React.FC = () => {
                                 console.warn(`无法解析文件元数据: ${currentPath + entry.name}`, e);
                             }
                         } else if (entry.kind === 'directory') {
-                            await processDirectory(entry, currentPath + entry.name + '/');
+                            // FIX: Cast entry to FileSystemDirectoryHandle for recursive call.
+                            await processDirectory(entry as FileSystemDirectoryHandle, currentPath + entry.name + '/');
                         }
                     }
                 }
@@ -110,7 +111,7 @@ const SoundLibraryPanel: React.FC = () => {
                                 }
                             }
                         } else if (entry.kind === 'directory') {
-                            await processDirectory(entry, fullPath + '/');
+                            await processDirectory(entry as FileSystemDirectoryHandle, fullPath + '/');
                         }
                     }
                 }
@@ -143,10 +144,10 @@ const SoundLibraryPanel: React.FC = () => {
     const handleLinkFolder = async (categoryKey: string) => {
         try {
             const handle = await (window as any).showDirectoryPicker();
-            await soundLibraryRepository.saveHandle(categoryKey, handle);
-            setHandles(prev => ({ ...prev, [categoryKey]: handle }));
             // FIX: Argument of type 'FileSystemHandle' is not assignable to parameter of type 'FileSystemDirectoryHandle'.
             if (handle.kind === 'directory') {
+                await soundLibraryRepository.saveHandle(categoryKey, handle);
+                setHandles(prev => ({ ...prev, [categoryKey]: handle }));
                 await scanDirectory(categoryKey, handle, 'full'); // 首次关联或更换文件夹时执行全量扫描
             }
         } catch (err) {

@@ -11,26 +11,6 @@ const BGM_PALETTE = [
     'hsla(24,  98%, 95%, 0.46)',
 ];
 const getBgmColor = (ordinal: number): string => BGM_PALETTE[(ordinal - 1) % BGM_PALETTE.length];
-const generateSceneStyle = (str: string) => {
-    if (!str) return { lineColor: 'hsl(210, 90%, 75%)', bgColor: 'hsla(210, 90%, 75%, 0.7)' };
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-        hash = str.charCodeAt(i) + ((hash << 5) - hash);
-        hash &= hash;
-    }
-    const hue = Math.abs(hash % 360);
-    // Increased alpha from 0.25 to 0.7 to make the background brighter and more opaque.
-    return { lineColor: `hsl(${hue}, 90%, 75%)`, bgColor: `hsla(${hue}, 90%, 75%, 0.7)` };
-};
-
-export type SceneOverlay = {
-    id: string;
-    name: string;
-    top: number;
-    height: number;
-    lineColor: string;
-    bgColor: string;
-};
 
 export type BgmLabelOverlay = {
     id: string;
@@ -51,11 +31,9 @@ export const useMarkerRendering = (
 ) => {
     const contentRef = useRef<HTMLDivElement>(null);
     const lastMarkersRef = useRef<TextMarker[]>([]);
-    const [sceneOverlays, setSceneOverlays] = useState<SceneOverlay[]>([]);
     const [bgmLabelOverlays, setBgmLabelOverlays] = useState<BgmLabelOverlay[]>([]);
 
-    const bgmMarkers = useMemo(() => textMarkers.filter((m) => m.type === 'bgm'), [textMarkers]);
-    const sceneMarkers = useMemo(() => textMarkers.filter((m) => m.type === 'scene'), [textMarkers]);
+    const bgmMarkers = useMemo(() => [], []); // No more BGM markers
 
     const lineIdToChapterIndex = useMemo(() => {
         const map = new Map<string, number>();
@@ -82,73 +60,6 @@ export const useMarkerRendering = (
     }, [bgmMarkers, lineIdToChapterIndex, lineIdToLineOrder]);
 
 
-    const recomputeSceneOverlays = useCallback(() => {
-        const contentEl = contentRef.current;
-        if (!contentEl) return;
-        
-        const scrollableContainer = contentEl;
-        if (!scrollableContainer) return;
-
-        const containerRect = scrollableContainer.getBoundingClientRect();
-        
-        const newOverlays: SceneOverlay[] = [];
-        
-        const findTextNodeAndOffsetForEl = (element: Element, targetOffset: number): { node: Node; offset: number } | null => {
-            const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
-            let accumulatedOffset = 0;
-            let currentNode: Node | null;
-            while ((currentNode = walker.nextNode())) {
-                const nodeLength = currentNode.textContent?.length || 0;
-                if (accumulatedOffset + nodeLength >= targetOffset) {
-                    return { node: currentNode, offset: targetOffset - accumulatedOffset };
-                }
-                accumulatedOffset += nodeLength;
-            }
-            const last = element.lastChild;
-            if (last) return { node: last, offset: last.textContent?.length || 0 };
-            return null;
-        };
-        
-        sceneMarkers.forEach((marker) => {
-            if (!marker.name) return;
-            const startRow = contentEl.querySelector(`[data-line-id="${marker.startLineId}"]`);
-            const endRow = contentEl.querySelector(`[data-line-id="${marker.endLineId}"]`);
-            if (startRow && endRow) {
-                const { lineColor, bgColor } = generateSceneStyle(marker.name);
-                const startP = startRow.querySelector('p');
-                const endP = endRow.querySelector('p');
-                let topPx: number;
-                let bottomPx: number;
-
-                if (startP && marker.startOffset !== undefined) {
-                    const pos = findTextNodeAndOffsetForEl(startP, marker.startOffset);
-                    const sr = document.createRange();
-                    sr.setStart(pos?.node || startP, pos?.offset || 0);
-                    sr.setEnd(pos?.node || startP, pos?.offset || 0);
-                    topPx = sr.getBoundingClientRect().top;
-                } else {
-                    topPx = (startP || startRow).getBoundingClientRect().top;
-                }
-
-                if (endP && marker.endOffset !== undefined) {
-                    const endPos = findTextNodeAndOffsetForEl(endP, marker.endOffset);
-                    const er = document.createRange();
-                    er.setStart(endP, 0);
-                    er.setEnd(endPos?.node || endP, endPos?.offset || 0);
-                    bottomPx = er.getBoundingClientRect().bottom;
-                } else {
-                    bottomPx = (endP || endRow).getBoundingClientRect().bottom;
-                }
-
-                const top = topPx - containerRect.top + scrollableContainer.scrollTop;
-                const bottom = bottomPx - containerRect.top + scrollableContainer.scrollTop;
-                const height = Math.max(0, bottom - top);
-                newOverlays.push({ id: marker.id, name: marker.name, top, height, lineColor, bgColor });
-            }
-        });
-        setSceneOverlays(newOverlays);
-    }, [sceneMarkers]);
-    
     const recomputeBgmLabelOverlays = useCallback(() => {
         const contentEl = contentRef.current;
         if (!contentEl || suspendLayout) return;
@@ -250,12 +161,11 @@ export const useMarkerRendering = (
             // A timeout gives React time to render the newly expanded content
             setTimeout(() => {
                 recalculateBgmHighlights();
-                recomputeSceneOverlays();
                 recomputeBgmLabelOverlays();
             }, 50);
         }
         lastMarkersRef.current = textMarkers;
-    }, [textMarkers, suspendLayout, recalculateBgmHighlights, recomputeSceneOverlays, recomputeBgmLabelOverlays, expandedChapterId]);
+    }, [textMarkers, suspendLayout, recalculateBgmHighlights, recomputeBgmLabelOverlays, expandedChapterId]);
     
     useEffect(() => {
         if (suspendLayout) return;
@@ -267,7 +177,6 @@ export const useMarkerRendering = (
         const handle = () => {
           clearTimeout(timeoutId);
           timeoutId = window.setTimeout(() => {
-            recomputeSceneOverlays();
             recomputeBgmLabelOverlays();
           }, 120);
         };
@@ -280,12 +189,11 @@ export const useMarkerRendering = (
           scrollableParent.removeEventListener('scroll', handle);
           clearTimeout(timeoutId);
         };
-    }, [recomputeSceneOverlays, recomputeBgmLabelOverlays, suspendLayout]);
+    }, [recomputeBgmLabelOverlays, suspendLayout]);
 
 
     return {
         contentRef,
-        sceneOverlays,
         bgmLabelOverlays,
     };
 };

@@ -116,7 +116,8 @@ export const useAudioAlignmentAssistant = () => {
                     }
                 } else if (entry.kind === 'directory') {
                     // Recursive call for subdirectories
-                    await processDirectory(entry);
+                    // FIX: Cast entry to FileSystemDirectoryHandle for recursive call.
+                    await processDirectory(entry as FileSystemDirectoryHandle);
                 }
             }
         }
@@ -125,8 +126,9 @@ export const useAudioAlignmentAssistant = () => {
             await processDirectory(handle);
             setDirectoryName(handle.name);
             setScannedFiles(parsedFiles);
-        } catch (err) {
-            // FIX: The 'err' variable is of type 'unknown'. Use 'instanceof Error' to safely access the 'message' property.
+// FIX: The 'err' variable is of type 'unknown'. Use 'instanceof Error' to safely access the 'message' property.
+        } catch (err: unknown) {
+            // FIX: Safely access error message from 'unknown' type.
             const errorMessage = err instanceof Error ? err.message : String(err);
             console.error("Error scanning directory:", errorMessage);
             alert(`扫描文件夹时出错: ${errorMessage}`);
@@ -164,8 +166,9 @@ export const useAudioAlignmentAssistant = () => {
                         setScannedFiles(savedState.scannedFiles);
                         setManualOverrides(savedState.manualOverrides);
                     }
-                } catch (err) {
-                    console.error("Failed to load assistant state from DB:", err);
+// FIX: Add type annotation for the catch block parameter and use String() for safe logging.
+                } catch (err: unknown) {
+                    console.error("Failed to load assistant state from DB:", String(err));
                 } finally {
                     setIsLoading(false);
                 }
@@ -200,8 +203,9 @@ export const useAudioAlignmentAssistant = () => {
             await db.directoryHandles.put({ projectId: currentProject.id, handle });
             setDirectoryHandle(handle);
             await scanDirectory(handle, true);
-        } catch (err) {
-            // FIX: The 'err' variable is of type 'unknown' in a catch block. Add an 'instanceof Error' check to safely access the 'name' property.
+// FIX: The 'err' variable is of type 'unknown' in a catch block. Add an 'instanceof Error' check to safely access the 'name' property.
+        } catch (err: unknown) {
+            // FIX: Add 'instanceof Error' guard to safely access 'name' property on 'unknown' type.
             if (err instanceof Error && err.name === 'AbortError') {
                 // User cancelled, do nothing.
             } else {
@@ -210,12 +214,22 @@ export const useAudioAlignmentAssistant = () => {
         }
     };
     
+// FIX: Add a try-catch block to handle potential errors from `requestPermission`, such as user cancellation, which can throw an AbortError. This prevents unhandled promise rejections.
     const handleRescan = async () => {
         if (directoryHandle) {
-            if ((await (directoryHandle as any).requestPermission({ mode: 'read' })) === 'granted') {
-                await scanDirectory(directoryHandle, true);
-            } else {
-                alert("需要文件夹读取权限才能重新扫描。");
+            try {
+                if ((await (directoryHandle as any).requestPermission({ mode: 'read' })) === 'granted') {
+                    await scanDirectory(directoryHandle, true);
+                } else {
+                    alert("重新扫描时需要文件夹读取权限。");
+                }
+            } catch (err: unknown) {
+                if (err instanceof Error && err.name === 'AbortError') {
+                    // User cancelled, do nothing.
+                } else {
+                    console.error("Error rescanning directory:", String(err));
+                    alert(`重新扫描时出错: ${err instanceof Error ? err.message : String(err)}`);
+                }
             }
         }
     };
@@ -277,8 +291,9 @@ export const useAudioAlignmentAssistant = () => {
             setDirectoryName(dirName);
             setScannedFiles(parsedFiles);
 
-        } catch (err) {
-            // FIX: The 'err' variable is of type 'unknown'. Use 'instanceof Error' to safely access the 'message' property.
+// FIX: The 'err' variable is of type 'unknown'. Use 'instanceof Error' to safely access the 'message' property.
+        } catch (err: unknown) {
+            // FIX: Safely access error message from 'unknown' type.
             const errorMessage = err instanceof Error ? err.message : String(err);
             console.error("Error processing directory files:", errorMessage);
             alert(`Error processing files: ${errorMessage}`);

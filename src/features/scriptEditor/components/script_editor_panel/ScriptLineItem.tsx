@@ -5,8 +5,6 @@ import { isHexColor, getContrastingTextColor } from '../../../../lib/colorUtils'
 import { tailwindToHex } from '../../../../lib/tailwindColorMap';
 import CharacterSelectorDropdown from './CharacterSelectorDropdown';
 import { useEditorContext } from '../../contexts/EditorContext';
-import { useSoundHighlighter } from '../../hooks/useSoundHighlighter';
-import SoundKeywordPopover from './SoundKeywordPopover';
 
 interface ScriptLineItemProps {
   line: ScriptLine;
@@ -29,21 +27,141 @@ interface ScriptLineItemProps {
   canMoveDown?: boolean;
   onMoveLineUp?: () => void;
   onMoveLineDown?: () => void;
+  onSplitAt?: (lineId: string, splitIndex: number, currentText: string) => void;
 }
 
 // Helper to convert innerHTML from contentEditable to plain text with newlines
 const htmlToTextWithNewlines = (html: string): string => {
-    let tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html
-        .replace(/<br\s*\/?>/gi, '\n') // Convert <br> to newline
-        .replace(/<\/p>/gi, '\n')     // Convert </p> to newline
-        .replace(/<\/div>/gi, '\n');   // Convert </div> to newline
-
-    // Strip remaining tags and decode entities
-    return tempDiv.textContent || tempDiv.innerText || '';
+  const tempDiv = document.createElement('div');
+  const normalized = (html || '')
+    .replace(new RegExp('<br\\s*/?>', 'gi'), '\n')
+    .replace(new RegExp('</p>', 'gi'), '\n')
+    .replace(new RegExp('</div>', 'gi'), '\n');
+  tempDiv.innerHTML = normalized;
+  return tempDiv.textContent || tempDiv.innerText || '';
 };
 
 
+
+// ===== Display helpers for original [音效] shown as normal text (no brackets) =====
+// ===== 标记解析/合并：用于隐藏编辑器中的标记但在保存时保留 =====
+type Token = { kind: 'plain' | 'marker'; text: string };
+
+function buildMarkerTokens(raw: string): Token[] {
+  const sfxLoose = /[\[\uFF3B\u3010\u3014][^\]\uFF3D\u3011\u3015]+[\]\uFF3D\u3011\u3015]/g; // [..] 及全角括号
+  const bgmLoose = /<\s*(?:(?:\?-|[\u266A\u266B])\s*-\s*)?[^<>]*?\s*>/g; // <...> 或 <?-...>
+  const endLoose = /\/\/+\s*/g; // // 或 ///
+
+  const patterns = [sfxLoose, bgmLoose, endLoose] as const;
+  const findNext = (from: number) => {
+    let best: { re: RegExp; m: RegExpExecArray } | null = null;
+    for (const base of patterns) {
+      const re = new RegExp(base.source, 'g');
+      re.lastIndex = from;
+      const m = re.exec(raw);
+      if (m && (!best || m.index < best.m.index)) best = { re: base, m };
+    }
+    return best;
+  };
+  const out: Token[] = [];
+  let pos = 0;
+  while (pos < raw.length) {
+    const hit = findNext(pos);
+    if (!hit) { out.push({ kind: 'plain', text: raw.slice(pos) }); break; }
+    const i = hit.m.index, j = i + hit.m[0].length;
+    if (i > pos) out.push({ kind: 'plain', text: raw.slice(pos, i) });
+    out.push({ kind: 'marker', text: raw.slice(i, j) });
+    pos = j;
+  }
+  if (raw.length === 0) out.push({ kind: 'plain', text: '' });
+  return out;
+}
+
+function sanitizeForDisplay(raw: string): string {
+  const tokens = buildMarkerTokens(raw);
+  return tokens.filter(t => t.kind === 'plain').map(t => t.text).join('');
+}
+
+function mergeEditedWithMarkers(original: string, newPlain: string): string {
+  const tokens = buildMarkerTokens(original);
+  const plainIdx: number[] = [];
+  for (let i = 0; i < tokens.length; i++) if (tokens[i].kind === 'plain') plainIdx.push(i);
+  if (plainIdx.length === 0) return original;
+  if (plainIdx.length === 1) { tokens[plainIdx[0]].text = newPlain; return tokens.map(t=>t.text).join(''); }
+
+  const origLens = plainIdx.map(i => tokens[i].text.length);
+  let cursor = 0;
+  for (let k = 0; k < plainIdx.length; k++) {
+    const i = plainIdx[k];
+    if (k === plainIdx.length - 1) {
+      tokens[i].text = newPlain.slice(cursor);
+    } else {
+      const take = Math.max(0, Math.min(origLens[k], newPlain.length - cursor));
+      tokens[i].text = newPlain.slice(cursor, cursor + take);
+      cursor += take;
+    }
+  }
+  return tokens.map(t => t.text).join('');
+}
+
+// ===== Display helpers for original [音效] shown as normal text (no brackets) =====
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function escapeAttr(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/\"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function isSfxBracketMarker(text: string): boolean {
+  if (!text || text.length < 2) return false;
+  const first = text[0];
+  const last = text[text.length - 1];
+  const fc = first.codePointAt(0) ?? 0;
+  const lc = last.codePointAt(0) ?? 0;
+  const openCodes = new Set<number>([['['.codePointAt(0)], 0xFF3B, 0x3010, 0x3014].filter(Boolean) as number[]);
+  const closeCodes = new Set<number>([[']'.codePointAt(0)], 0xFF3D, 0x3011, 0x3015].filter(Boolean) as number[]);
+  return openCodes.has(fc) && closeCodes.has(lc);
+}
+
+function extractSfxLabel(text: string): string {
+  return text.length >= 2 ? text.slice(1, -1).trim() : text;
+}
+
+function tokensToDisplayHtml(original: string): string {
+  const tokens = buildMarkerTokens(original || '');
+  const parts: string[] = [];
+  for (const t of tokens) {
+    if (t.kind === 'plain') {
+      parts.push(escapeHtml(t.text).replace(/\r?\n/g, '<br>'));
+    } else {
+      if (isSfxBracketMarker(t.text)) {
+        const label = extractSfxLabel(t.text);
+        parts.push(`<span class="sfx-orig" contenteditable="false" data-label="${escapeAttr(label)}"></span>`);
+      }
+    }
+  }
+  return parts.join('');
+}
+
+function ensureSfxDisplayStyle() {
+  if (typeof document === 'undefined') return;
+  const id = 'sfx-orig-style';
+  if (document.getElementById(id)) return;
+  const style = document.createElement('style');
+  style.id = id;
+  style.textContent = `.sfx-orig::before{content:attr(data-label)}`;
+  document.head.appendChild(style);
+}
 const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   line,
   characters,
@@ -64,8 +182,9 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   canMoveDown = true,
   onMoveLineUp,
   onMoveLineDown,
+  onSplitAt,
 }) => {
-  const { openCvModal, soundLibrary, soundObservationList } = useEditorContext();
+  const { openCvModal } = useEditorContext();
   const character = characters.find(c => c.id === line.characterId);
   const isCharacterMissing = line.characterId && !character;
   const isSilentLine = character && character.name === '[静音]';
@@ -74,16 +193,11 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   const dropdownRef = useRef<HTMLDivElement>(null);
   const contentEditableRef = useRef<HTMLDivElement>(null);
   const [isEditing, setIsEditing] = useState(false);
+  useEffect(() => { ensureSfxDisplayStyle(); }, []);
 
-  const [popoverState, setPopoverState] = useState<{
-    visible: boolean;
-    keyword: string;
-    top: number;
-    left: number;
-  } | null>(null);
-  const hidePopoverTimeout = useRef<number | null>(null);
-
-  const highlightedHtml = useSoundHighlighter(line.text, soundLibrary, soundObservationList);
+    const plainHtml = useMemo(() => {
+    return tokensToDisplayHtml(line.text || '');
+  }, [line.text]);
 
   const [isSoundTypeDropdownOpen, setIsSoundTypeDropdownOpen] = useState(false);
   const soundTypeDropdownRef = useRef<HTMLDivElement>(null);
@@ -146,9 +260,33 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   const handleDivBlur = (e: React.FocusEvent<HTMLDivElement>) => {
     setIsEditing(false);
     onFocusChange(null);
-    const newText = htmlToTextWithNewlines(e.currentTarget.innerHTML);
-    if (newText.trim() === '') onDelete(line.id);
-    else if (newText !== line.text) onUpdateText(line.id, newText);
+    const newDisplayPlain = htmlToTextWithNewlines(e.currentTarget.innerHTML);
+    if (newDisplayPlain.trim() === '') onDelete(line.id);
+    else {
+      const merged = mergeEditedWithMarkers(line.text || '', newDisplayPlain);
+      if (merged !== line.text) onUpdateText(line.id, merged);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // 在同一文本框内分段：用 <br> 软换行，不拆分为两条记录
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      try {
+        document.execCommand('insertHTML', false, '<br>');
+      } catch {
+        const sel = window.getSelection();
+        if (!sel || sel.rangeCount === 0) return;
+        const range = sel.getRangeAt(0);
+        range.deleteContents();
+        const br = document.createElement('br');
+        range.insertNode(br);
+        range.setStartAfter(br);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
   };
 
   // Prevent re-renders from wiping user-typed text while editing
@@ -156,10 +294,10 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
     const el = contentEditableRef.current;
     if (!el) return;
     if (isEditing) return;
-    if (el.innerHTML !== highlightedHtml) {
-      el.innerHTML = highlightedHtml;
+    if (el.innerHTML !== plainHtml) {
+      el.innerHTML = plainHtml;
     }
-  }, [highlightedHtml, isEditing, line.id]);
+  }, [plainHtml, isEditing, line.id]);
   
   const isNarrator = !character || character.name === 'Narrator';
   let contentEditableStyle: React.CSSProperties = {};
@@ -205,31 +343,6 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   };
 
   const isShortcutActive = shortcutActiveLineId === line.id;
-  
-  const handleMouseOver = (e: React.MouseEvent) => {
-    if (hidePopoverTimeout.current) clearTimeout(hidePopoverTimeout.current);
-    const target = e.target as HTMLElement;
-    if (target.classList.contains('sound-keyword-highlight')) {
-        const keyword = target.dataset.keyword;
-        if (keyword) {
-            const rect = target.getBoundingClientRect();
-            setPopoverState({ visible: true, keyword, top: rect.bottom + window.scrollY, left: rect.left + window.scrollX });
-        }
-    }
-  };
-
-  const handleMouseOut = (e: React.MouseEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.classList.contains('sound-keyword-highlight')) {
-        hidePopoverTimeout.current = window.setTimeout(() => {
-            setPopoverState(null);
-        }, 200);
-    }
-  };
-  
-  const handlePopoverEnter = () => {
-    if (hidePopoverTimeout.current) clearTimeout(hidePopoverTimeout.current);
-  };
 
   return (
     <div className={`p-3 mb-2 rounded-lg border flex items-center gap-3 transition-all duration-150 ${isSilentLine ? 'border-slate-800 opacity-70' : 'border-slate-700'} hover:border-slate-600 ${line.isAiAudioLoading ? 'opacity-70' : ''} ${isShortcutActive ? 'ring-2 ring-amber-400' : ''}`}>
@@ -255,9 +368,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
         </div>
       </div>
       <div 
-        className="relative flex-grow" 
-        onMouseOver={handleMouseOver} 
-        onMouseOut={handleMouseOut}
+        className="relative flex-grow"
       >
         <div
             ref={contentEditableRef}
@@ -265,22 +376,12 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
             suppressContentEditableWarning
             onFocus={handleDivFocus}
             onBlur={handleDivBlur}
+            onKeyDown={handleKeyDown}
             className={contentEditableClasses}
             style={contentEditableStyle}
             aria-label={`脚本行文本: ${line.text.substring(0,50)}... ${character ? `角色: ${character.name}` : '未分配角色'}`}
         />
       </div>
-      {popoverState?.visible && (
-        <SoundKeywordPopover
-            keyword={popoverState.keyword}
-            top={popoverState.top}
-            left={popoverState.left}
-            onClose={() => setPopoverState(null)}
-            onMouseEnter={handlePopoverEnter}
-            onMouseLeave={() => setPopoverState(null)}
-            soundLibrary={soundLibrary}
-        />
-      )}
       <div className="flex-shrink-0 flex items-center gap-1.5">
         <div className="relative" ref={soundTypeDropdownRef}>
           <div className="flex w-20 h-9 rounded-md border border-slate-600 overflow-hidden">
@@ -351,3 +452,13 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
 };
 
 export default ScriptLineItem;
+
+
+
+
+
+
+
+
+
+

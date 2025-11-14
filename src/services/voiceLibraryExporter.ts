@@ -129,6 +129,8 @@ export const exportCharacterClips = async (
             return; // Success, exit function
         } catch (err: unknown) {
             // FIX: Added 'instanceof Error' check to safely access properties on the 'err' object.
+            // Fix: Add instanceof Error check to safely access properties on the 'unknown' error object.
+            // FIX: Add 'instanceof Error' guard to safely access 'name' property on 'unknown' type.
             if (err instanceof Error && err.name === 'AbortError') {
                 console.log('用户取消了保存文件。');
                 return; // User cancelled, do nothing.

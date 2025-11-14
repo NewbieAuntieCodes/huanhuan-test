@@ -154,6 +154,7 @@ const parseXmpCuePoints = (metadata: any, audioDuration: number): { startTime: n
 
     } catch (error: unknown) {
         // FIX: The 'error' variable is of type 'unknown' in a catch block. Safely convert it to a string for logging to prevent a runtime crash.
+        // Fix: Safely convert 'error' of type 'unknown' to a string for logging.
         console.error('解析XMP CuePoint标记失败:', String(error));
         return null;
     }
@@ -338,6 +339,7 @@ export const useAudioFileMatcher = ({
             metadata = await mm.parseBlob(file);
         } catch (e: unknown) {
             // FIX: The 'e' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message' to prevent runtime errors.
+            // Fix: Add instanceof Error check to safely access properties on the 'unknown' error object.
             const message = e instanceof Error ? e.message : String(e);
             const errorMsg = `音频文件解析失败: ${message}`;
             console.error(`Metadata parsing failed for ${file.name}:`, message);
@@ -446,9 +448,11 @@ export const useAudioFileMatcher = ({
 
     } catch (error: unknown) {
         // FIX: The 'error' variable is of type 'unknown'. Use 'instanceof Error' to safely access properties like 'message', or convert to string for logging. This prevents runtime errors.
+        // Fix: Add instanceof Error check to safely access properties on the 'unknown' error object.
         const message = error instanceof Error ? error.message : String(error);
         const errorMsg = `处理失败: ${message}`;
         // FIX: The 'error' variable is of type 'unknown'. It should be converted to a string before being logged to avoid a runtime crash.
+        // Fix: Safely convert 'error' of type 'unknown' to a string for logging.
         console.error(`Error processing master audio file ${file.name}:`, String(error));
         return {
           filename: file.name,
@@ -505,6 +509,7 @@ export const useAudioFileMatcher = ({
             metadata = await mm.parseBlob(file);
         } catch (e: unknown) {
             // FIX: The 'e' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message' to prevent runtime errors.
+            // Fix: Add instanceof Error check to safely access properties on the 'unknown' error object.
             throw new Error(`音频文件解析失败: ${e instanceof Error ? e.message : String(e)}`);
         }
         
@@ -573,6 +578,7 @@ export const useAudioFileMatcher = ({
         
     } catch (error: unknown) {
         // FIX: The 'error' variable is of type 'unknown' in a catch block. Check if it's an Error instance before accessing 'message' to prevent a runtime crash.
+        // Fix: Add instanceof Error check to safely access properties on the 'unknown' error object.
         alert(`返音匹配失败: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
         setIsReturnMatchLoading(false);

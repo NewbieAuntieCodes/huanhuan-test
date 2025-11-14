@@ -1,5 +1,3 @@
-
-
 import { useState, useCallback } from 'react';
 import { Project, Character, ScriptLine } from '../../../types';
 import useStore from '../../../store/useStore';
@@ -124,7 +122,7 @@ export const useAnnotationImporter = ({
       setIsImportModalOpen(false);
       return charactersWithCvToUpdate;
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Annotation import failed:", error);
       // FIX: Safely handle error object of type 'unknown'.
       alert(`Annotation import failed: ${error instanceof Error ? error.message : "Unknown error"}`);

@@ -231,29 +231,30 @@ const ScriptEditorPanel: React.FC = () => {
            <div className="flex flex-col items-center justify-center h-64"><LoadingSpinner /><p className="mt-2 text-slate-400">{isLoadingAiAnnotation ? "AI 正在处理脚本行..." : "正在按规则处理脚本行..."}</p></div>
         ) : hasScriptLines ? (
           selectedChapter.scriptLines.map((line, index) => (
-            <ScriptLineItem
-              key={line.id}
-              line={line}
-              characters={characters}
-              characterIdsInChapter={characterIdsInChapter}
-              onUpdateText={(lineId, newText) => handleUpdateScriptLineText(selectedChapter.id, lineId, newText)}
-              onAssignCharacter={(lineId, charId) => handleAssignCharacterToLine(selectedChapter.id, lineId, charId)}
-              onMergeLines={(lineId) => handleMergeAdjacentLines(selectedChapter.id, lineId)}
-              onDelete={(lineId) => handleDeleteScriptLine(selectedChapter.id, lineId)}
-              cvStyles={cvStyles}
-              isFocusedForSplit={focusedScriptLineId === line.id}
-              onUpdateSoundType={(lineId, soundType) => handleUpdateSoundType(selectedChapter.id, lineId, soundType)}
-              onFocusChange={setFocusedScriptLineId}
-              shortcutActiveLineId={shortcutActiveLineId}
-              onActivateShortcutMode={setShortcutActiveLineId}
-              customSoundTypes={currentProject?.customSoundTypes || []}
-              onAddCustomSoundType={addCustomSoundType}
-              onDeleteCustomSoundType={deleteCustomSoundType}
-              canMoveUp={index > 0}
-              canMoveDown={index < selectedChapter.scriptLines.length - 1}
-              onMoveLineUp={() => handleMoveLineUp(line.id)}
-              onMoveLineDown={() => handleMoveLineDown(line.id)}
-            />
+              <ScriptLineItem
+                key={line.id}
+                line={line}
+                chapterId={selectedChapter.id}
+                characters={characters}
+                characterIdsInChapter={characterIdsInChapter}
+                onUpdateText={(lineId, newText) => handleUpdateScriptLineText(selectedChapter.id, lineId, newText)}
+                onAssignCharacter={(lineId, charId) => handleAssignCharacterToLine(selectedChapter.id, lineId, charId)}
+                onMergeLines={(lineId) => handleMergeAdjacentLines(selectedChapter.id, lineId)}
+                onDelete={(lineId) => handleDeleteScriptLine(selectedChapter.id, lineId)}
+                cvStyles={cvStyles}
+                isFocusedForSplit={focusedScriptLineId === line.id}
+                onUpdateSoundType={(lineId, soundType) => handleUpdateSoundType(selectedChapter.id, lineId, soundType)}
+                onFocusChange={setFocusedScriptLineId}
+                shortcutActiveLineId={shortcutActiveLineId}
+                onActivateShortcutMode={setShortcutActiveLineId}
+                customSoundTypes={currentProject?.customSoundTypes || []}
+                onAddCustomSoundType={addCustomSoundType}
+                onDeleteCustomSoundType={deleteCustomSoundType}
+                canMoveUp={index > 0}
+                canMoveDown={index < selectedChapter.scriptLines.length - 1}
+                onMoveLineUp={() => handleMoveLineUp(line.id)}
+                onMoveLineDown={() => handleMoveLineDown(line.id)}
+              />
           ))
         ) : (
           <div className="text-slate-400 space-y-3 p-3 h-full flex flex-col">

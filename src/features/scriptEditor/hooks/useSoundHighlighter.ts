@@ -40,9 +40,10 @@ export const useSoundHighlighter = (
     // Patterns
     const legacyMarker = `��([^��]+)��([^��]+)��`; // legacy mojibake-safe markers
     const bracketSfx = `\\[[^\\[\\]]+\\]`; // [任意内容]
+    const bgmMarker = `<([^<>]+)>`; // <BGM>
 
     if (filteredKeywords.length === 0) {
-      return new RegExp(`${bracketSfx}|${legacyMarker}`, 'g');
+      return new RegExp(`${bracketSfx}|${bgmMarker}|${legacyMarker}`, 'g');
     }
 
     // Escape keywords and sort by length (longest-first)
@@ -50,7 +51,7 @@ export const useSoundHighlighter = (
     const escapedKeywords = sortedKeywords.map((kw) => kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const keywordsPattern = `(${escapedKeywords.join('|')})`;
 
-    return new RegExp(`${keywordsPattern}|${bracketSfx}|${legacyMarker}`, 'g');
+    return new RegExp(`${keywordsPattern}|${bracketSfx}|${bgmMarker}|${legacyMarker}`, 'g');
   }, [soundLibrary, observationList]);
 
   const highlightedHtml = useMemo(() => {
@@ -70,10 +71,13 @@ export const useSoundHighlighter = (
         parts.push(escapeHtml(text.substring(lastIndex, matchIndex)));
       }
 
-      const isIgnored = ignoredKeywords.some((ik) => ik.keyword === matchText && ik.index === matchIndex);
+      const isIgnored = ignoredKeywords && ignoredKeywords.some((ik) => ik.keyword === matchText && ik.index === matchIndex);
 
       if (isIgnored) {
         parts.push(escapeHtml(matchText));
+      } else if (matchText.startsWith('<') && matchText.endsWith('>')) {
+        const inner = matchText.slice(1, -1);
+        parts.push(`<strong class="bgm-marker-inline" data-bgm-name="${escapeHtml(inner)}">&lt;♫-${escapeHtml(inner)}&gt;</strong>`);
       } else if (matchText.startsWith('��') && matchText.endsWith('��')) {
         const title = matchText.slice(1, -1).replace('��', ', ');
         parts.push(`<span class=\"manual-sound-marker\" title=\"音效标记: ${escapeHtml(title)}\">${escapeHtml(matchText)}</span>`);
@@ -81,7 +85,7 @@ export const useSoundHighlighter = (
         const inner = matchText.slice(1, -1);
         parts.push(`<span class=\"sound-keyword-highlight\" data-keyword=\"${escapeHtml(inner)}\" data-index=\"${match.index}\">${escapeHtml(matchText)}</span>`);
       } else {
-        parts.push(`<span class=\"sound-keyword-highlight\" data-keyword=\"${escapeHtml(matchText)}\" data-index=\"${match.index}\">${escapeHtml(matchText)}</span>`);
+        parts.push(`<span class=\"sound-keyword-highlight\" data-keyword=\"${escapeHtml(matchText)}\" data-index=\"${match.index}\">[${escapeHtml(matchText)}]</span>`);
       }
 
       lastIndex = matchIndex + matchText.length;
@@ -91,7 +95,11 @@ export const useSoundHighlighter = (
       parts.push(escapeHtml(text.substring(lastIndex)));
     }
 
-    return parts.join('');
+    let html = parts.join('');
+    // Highlight BGM end "//" with the same style as BGM markers.
+    // This is a simple pass that wraps '//' in a purple marker. It intentionally avoids changing content semantics.
+    html = html.replace(/\/\//g, '<strong class="bgm-marker-inline" data-bgm-end="1">//</strong>');
+    return html;
   }, [text, combinedRegex, ignoredKeywords]);
 
   return highlightedHtml;

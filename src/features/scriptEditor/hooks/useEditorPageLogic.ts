@@ -84,7 +84,6 @@ export const useEditorPageLogic = (props: EditorPageProps) => {
   const { isLoadingImportAnnotation, isImportModalOpen, setIsImportModalOpen, handleOpenImportModalTrigger, handleImportPreAnnotatedScript } = useAnnotationImporter({ currentProject, onAddCharacter: handleAddCharacterForProject, applyUndoableProjectUpdate, selectedChapterId, multiSelectedChapterIds, setMultiSelectedChapterIdsAfterProcessing });
   const { handleUpdateScriptLineText, handleAssignCharacterToLine, handleSplitScriptLine, handleMergeAdjacentLines, handleDeleteScriptLine, handleUpdateSoundType } = useScriptLineEditor(currentProject, projectCharacters, applyUndoableProjectUpdate, selectedChapterId);
   
-  // FIX: Define the handleImportAndCvUpdate function to resolve the "shorthand property" error.
   const handleImportAndCvUpdate = useCallback(async (annotatedText: string) => {
     const charactersWithCvToUpdate = await handleImportPreAnnotatedScript(annotatedText);
 
@@ -176,9 +175,10 @@ export const useEditorPageLogic = (props: EditorPageProps) => {
                 alert("不支持的文件格式或文件内容无法识别。请上传 .txt, .docx, 或由本应用导出的画本文件。");
                 return;
             }
-        } catch (error) {
+        } catch (error: unknown) {
             console.error("读取或解析文件时出错:", error);
             // FIX: The 'error' variable is of type 'unknown'. Use 'instanceof Error' to safely access the 'message' property.
+            // Fix: Add instanceof Error check to safely access properties on the 'unknown' error object.
             const detailedMessage = error instanceof Error ? error.message : String(error);
             let errorMessage = `读取或解析文件时出错: ${detailedMessage}`;
             if (typeof detailedMessage === 'string' && detailedMessage.toLowerCase().includes('central directory')) {
@@ -324,6 +324,7 @@ export const useEditorPageLogic = (props: EditorPageProps) => {
       if(projectId) batchAddChapters(projectId, count);
   }, [projectId, batchAddChapters]);
   
+  const handlePinSound = useStore(s => s.handlePinSound);
   const contextValue = useMemo<EditorContextType>(() => ({
     ...coreLogic,
     characters: projectCharacters,
@@ -337,6 +338,7 @@ export const useEditorPageLogic = (props: EditorPageProps) => {
     mergeChapters: undoableMergeChapters,
     insertChapterAfter: coreLogic.insertChapterAfter,
     batchAddChapters: handleBatchAddChapters,
+    splitChapterAtLine: coreLogic.splitChapterAtLine,
     isLoadingAiAnnotation,
     isLoadingManualParse,
     isLoadingImportAnnotation,
@@ -352,12 +354,13 @@ export const useEditorPageLogic = (props: EditorPageProps) => {
     addCustomSoundType: handleAddCustomSoundType,
     deleteCustomSoundType: handleDeleteCustomSoundType,
     addIgnoredSoundKeyword,
+    handlePinSound,
     openCharacterSidePanel: handleOpenCharacterSidePanel,
     openCvModal: onOpenCharacterAndCvStyleModal,
     openCharacterEditModal: onOpenCharacterAndCvStyleModal,
     soundLibrary,
     soundObservationList,
-  }), [coreLogic, projectCharacters, allCvNames, cvStyles, applyUndoableProjectUpdate, deleteChapters, undoableMergeChapters, handleBatchAddChapters, isLoadingAiAnnotation, isLoadingManualParse, isLoadingImportAnnotation, handleRunAiAnnotationForChapters, handleManualParseChapters, handleOpenImportModalTrigger, handleOpenScriptImport, handleSaveNewChapters, openShortcutSettingsModal, shortcutActiveLineId, handleAddCustomSoundType, handleDeleteCustomSoundType, addIgnoredSoundKeyword, handleOpenCharacterSidePanel, onOpenCharacterAndCvStyleModal, soundLibrary, soundObservationList]);
+  }), [coreLogic, projectCharacters, allCvNames, cvStyles, applyUndoableProjectUpdate, deleteChapters, undoableMergeChapters, handleBatchAddChapters, isLoadingAiAnnotation, isLoadingManualParse, isLoadingImportAnnotation, handleRunAiAnnotationForChapters, handleManualParseChapters, handleOpenImportModalTrigger, handleOpenScriptImport, handleSaveNewChapters, openShortcutSettingsModal, shortcutActiveLineId, handleAddCustomSoundType, handleDeleteCustomSoundType, addIgnoredSoundKeyword, handlePinSound, handleOpenCharacterSidePanel, onOpenCharacterAndCvStyleModal, soundLibrary, soundObservationList]);
 
   return {
     contextValue,

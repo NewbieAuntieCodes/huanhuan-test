@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../../store/useStore';
-import { ChevronLeftIcon } from '../../components/ui/icons';
+import { ChevronLeftIcon, ClearFormattingIcon, ArrowDownOnSquareIcon } from '../../components/ui/icons';
 import ResizablePanels from '../../components/ui/ResizablePanels';
 import { DialogueContent } from './components/DialogueContent';
 import TimelineHeader from './components/TimelineHeader';
@@ -10,8 +10,11 @@ import AddBgmModal from './components/AddBgmModal';
 import AddSfxModal from './components/AddSfxModal';
 import EditMarkerModal from './components/EditMarkerModal';
 import SoundAssistantSettingsModal from './components/SoundAssistantSettingsModal';
+import PostTextAssistantModal from './components/PostTextAssistantModal';
 import { usePostProduction } from './hooks/usePostProduction';
 import { usePaginatedChapters } from '../../features/scriptEditor/hooks/usePaginatedChapters';
+import { exportPostProductionToReaper } from '../../services/postProductionReaperExporter';
+import LoadingSpinner from '../../components/ui/LoadingSpinner';
 
 const PostProductionPage: React.FC = () => {
     const { navigateTo, soundLibrary, soundObservationList, characters, selectedChapterId: initialChapterId } = useStore(state => ({
@@ -48,11 +51,17 @@ const PostProductionPage: React.FC = () => {
         handleUpdateRangeFromSelection,
         handleUpdateColor,
         handlePinSound,
+        handleClearFormatting,
+        updateLineText,
     } = usePostProduction();
 
     const [isSoundAssistantSettingsOpen, setIsSoundAssistantSettingsOpen] = useState(false);
+    const [isPostTextAssistantOpen, setIsPostTextAssistantOpen] = useState(false);
+    const [chapterFilter, setChapterFilter] = useState('');
     const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
     const [sfxContextMenu, setSfxContextMenu] = useState<{ top: number; left: number; range: Range } | null>(null);
+    const [isExportingToReaper, setIsExportingToReaper] = useState(false);
+
 
     useEffect(() => {
         const handleClickOutside = () => {
@@ -93,13 +102,31 @@ const PostProductionPage: React.FC = () => {
         }));
     }, [currentProject, silentCharId]);
 
+    // Apply VoiceLibrary-like chapter filter on top of the silent-line filtered chapters
+    const filteredChaptersForDisplay = useMemo(() => {
+        const filter = chapterFilter.trim();
+        if (!filter) return chaptersForDisplay;
+        const matches = (title: string, index: number) => {
+            const chapterNum = index + 1;
+            const m = filter.match(/^(\d+)-(\d+)$/);
+            if (m) {
+                const start = parseInt(m[1], 10);
+                const end = parseInt(m[2], 10);
+                return chapterNum >= start && chapterNum <= end;
+            }
+            if (/^\d+$/.test(filter)) return chapterNum === parseInt(filter, 10);
+            return title.includes(filter);
+        };
+        return chaptersForDisplay.filter((ch, idx) => matches(ch.title, idx));
+    }, [chaptersForDisplay, chapterFilter]);
+
     const {
       currentPage,
       totalPages,
       paginatedChapters,
       handlePageChange,
     } = usePaginatedChapters({
-      chapters: chaptersForDisplay,
+      chapters: filteredChaptersForDisplay,
       projectId: currentProject?.id,
       initialSelectedChapterIdForViewing: initialChapterId,
       onSelectChapterForViewing: (id) => {
@@ -127,6 +154,33 @@ const PostProductionPage: React.FC = () => {
         return () => { delete (window as any).__openEditMarker; };
     }, [openEditModal]);
 
+    const handleExportToReaper = async () => {
+        if (!currentProject) return;
+    
+        const chaptersToExport = currentProject.chapters;
+    
+        if (chaptersToExport.length === 0) {
+            alert('项目内没有可导出的章节。');
+            return;
+        }
+    
+        const hasAudio = chaptersToExport.some(c => c.scriptLines.some(l => l.audioBlobId));
+        if (!hasAudio) {
+            alert('项目内没有已对轨的音频可供导出。');
+            return;
+        }
+        
+        setIsExportingToReaper(true);
+        try {
+            await exportPostProductionToReaper(currentProject, chaptersToExport, characters, soundLibrary);
+        } catch (error) {
+            console.error("导出到Reaper时出错:", error);
+            alert(`导出到Reaper时出错: ${error instanceof Error ? error.message : '未知错误'}`);
+        } finally {
+            setIsExportingToReaper(false);
+        }
+    };
+
     if (!currentProject) {
         return (
             <div className="p-6 h-full flex flex-col items-center justify-center bg-slate-900 text-slate-100">
@@ -140,7 +194,6 @@ const PostProductionPage: React.FC = () => {
     }
     
     const existingSceneNames = useMemo(() => Array.from(new Set(textMarkers.filter(m => m.type === 'scene' && m.name).map(m => m.name!))), [textMarkers]);
-    const existingBgmNames = useMemo(() => Array.from(new Set(textMarkers.filter(m => m.type === 'bgm' && m.name).map(m => m.name!))), [textMarkers]);
 
     return (
         <div className="h-full flex flex-col bg-slate-900 text-slate-100">
@@ -149,10 +202,35 @@ const PostProductionPage: React.FC = () => {
                     后期制作: <span className="text-slate-200">{currentProject.name}</span>
                 </h1>
                 <div className="flex items-center space-x-3">
+                    <div className="flex items-center space-x-2">
+                        <label htmlFor="chapter-filter" className="text-sm text-slate-300 whitespace-nowrap">章节筛选:</label>
+                        <input
+                            id="chapter-filter"
+                            value={chapterFilter}
+                            onChange={(e) => setChapterFilter(e.target.value)}
+                            placeholder="例如 6 或 3-8 或 关键词"
+                            className="w-44 px-2 py-1.5 text-sm bg-slate-700 text-slate-100 rounded-md border border-slate-600 focus:ring-2 focus:ring-sky-500"
+                        />
+                    </div>
+                    <button onClick={() => setIsPostTextAssistantOpen(true)} className="px-3 py-1.5 text-sm bg-amber-600 hover:bg-amber-700 rounded-md">后期文本辅助</button>
                     <button onClick={openSceneModal} disabled={!selectedRange} className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50">添加场景</button>
                     <button onClick={openBgmModal} disabled={!selectedRange} className="px-3 py-1.5 text-sm bg-purple-600 hover:bg-purple-700 rounded-md disabled:opacity-50">添加 BGM</button>
                     <button onClick={openSfxModal} disabled={!selectedRange} title={!selectedRange ? '请先在文本中点击定位或选择一段文本' : ''} className="px-3 py-1.5 text-sm bg-rose-600 hover:bg-rose-700 rounded-md disabled:opacity-50">添加音效</button>
+                    <button onClick={handleClearFormatting} disabled={!selectedRange} className="flex items-center px-3 py-1.5 text-sm bg-yellow-600 hover:bg-yellow-700 rounded-md disabled:opacity-50">
+                        <ClearFormattingIcon className="w-4 h-4 mr-1.5" />
+                        清除格式
+                    </button>
                     <button onClick={() => setIsSoundAssistantSettingsOpen(true)} className="px-3 py-1.5 text-sm bg-teal-600 hover:bg-teal-700 rounded-md">音效助手设置</button>
+                    <button
+                        onClick={handleExportToReaper}
+                        disabled={isExportingToReaper}
+                        className="flex items-center text-sm text-teal-300 hover:text-teal-100 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-50"
+                        aria-label="导出到 Reaper"
+                        title="将整个项目（包含对白、BGM和音效）导出为 Reaper 工程文件"
+                    >
+                        {isExportingToReaper ? <LoadingSpinner /> : <ArrowDownOnSquareIcon className="w-4 h-4 mr-1" />}
+                        {isExportingToReaper ? '导出中...' : '导出到 Reaper'}
+                    </button>
                     <button onClick={() => navigateTo('editor')} className="flex items-center text-sm text-sky-300 hover:text-sky-100 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md">
                         <ChevronLeftIcon className="w-4 h-4 mr-1" /> 返回
                     </button>
@@ -181,6 +259,7 @@ const PostProductionPage: React.FC = () => {
                                 onContextMenuRequest={handleContextMenuRequest}
                                 currentProject={currentProject}
                                 onPinSound={handlePinSound}
+                                onUpdateLineText={updateLineText}
                             />}
                             initialLeftWidthPercent={30}
                         />
@@ -226,8 +305,6 @@ const PostProductionPage: React.FC = () => {
                 isOpen={isBgmModalOpen}
                 onClose={closeBgmModal}
                 onSave={handleSaveBgm}
-                existingBgmNames={existingBgmNames}
-                soundLibrary={soundLibrary}
             />
             <AddSfxModal
                 isOpen={isSfxModalOpen}
@@ -247,6 +324,13 @@ const PostProductionPage: React.FC = () => {
             <SoundAssistantSettingsModal
                 isOpen={isSoundAssistantSettingsOpen}
                 onClose={() => setIsSoundAssistantSettingsOpen(false)}
+            />
+            <PostTextAssistantModal
+                isOpen={isPostTextAssistantOpen}
+                onClose={() => setIsPostTextAssistantOpen(false)}
+                chapters={filteredChaptersForDisplay}
+                projectId={currentProject.id}
+                characters={projectCharacters}
             />
         </div>
     );

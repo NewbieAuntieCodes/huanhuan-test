@@ -183,9 +183,9 @@ ${scriptText}
         throw new Error("Invalid response format from AI. Expected a JSON array.");
     }
 
-  } catch (error) {
+  } catch (error: unknown) {
     console.error(`Error with ${provider} API or parsing response:`, error);
-    // Comment: Safely handle error object of type 'unknown'.
+    // FIX: Safely handle error object of type 'unknown'.
     alert(`Error with AI Annotation: ${error instanceof Error ? error.message : String(error)}.`);
     throw error;
   }
