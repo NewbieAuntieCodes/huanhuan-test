@@ -260,7 +260,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
   const handleDivBlur = (e: React.FocusEvent<HTMLDivElement>) => {
     setIsEditing(false);
     onFocusChange(null);
-    const newDisplayPlain = htmlToTextWithNewlines(e.currentTarget.innerHTML);
+    const newDisplayPlain = htmlToTextWithNewlines(e.currentTarget.innerHTML).replace(/\u200B/g, ''); // Remove zero-width spaces
     if (newDisplayPlain.trim() === '') onDelete(line.id);
     else {
       const merged = mergeEditedWithMarkers(line.text || '', newDisplayPlain);
@@ -272,20 +272,29 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
     // 在同一文本框内分段：用 <br> 软换行，不拆分为两条记录
     if (e.key === 'Enter') {
       e.preventDefault();
-      try {
-        document.execCommand('insertHTML', false, '<br>');
-      } catch {
-        const sel = window.getSelection();
-        if (!sel || sel.rangeCount === 0) return;
-        const range = sel.getRangeAt(0);
-        range.deleteContents();
-        const br = document.createElement('br');
-        range.insertNode(br);
-        range.setStartAfter(br);
-        range.collapse(true);
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
+      
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+
+      const br = document.createElement('br');
+      range.insertNode(br);
+
+      // Add a zero-width space to give the cursor a concrete position
+      // and prevent the view from jumping.
+      const zeroWidthSpace = document.createTextNode('\u200B');
+      range.setStartAfter(br);
+      range.collapse(true);
+      range.insertNode(zeroWidthSpace);
+      
+      // Position the selection after the zero-width space
+      range.setStartAfter(zeroWidthSpace);
+      range.collapse(true);
+
+      sel.removeAllRanges();
+      sel.addRange(range);
     }
   };
 
@@ -452,13 +461,3 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
 };
 
 export default ScriptLineItem;
-
-
-
-
-
-
-
-
-
-

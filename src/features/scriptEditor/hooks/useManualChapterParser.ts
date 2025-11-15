@@ -1,6 +1,3 @@
-
-
-
 import { useState, useCallback } from 'react';
 import { Project, Character } from '../../../types';
 import { parseRawTextToScriptLinesByRules } from '../../../lib/manualScriptParser';

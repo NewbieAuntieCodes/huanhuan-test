@@ -85,22 +85,22 @@ const PostProductionPage: React.FC = () => {
         return characters.filter(c => !c.projectId || c.projectId === currentProject.id);
     }, [currentProject, characters]);
 
-    const silentCharId = useMemo(() => {
-        // Look for the silent character within the project-specific character list for a more robust lookup.
-        return projectCharacters.find(c => c.name === '[静音]')?.id;
+    const silentCharIds = useMemo(() => {
+        // Look for all silent character IDs for a more robust lookup.
+        return projectCharacters.filter(c => c.name === '[静音]').map(c => c.id);
     }, [projectCharacters]);
 
     const chaptersForDisplay = useMemo(() => {
         if (!currentProject) return [];
-        // If no silent character ID is found, return chapters unfiltered.
-        if (!silentCharId) return currentProject.chapters;
+        // If no silent character IDs are found, return chapters unfiltered.
+        if (silentCharIds.length === 0) return currentProject.chapters;
 
-        // Filter out script lines assigned to the '[静音]' character.
+        // Filter out script lines assigned to any '[静音]' character.
         return currentProject.chapters.map(chapter => ({
             ...chapter,
-            scriptLines: chapter.scriptLines.filter(line => line.characterId !== silentCharId)
+            scriptLines: chapter.scriptLines.filter(line => !line.characterId || !silentCharIds.includes(line.characterId))
         }));
-    }, [currentProject, silentCharId]);
+    }, [currentProject, silentCharIds]);
 
     // Apply VoiceLibrary-like chapter filter on top of the silent-line filtered chapters
     const filteredChaptersForDisplay = useMemo(() => {

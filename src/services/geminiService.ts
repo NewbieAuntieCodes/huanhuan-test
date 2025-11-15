@@ -184,7 +184,7 @@ ${scriptText}
     }
 
   } catch (error: unknown) {
-    console.error(`Error with ${provider} API or parsing response:`, error);
+    console.error(`Error with ${provider} API or parsing response:`, String(error));
     // FIX: Safely handle error object of type 'unknown'.
     alert(`Error with AI Annotation: ${error instanceof Error ? error.message : String(error)}.`);
     throw error;

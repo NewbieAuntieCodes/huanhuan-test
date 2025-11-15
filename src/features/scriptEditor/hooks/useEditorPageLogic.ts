@@ -84,6 +84,7 @@ export const useEditorPageLogic = (props: EditorPageProps) => {
   const { isLoadingImportAnnotation, isImportModalOpen, setIsImportModalOpen, handleOpenImportModalTrigger, handleImportPreAnnotatedScript } = useAnnotationImporter({ currentProject, onAddCharacter: handleAddCharacterForProject, applyUndoableProjectUpdate, selectedChapterId, multiSelectedChapterIds, setMultiSelectedChapterIdsAfterProcessing });
   const { handleUpdateScriptLineText, handleAssignCharacterToLine, handleSplitScriptLine, handleMergeAdjacentLines, handleDeleteScriptLine, handleUpdateSoundType } = useScriptLineEditor(currentProject, projectCharacters, applyUndoableProjectUpdate, selectedChapterId);
   
+  // FIX: Define the handleImportAndCvUpdate function to resolve the "shorthand property" error.
   const handleImportAndCvUpdate = useCallback(async (annotatedText: string) => {
     const charactersWithCvToUpdate = await handleImportPreAnnotatedScript(annotatedText);
 
@@ -324,7 +325,6 @@ export const useEditorPageLogic = (props: EditorPageProps) => {
       if(projectId) batchAddChapters(projectId, count);
   }, [projectId, batchAddChapters]);
   
-  const handlePinSound = useStore(s => s.handlePinSound);
   const contextValue = useMemo<EditorContextType>(() => ({
     ...coreLogic,
     characters: projectCharacters,
@@ -338,7 +338,6 @@ export const useEditorPageLogic = (props: EditorPageProps) => {
     mergeChapters: undoableMergeChapters,
     insertChapterAfter: coreLogic.insertChapterAfter,
     batchAddChapters: handleBatchAddChapters,
-    splitChapterAtLine: coreLogic.splitChapterAtLine,
     isLoadingAiAnnotation,
     isLoadingManualParse,
     isLoadingImportAnnotation,
@@ -354,13 +353,12 @@ export const useEditorPageLogic = (props: EditorPageProps) => {
     addCustomSoundType: handleAddCustomSoundType,
     deleteCustomSoundType: handleDeleteCustomSoundType,
     addIgnoredSoundKeyword,
-    handlePinSound,
     openCharacterSidePanel: handleOpenCharacterSidePanel,
     openCvModal: onOpenCharacterAndCvStyleModal,
     openCharacterEditModal: onOpenCharacterAndCvStyleModal,
     soundLibrary,
     soundObservationList,
-  }), [coreLogic, projectCharacters, allCvNames, cvStyles, applyUndoableProjectUpdate, deleteChapters, undoableMergeChapters, handleBatchAddChapters, isLoadingAiAnnotation, isLoadingManualParse, isLoadingImportAnnotation, handleRunAiAnnotationForChapters, handleManualParseChapters, handleOpenImportModalTrigger, handleOpenScriptImport, handleSaveNewChapters, openShortcutSettingsModal, shortcutActiveLineId, handleAddCustomSoundType, handleDeleteCustomSoundType, addIgnoredSoundKeyword, handlePinSound, handleOpenCharacterSidePanel, onOpenCharacterAndCvStyleModal, soundLibrary, soundObservationList]);
+  }), [coreLogic, projectCharacters, allCvNames, cvStyles, applyUndoableProjectUpdate, deleteChapters, undoableMergeChapters, handleBatchAddChapters, isLoadingAiAnnotation, isLoadingManualParse, isLoadingImportAnnotation, handleRunAiAnnotationForChapters, handleManualParseChapters, handleOpenImportModalTrigger, handleOpenScriptImport, handleSaveNewChapters, openShortcutSettingsModal, shortcutActiveLineId, handleAddCustomSoundType, handleDeleteCustomSoundType, addIgnoredSoundKeyword, handleOpenCharacterSidePanel, onOpenCharacterAndCvStyleModal, soundLibrary, soundObservationList]);
 
   return {
     contextValue,

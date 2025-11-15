@@ -256,53 +256,38 @@ export const usePostProduction = () => {
     }, [selectedRange, currentProject, textMarkers, updateProjectTextMarkers, clearSelection]);
 
     const handleSaveBgm = useCallback((bgmName: string) => {
-        if (!selectedRange || !currentProject) return;
+        if (!selectedRange || !currentProject) {
+            alert('请先框选一段文本以指定BGM范围。');
+            return;
+        }
         const name = bgmName.trim();
         if (!name) {
           alert('请输入背景音乐（BGM）名称或标识');
           return;
         }
-        
-        // Use a format that is easily distinguishable and parsable
-        const bracketed = `<${name}>`;
-    
-        const { startContainer, startOffset } = selectedRange;
+
+        const { startContainer, startOffset, endContainer, endOffset } = selectedRange;
         const startResult = findLineIdAndOffset(startContainer, startOffset);
-    
-        if (!startResult) {
-            alert('无法确定插入位置，请重新在文本中点击');
-            return;
+        const endResult = findLineIdAndOffset(endContainer, endOffset);
+
+        if (startResult && endResult) {
+            const newMarker: TextMarker = {
+                id: `bgm_${Date.now()}`,
+                type: 'bgm',
+                name: name,
+                startLineId: startResult.lineId,
+                startOffset: startResult.offset,
+                endLineId: endResult.lineId,
+                endOffset: endResult.offset,
+            };
+            updateProjectTextMarkers(currentProject.id, [...textMarkers, newMarker]);
+        } else {
+            alert('无法确定所选文本的起止位置，请重新选择');
         }
-    
-        const { lineId, offset } = startResult;
-        let targetChapterId: string | null = null;
-        let currentLineText: string | null = null;
-        for (const ch of currentProject.chapters) {
-            const line = ch.scriptLines.find(l => l.id === lineId);
-            if (line) {
-                targetChapterId = ch.id;
-                currentLineText = line.text || '';
-                break;
-            }
-        }
-        if (!targetChapterId || currentLineText === null) {
-            alert('找不到目标文本行，请重试');
-            return;
-        }
-    
-        const newText = currentLineText.slice(0, offset) + bracketed + currentLineText.slice(offset);
-    
-        const projectClone = JSON.parse(JSON.stringify(currentProject));
-        const chapter = projectClone.chapters.find((c: Chapter) => c.id === targetChapterId);
-        if (chapter) {
-          const line = chapter.scriptLines.find((l: ScriptLine) => l.id === lineId);
-          if (line) line.text = newText;
-        }
-        updateProject(projectClone);
 
         setIsBgmModalOpen(false);
         clearSelection();
-    }, [selectedRange, currentProject, updateProject, clearSelection]);
+    }, [selectedRange, currentProject, textMarkers, updateProjectTextMarkers, clearSelection]);
 
     const handleSaveSfx = useCallback((rawSfxText: string) => {
         if (!selectedRange || !currentProject) return;

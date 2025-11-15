@@ -223,11 +223,14 @@ export const useAudioAlignmentAssistant = () => {
                 } else {
                     alert("重新扫描时需要文件夹读取权限。");
                 }
+// FIX: The 'err' variable is of type 'unknown'. Use 'instanceof Error' to safely access the 'name' property.
             } catch (err: unknown) {
+                // FIX: Add 'instanceof Error' guard to safely access 'name' property on 'unknown' type.
                 if (err instanceof Error && err.name === 'AbortError') {
                     // User cancelled, do nothing.
                 } else {
                     console.error("Error rescanning directory:", String(err));
+                    // FIX: Safely access error message from 'unknown' type.
                     alert(`重新扫描时出错: ${err instanceof Error ? err.message : String(err)}`);
                 }
             }
