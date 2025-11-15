@@ -85,7 +85,7 @@ export const useSoundHighlighter = (
         const inner = matchText.slice(1, -1);
         parts.push(`<span class=\"sound-keyword-highlight\" data-keyword=\"${escapeHtml(inner)}\" data-index=\"${match.index}\">${escapeHtml(matchText)}</span>`);
       } else {
-        parts.push(`<span class=\"sound-keyword-highlight\" data-keyword=\"${escapeHtml(matchText)}\" data-index=\"${match.index}\">[${escapeHtml(matchText)}]</span>`);
+        parts.push(`<span class=\"sound-keyword-highlight\" data-keyword=\"${escapeHtml(matchText)}\" data-index=\"${match.index}\">${escapeHtml(matchText)}</span>`);
       }
 
       lastIndex = matchIndex + matchText.length;
