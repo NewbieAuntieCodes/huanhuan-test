@@ -9,13 +9,18 @@ import LoadingSpinner from '../../../components/ui/LoadingSpinner';
 import { db } from '../../../db';
 
 const CATEGORIES = [
-    { key: 'music', name: '音乐' },
-    { key: 'ambience', name: '环境音' },
+    { key: 'music1', name: '音乐1' },
+    { key: 'music2', name: '音乐2' },
+    { key: 'ambience1', name: '环境音1' },
+    { key: 'ambience2', name: '环境音2' },
     { key: 'footsteps', name: '脚步声' },
     { key: 'fabric', name: '布料' },
     { key: 'doors_windows', name: '门窗' },
     { key: 'transportation', name: '交通' },
     { key: 'horror', name: '恐怖音效' },
+    { key: 'suspense', name: '悬疑音效' },
+    { key: 'fighting', name: '打斗音效' },
+    { key: 'firearms', name: '热武器音效' },
     { key: 'variety', name: '综艺音效' },
     { key: 'fantasy', name: '玄幻音效' },
     { key: 'sci_fi', name: '科幻音效' },

@@ -31,7 +31,7 @@ const BgmPopover: React.FC<BgmPopoverProps> = ({ keyword, top, left, onClose, on
     const matchingSounds = useMemo(() => {
         const lowerKeyword = keyword.toLowerCase();
         return soundLibrary.filter(sound =>
-            (sound.category === 'music' || sound.category === 'ambience') &&
+            (sound.category === 'music1' || sound.category === 'music2' || sound.category === 'ambience1' || sound.category === 'ambience2') &&
             sound.name.toLowerCase().includes(lowerKeyword)
         ).slice(0, 10); // Limit to 10 results
     }, [keyword, soundLibrary]);
