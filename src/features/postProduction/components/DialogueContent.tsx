@@ -109,7 +109,7 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
     const { contentRef, bgmLabelOverlays } = useMarkerRendering(textMarkers, chapters, suspendLayout, expandedChapterId);
     const [popoverState, setPopoverState] = useState<{ visible: boolean; keyword: string; top: number; left: number; lineId: string; chapterId: string; index: number; } | null>(null);
     const hidePopoverTimeout = useRef<number | null>(null);
-    const [bgmPopoverState, setBgmPopoverState] = useState<{ visible: boolean; keyword: string; top: number; left: number; } | null>(null);
+    const [bgmPopoverState, setBgmPopoverState] = useState<{ visible: boolean; keyword: string; top: number; left: number; lineId: string; chapterId: string; index: number; } | null>(null);
     const hideBgmPopoverTimeout = useRef<number | null>(null);
     
     const processedChaptersWithHighlight = useMemo(() => {
@@ -188,7 +188,7 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
             const keyword = target.dataset.bgmName;
             if (keyword) {
                 const rect = target.getBoundingClientRect();
-                setBgmPopoverState({ visible: true, keyword, top: rect.bottom, left: rect.left });
+                setBgmPopoverState({ visible: true, keyword, top: rect.bottom, left: rect.left, lineId: '', chapterId: '', index: 0 }); // Placeholder
             }
         }
     };
@@ -222,10 +222,13 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
                 setPopoverState({ visible: true, keyword, top: rect.bottom, left: rect.left, lineId: lineEl.dataset.lineId!, chapterId: chapterEl.dataset.chapterId!, index: parseInt(indexStr, 10) });
             }
         } else if (target.classList.contains('bgm-marker-inline')) {
-            const name = target.getAttribute('data-bgm-name');
-            if (name) {
+            const keyword = target.getAttribute('data-bgm-name');
+            const indexStr = target.getAttribute('data-index');
+            const lineEl = target.closest('[data-line-id]') as HTMLElement | null;
+            const chapterEl = target.closest('[data-chapter-id]') as HTMLElement | null;
+            if (keyword && indexStr && lineEl && chapterEl) {
                 const rect = target.getBoundingClientRect();
-                setBgmPopoverState({ visible: true, keyword: name, top: rect.bottom, left: rect.left });
+                setBgmPopoverState({ visible: true, keyword, top: rect.bottom, left: rect.left, lineId: lineEl.dataset.lineId!, chapterId: chapterEl.dataset.chapterId!, index: parseInt(indexStr, 10) });
             }
         } else {
             // click blank area closes
@@ -417,9 +420,25 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
         return line.pinnedSounds.find(p => p.keyword === popoverState.keyword && p.index === popoverState.index);
     }, [popoverState, currentProject]);
     
-    const handlePin = (soundId: number | null, soundName: string | null) => {
+    const currentPinnedBgm = useMemo(() => {
+        if (!bgmPopoverState || !currentProject) return null;
+        const chapter = currentProject.chapters.find(ch => ch.id === bgmPopoverState.chapterId);
+        const line = chapter?.scriptLines.find(l => l.id === bgmPopoverState.lineId);
+        if (!line || !line.pinnedSounds) return null;
+        const keyword = `<${bgmPopoverState.keyword}>`;
+        return line.pinnedSounds.find(p => p.keyword === keyword && p.index === bgmPopoverState.index);
+    }, [bgmPopoverState, currentProject]);
+
+    const handlePinSfx = (soundId: number | null, soundName: string | null) => {
         if (popoverState) {
             onPinSound(popoverState.lineId, popoverState.chapterId, popoverState.index, popoverState.keyword, soundId, soundName);
+        }
+    }
+    
+    const handlePinBgm = (soundId: number | null, soundName: string | null) => {
+        if (bgmPopoverState) {
+            const keyword = `<${bgmPopoverState.keyword}>`;
+            onPinSound(bgmPopoverState.lineId, bgmPopoverState.chapterId, bgmPopoverState.index, keyword, soundId, soundName);
         }
     }
 
@@ -599,7 +618,7 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
                     onMouseLeave={() => setPopoverState(null)}
                     soundLibrary={soundLibrary}
                     pinnedSoundId={currentPinnedSound?.soundId || null}
-                    onPinSound={handlePin}
+                    onPinSound={handlePinSfx}
                 />
             )}
             {bgmPopoverState?.visible && (
@@ -611,6 +630,8 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
                     onMouseEnter={handleBgmPopoverEnter}
                     onMouseLeave={() => setBgmPopoverState(null)}
                     soundLibrary={soundLibrary}
+                    pinnedSoundId={currentPinnedBgm?.soundId || null}
+                    onPinSound={handlePinBgm}
                 />
             )}
             <div className="flex-shrink-0 mt-4">

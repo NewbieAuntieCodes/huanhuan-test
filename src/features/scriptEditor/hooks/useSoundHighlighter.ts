@@ -77,7 +77,7 @@ export const useSoundHighlighter = (
         parts.push(escapeHtml(matchText));
       } else if (matchText.startsWith('<') && matchText.endsWith('>')) {
         const inner = matchText.slice(1, -1);
-        parts.push(`<strong class="bgm-marker-inline" data-bgm-name="${escapeHtml(inner)}">&lt;♫-${escapeHtml(inner)}&gt;</strong>`);
+        parts.push(`<strong class="bgm-marker-inline" data-bgm-name="${escapeHtml(inner)}" data-index="${match.index}">&lt;♫-${escapeHtml(inner)}&gt;</strong>`);
       } else if (matchText.startsWith('��') && matchText.endsWith('��')) {
         const title = matchText.slice(1, -1).replace('��', ', ');
         parts.push(`<span class=\"manual-sound-marker\" title=\"音效标记: ${escapeHtml(title)}\">${escapeHtml(matchText)}</span>`);
