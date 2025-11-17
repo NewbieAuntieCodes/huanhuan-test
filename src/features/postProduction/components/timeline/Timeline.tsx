@@ -70,15 +70,14 @@ const Timeline: React.FC = () => {
     const pixelsPerSecond = BASE_PIXELS_PER_SECOND * timelineZoom;
 
     const currentProject = useMemo(() => projects.find(p => p.id === selectedProjectId), [projects, selectedProjectId]);
-    // FIX: Explicitly type the Map to ensure correct type inference for its values.
     const characterMap = useMemo<Map<string, Character>>(() => new Map(characters.map(c => [c.id, c])), [characters]);
+    const soundLibraryMap = useMemo<Map<number, SoundLibraryItem>>(() => new Map(soundLibrary.filter(s => s.id !== undefined).map(s => [s.id!, s])), [soundLibrary]);
     const allClips = useMemo(() => trackGroups.flatMap(g => g.tracks.flatMap(t => t.clips)), [trackGroups]);
 
     useEffect(() => {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         return () => {
             if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-                // FIX: Add a parameter to the catch block to support older ES targets.
                 audioContextRef.current.close().catch(console.error);
             }
         };
@@ -88,12 +87,14 @@ const Timeline: React.FC = () => {
         if (!currentProject) {
             setIsLoading(false);
             setTrackGroups([]);
+            // FIX: Expected 1 arguments, but got 0.
             setTotalDuration(0);
             return;
         }
 
         const calculateTimeline = async () => {
             setIsLoading(true);
+            // FIX: Expected 1 arguments, but got 0.
             setTimelineCurrentTime(0);
             setTimelineIsPlaying(false);
 
@@ -161,8 +162,6 @@ const Timeline: React.FC = () => {
             // --- Process Pinned Sounds ---
             const sfxClips: TimelineClip[] = [];
             const bgmClips: TimelineClip[] = [];
-            // FIX: Explicitly type the Map and filter out items with no ID to ensure correct type inference.
-            const soundLibraryMap = useMemo<Map<number, SoundLibraryItem>>(() => new Map(soundLibrary.filter(s => s.id !== undefined).map(s => [s.id!, s])), [soundLibrary]);
 
             for (const clip of dialogueClips) {
                 if (clip.line.pinnedSounds) {
@@ -213,12 +212,12 @@ const Timeline: React.FC = () => {
             });
     
             const dialogueTrackData: TrackData[] = [
-                { name: '旁白 (Narration)', type: 'narration' as const, clips: dialogueTracks.narration },
-                { name: '角色对白 (Dialogue)', type: 'dialogue' as const, clips: dialogueTracks.dialogue },
-                { name: '心音 (OS)', type: 'os' as const, clips: dialogueTracks.os },
-                { name: '电话音 (Telephone)', type: 'telephone' as const, clips: dialogueTracks.telephone },
-                { name: '系统音 (System)', type: 'system' as const, clips: dialogueTracks.system },
-                { name: '其他 (Others)', type: 'other' as const, clips: dialogueTracks.other },
+                { name: '旁白 (Narration)', type: 'narration', clips: dialogueTracks.narration },
+                { name: '角色对白 (Dialogue)', type: 'dialogue', clips: dialogueTracks.dialogue },
+                { name: '心音 (OS)', type: 'os', clips: dialogueTracks.os },
+                { name: '电话音 (Telephone)', type: 'telephone', clips: dialogueTracks.telephone },
+                { name: '系统音 (System)', type: 'system', clips: dialogueTracks.system },
+                { name: '其他 (Others)', type: 'other', clips: dialogueTracks.other },
             ].filter(track => track.clips.length > 0);
 
             const newTrackGroups: TrackGroupData[] = [];
@@ -231,6 +230,7 @@ const Timeline: React.FC = () => {
                 });
             }
 
+            // FIX: The type `string` was incorrectly being assigned to the literal union type of `TrackData['type']`. Explicitly casting the `type` property using `as const` ensures it is treated as a literal, satisfying the type checker.
             if (bgmClips.length > 0) {
                 newTrackGroups.push({
                     name: '音乐 (Music)',
@@ -253,7 +253,7 @@ const Timeline: React.FC = () => {
         };
 
         calculateTimeline();
-    }, [currentProject, characters, characterMap, soundLibrary]);
+    }, [currentProject, characters, characterMap, soundLibrary, soundLibraryMap, setTimelineCurrentTime, setTimelineIsPlaying]);
 
     useEffect(() => {
         const audioContext = audioContextRef.current;

@@ -41,7 +41,7 @@ export const usePaginatedChapters = ({
     if (pageNumber !== currentPage) {
       setCurrentPage(pageNumber);
     }
-  }, [initialSelectedChapterIdForViewing, chapters, chaptersPerPage]);
+  }, [initialSelectedChapterIdForViewing, chapters, chaptersPerPage, currentPage]);
   
   // When the project changes, jump to the page containing the initially selected
   // chapter (if provided). Otherwise, default to page 1.
@@ -54,7 +54,7 @@ export const usePaginatedChapters = ({
     } else {
       setCurrentPage(1);
     }
-  }, [projectId, initialSelectedChapterIdForViewing, chapters, chaptersPerPage]);
+  }, [projectId]);
 
   // This effect corrects the current page if it becomes out of bounds, for example after filtering.
   useEffect(() => {

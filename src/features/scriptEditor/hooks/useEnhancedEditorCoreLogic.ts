@@ -54,7 +54,8 @@ export const useEnhancedEditorCoreLogic = ({
   }, [currentProject, selectedChapterId, history, setSelectedChapterId]);
 
   const applyUndoableProjectUpdate = useCallback((updater: (prevProject: Project) => Project) => {
-    const projectToUpdate = currentProject; // FIX: Use the up-to-date currentProject, not the stale one from history.
+    // FIX: Use the up-to-date currentProject from the hook's scope, not a stale one from history.
+    const projectToUpdate = currentProject;
     if (!projectToUpdate) return;
 
     const newProject = updater(projectToUpdate);

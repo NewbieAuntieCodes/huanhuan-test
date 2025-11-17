@@ -46,7 +46,7 @@ export const useManualChapterParser = ({
       });
     } catch (error: unknown) {
       console.error("Manual parsing failed:", error);
-      // Comment: Safely handle error object of type 'unknown'.
+      // FIX: Safely handle error object of type 'unknown'.
       alert(`Manual parsing failed: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setIsLoadingManualParse(false);
