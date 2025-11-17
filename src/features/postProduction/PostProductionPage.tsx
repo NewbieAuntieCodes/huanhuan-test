@@ -14,32 +14,8 @@ import { usePaginatedChapters } from '../../features/scriptEditor/hooks/usePagin
 import { exportPostProductionToReaper } from '../../services/postProductionReaperExporter';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Timeline from './components/timeline/Timeline';
-
-// A simple vertical resizer component
-const VerticalResizer: React.FC<{ onDrag: (deltaY: number) => void }> = ({ onDrag }) => {
-    const handleMouseDown = (e: React.MouseEvent) => {
-        const startY = e.clientY;
-        const handleMouseMove = (me: MouseEvent) => {
-            const deltaY = me.clientY - startY;
-            onDrag(deltaY);
-        };
-        const handleMouseUp = () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-        };
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-    };
-
-    return (
-        <div
-            onMouseDown={handleMouseDown}
-            className="h-2 w-full bg-slate-700 hover:bg-sky-600 cursor-row-resize flex-shrink-0"
-            title="Resize panels"
-        />
-    );
-};
-
+import ResizablePanels from '../../components/ui/ResizablePanels';
+import ResizableVerticalPanels from '../../components/ui/ResizableVerticalPanels';
 
 const PostProductionPage: React.FC = () => {
     const { navigateTo, soundLibrary, soundObservationList, characters, selectedChapterId: initialChapterId } = useStore(state => ({
@@ -49,12 +25,6 @@ const PostProductionPage: React.FC = () => {
         characters: state.characters,
         selectedChapterId: state.selectedChapterId,
     }));
-    
-    const [bottomPanelHeight, setBottomPanelHeight] = useState(300);
-
-    const handleResize = (deltaY: number) => {
-        setBottomPanelHeight(prevHeight => Math.max(100, Math.min(window.innerHeight - 200, prevHeight - deltaY)));
-    };
 
     const {
         currentProject,
@@ -261,14 +231,38 @@ const PostProductionPage: React.FC = () => {
                 </div>
             </header>
             
-            <div className="flex-grow flex flex-col overflow-hidden">
-                <div className="flex-grow overflow-hidden">
-                     {/* Horizontal resizer for sound lib and dialogue */}
-                </div>
-                <VerticalResizer onDrag={handleResize} />
-                <div style={{ height: `${bottomPanelHeight}px` }} className="flex-shrink-0 bg-slate-900">
-                    <Timeline />
-                </div>
+            <div className="flex-grow overflow-hidden">
+                <ResizableVerticalPanels
+                    initialTopHeightPercent={65}
+                    topPanel={
+                        <ResizablePanels
+                            leftPanel={<SoundLibraryPanel />}
+                            rightPanel={
+                                <DialogueContent
+                                    chapters={paginatedChapters}
+                                    allProjectChapters={currentProject.chapters}
+                                    characters={projectCharacters}
+                                    onTextSelect={handleTextSelect}
+                                    textMarkers={textMarkers}
+                                    suspendLayout={suspendLayout}
+                                    soundLibrary={soundLibrary}
+                                    soundObservationList={soundObservationList}
+                                    expandedChapterId={expandedChapterId}
+                                    setExpandedChapterId={setExpandedChapterId}
+                                    currentPage={currentPage}
+                                    totalPages={totalPages}
+                                    onPageChange={handlePageChange}
+                                    onContextMenuRequest={handleContextMenuRequest}
+                                    currentProject={currentProject}
+                                    onPinSound={handlePinSound}
+                                    onUpdateLineText={updateLineText}
+                                />
+                            }
+                            initialLeftWidthPercent={25}
+                        />
+                    }
+                    bottomPanel={<Timeline />}
+                />
             </div>
 
 
