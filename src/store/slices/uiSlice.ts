@@ -70,7 +70,9 @@ export interface UiSlice {
   soundObservationList: string[];
   isRecordingMode: boolean;
 
-
+  // Timeline State
+  timelineIsPlaying: boolean;
+  timelineCurrentTime: number;
 
 
   navigateTo: (view: AppView) => void;
@@ -110,6 +112,11 @@ export interface UiSlice {
   setSoundObservationList: (list: string[]) => Promise<void>;
   setRecordingMode: (enabled: boolean) => void;
   goToNextLine: () => Promise<void>;
+
+  // Timeline Actions
+  setTimelineIsPlaying: (isPlaying: boolean) => void;
+  setTimelineCurrentTime: (time: number) => void;
+  stopTimeline: () => void;
 }
 
 export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get) => ({
@@ -140,6 +147,10 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   lufsSettings: { enabled: false, target: -18 },
   soundObservationList: [],
   isRecordingMode: false,
+
+  // Timeline State
+  timelineIsPlaying: false,
+  timelineCurrentTime: 0,
 
   navigateTo: (view) => set({ currentView: view }),
   setIsLoading: (loading) => set({ isLoading: loading }),
@@ -307,4 +318,9 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
 
     set({ activeRecordingLineId: nextLine.id });
   },
+
+  // Timeline Actions
+  setTimelineIsPlaying: (isPlaying) => set({ timelineIsPlaying: isPlaying }),
+  setTimelineCurrentTime: (time) => set({ timelineCurrentTime: time }),
+  stopTimeline: () => set({ timelineIsPlaying: false, timelineCurrentTime: 0 }),
 });

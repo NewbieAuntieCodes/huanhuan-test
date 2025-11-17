@@ -3,7 +3,6 @@ import { useStore } from '../../store/useStore';
 import { ChevronLeftIcon, ClearFormattingIcon, ArrowDownOnSquareIcon } from '../../components/ui/icons';
 import ResizablePanels from '../../components/ui/ResizablePanels';
 import { DialogueContent } from './components/DialogueContent';
-import TimelineHeader from './components/TimelineHeader';
 import SoundLibraryPanel from './components/SoundLibraryPanel';
 import AddSceneModal from './components/AddSceneModal';
 import AddBgmModal from './components/AddBgmModal';
@@ -266,12 +265,7 @@ const PostProductionPage: React.FC = () => {
                         />
                     }
                     rightPanel={
-                        <div className="h-full flex flex-col">
-                            <TimelineHeader />
-                            <div className="flex-grow overflow-y-auto bg-slate-800">
-                                <Timeline />
-                            </div>
-                        </div>
+                       <Timeline />
                     }
                     initialLeftWidthPercent={70}
                 />

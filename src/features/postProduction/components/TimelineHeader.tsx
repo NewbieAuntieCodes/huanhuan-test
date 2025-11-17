@@ -1,5 +1,6 @@
 import React from 'react';
 import { PlayIcon, PauseIcon } from '../../../components/ui/icons';
+import { useStore } from '../../../store/useStore';
 
 const StopIcon: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 16 16" className={className}>
@@ -14,17 +15,40 @@ const LoopIcon: React.FC<{ className?: string }> = ({ className = "w-5 h-5" }) =
     </svg>
 );
 
+const formatTime = (seconds: number): string => {
+    if (!isFinite(seconds) || seconds < 0) return '00:00.000';
+    const totalMs = Math.floor(seconds * 1000);
+    const minutes = Math.floor(totalMs / 60000);
+    const remainingMs = totalMs % 60000;
+    const secs = Math.floor(remainingMs / 1000);
+    const ms = remainingMs % 1000;
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+};
+
+
 const TimelineHeader: React.FC = () => {
+    const { 
+        timelineIsPlaying, 
+        setTimelineIsPlaying, 
+        timelineCurrentTime,
+        stopTimeline,
+    } = useStore();
+
+    const handlePlayPause = () => {
+        setTimelineIsPlaying(!timelineIsPlaying);
+    };
+
     return (
         <div className="flex-shrink-0 flex items-center gap-4 p-2 bg-slate-800 border-b border-slate-700">
             <div className="flex items-center space-x-1">
-                <button title="播放" className="p-2 rounded hover:bg-slate-700 text-slate-300"><PlayIcon className="w-5 h-5" /></button>
-                <button title="暂停" className="p-2 rounded hover:bg-slate-700 text-slate-300"><PauseIcon className="w-5 h-5" /></button>
-                <button title="停止" className="p-2 rounded hover:bg-slate-700 text-slate-300"><StopIcon className="w-4 h-4" /></button>
-                <button title="循环" className="p-2 rounded hover:bg-slate-700 text-slate-300"><LoopIcon className="w-5 h-5" /></button>
+                <button title={timelineIsPlaying ? '暂停' : '播放'} onClick={handlePlayPause} className="p-2 rounded hover:bg-slate-700 text-slate-300">
+                    {timelineIsPlaying ? <PauseIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
+                </button>
+                <button title="停止" onClick={stopTimeline} className="p-2 rounded hover:bg-slate-700 text-slate-300"><StopIcon className="w-4 h-4" /></button>
+                <button title="循环" className="p-2 rounded hover:bg-slate-700 text-slate-300 opacity-50 cursor-not-allowed"><LoopIcon className="w-5 h-5" /></button>
             </div>
             <div className="font-mono text-lg text-sky-300">
-                00:00.000
+                {formatTime(timelineCurrentTime)}
             </div>
         </div>
     );
