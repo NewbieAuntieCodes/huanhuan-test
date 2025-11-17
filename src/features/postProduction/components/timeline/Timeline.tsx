@@ -45,30 +45,41 @@ const Timeline: React.FC = () => {
     
     const audioContextRef = useRef<AudioContext | null>(null);
     const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+    const scheduledClipsRef = useRef<Set<string>>(new Set());
+    const schedulerTimerRef = useRef<number>();
     const animationFrameRef = useRef<number>();
     const playbackStartRef = useRef<{ contextTime: number, timelineTime: number } | null>(null);
 
     const currentProject = useMemo(() => projects.find(p => p.id === selectedProjectId), [projects, selectedProjectId]);
     const characterMap = useMemo(() => new Map(characters.map(c => [c.id, c])), [characters]);
 
+    // Initialize and clean up the AudioContext
     useEffect(() => {
-        // Initialize and clean up the AudioContext
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         return () => {
-            audioContextRef.current?.close();
+            if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+                audioContextRef.current.close().catch(console.error);
+            }
         };
     }, []);
 
+    // Load and decode audio clips when the project changes
     useEffect(() => {
-        if (!currentProject || !audioContextRef.current) {
+        if (!currentProject) {
             setIsLoading(false);
             setTimelineClips([]);
+            setTotalDuration(0);
             return;
         }
-        const audioContext = audioContextRef.current; // Use the persistent context
+        
+        const audioContext = audioContextRef.current;
+        if (!audioContext) return;
 
         const calculateTimeline = async () => {
             setIsLoading(true);
+            setTimelineCurrentTime(0); // Reset time on new project/data
+            setTimelineIsPlaying(false); // Ensure playback is stopped
+
             const clips: TimelineClip[] = [];
             let currentTime = 0;
             const silenceSettings = currentProject.silenceSettings || defaultSilenceSettings;
@@ -83,7 +94,8 @@ const Timeline: React.FC = () => {
                     const audioBlobData = await db.audioBlobs.get(line.audioBlobId!);
                     if (audioBlobData) {
                         try {
-                            const audioBuffer = await audioContext.decodeAudioData(await audioBlobData.data.arrayBuffer());
+                            const arrayBuffer = await audioBlobData.data.arrayBuffer();
+                            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                             return { line, audioBuffer };
                         } catch (e) {
                             console.error(`Failed to decode audio for line ${line.id}:`, e);
@@ -128,66 +140,94 @@ const Timeline: React.FC = () => {
                 currentTime += silenceDuration > 0 ? silenceDuration : 0;
             }
 
+            scheduledClipsRef.current.clear();
             setTimelineClips(clips);
             setTotalDuration(currentTime);
             setIsLoading(false);
         };
 
         calculateTimeline();
-    }, [currentProject, characters, characterMap]);
+    }, [currentProject, characters, characterMap, setTimelineCurrentTime, setTimelineIsPlaying]);
 
-    // --- Playback Engine ---
+    // --- New Playback Engine with Look-ahead Scheduling ---
     useEffect(() => {
         const audioContext = audioContextRef.current;
         if (!audioContext) return;
-
-        const stopPlayback = () => {
-            activeSourcesRef.current.forEach(source => {
-                try { 
-                    source.stop(); 
-                    source.disconnect(); // Also disconnect to be tidy
-                } catch (e) {
-                    // Ignore errors if already stopped
-                }
-            });
-            activeSourcesRef.current.clear();
+        
+        // This single cleanup function is called whenever the effect re-runs or unmounts.
+        const cleanup = () => {
+            clearInterval(schedulerTimerRef.current);
+            schedulerTimerRef.current = undefined;
             if (animationFrameRef.current) {
                 cancelAnimationFrame(animationFrameRef.current);
                 animationFrameRef.current = undefined;
             }
+            activeSourcesRef.current.forEach(source => {
+                try { 
+                    source.onended = null;
+                    source.stop(); 
+                    source.disconnect();
+                } catch (e) { /* Ignore errors if already stopped */ }
+            });
+            activeSourcesRef.current.clear();
             playbackStartRef.current = null;
         };
-
-        const startPlayback = (startTime: number) => {
+        
+        if (timelineIsPlaying) {
             if (audioContext.state === 'suspended') {
                 audioContext.resume();
             }
-            
-            stopPlayback();
-            playbackStartRef.current = { contextTime: audioContext.currentTime, timelineTime: startTime };
-            
-            const newSources = timelineClips
-                .filter(clip => clip.startTime + clip.duration > startTime)
-                .map(clip => {
-                    const source = audioContext.createBufferSource();
-                    source.buffer = clip.audioBuffer;
-                    source.connect(audioContext.destination);
 
-                    const whenToStart = playbackStartRef.current!.contextTime + Math.max(0, clip.startTime - startTime);
-                    const offset = startTime > clip.startTime ? startTime - clip.startTime : 0;
-                    
-                    source.start(whenToStart, offset);
-                    
-                    // Cleanup when source ends
-                    source.onended = () => {
-                        activeSourcesRef.current.delete(source);
-                    };
+            // A seek happened or playback is starting. Reset scheduled clips.
+            scheduledClipsRef.current.clear();
 
-                    return source;
+            playbackStartRef.current = {
+                contextTime: audioContext.currentTime,
+                timelineTime: timelineCurrentTime,
+            };
+
+            const scheduleWindow = 0.5; // seconds ahead to look for clips
+            const scheduleInterval = 250; // run scheduler every 250ms
+
+            const scheduler = () => {
+                if (!playbackStartRef.current) return;
+                
+                const audioCtxTime = audioContext.currentTime;
+                const elapsed = audioCtxTime - playbackStartRef.current.contextTime;
+                const currentTime = playbackStartRef.current.timelineTime + elapsed;
+                const scheduleAheadTime = currentTime + scheduleWindow;
+
+                timelineClips.forEach(clip => {
+                    if (
+                        clip.startTime < scheduleAheadTime &&
+                        clip.startTime + clip.duration > currentTime &&
+                        !scheduledClipsRef.current.has(clip.id)
+                    ) {
+                        const source = audioContext.createBufferSource();
+                        source.buffer = clip.audioBuffer;
+                        source.connect(audioContext.destination);
+
+                        const startOffset = Math.max(0, currentTime - clip.startTime);
+                        const startDelay = Math.max(0, clip.startTime - currentTime);
+                        const startWhen = audioCtxTime + startDelay;
+                        
+                        source.start(startWhen, startOffset);
+                        
+                        activeSourcesRef.current.add(source);
+                        scheduledClipsRef.current.add(clip.id);
+                        
+                        source.onended = () => {
+                            activeSourcesRef.current.delete(source);
+                        };
+                    }
                 });
-            
-            activeSourcesRef.current = new Set(newSources);
+            };
 
+            // Run scheduler immediately and then set interval
+            scheduler();
+            schedulerTimerRef.current = window.setInterval(scheduler, scheduleInterval);
+
+            // UI update loop
             const rafLoop = () => {
                 if (playbackStartRef.current) {
                     const elapsed = audioContext.currentTime - playbackStartRef.current.contextTime;
@@ -195,7 +235,7 @@ const Timeline: React.FC = () => {
 
                     if (newTime >= totalDuration) {
                         setTimelineCurrentTime(totalDuration);
-                        setTimelineIsPlaying(false); // This will trigger the stop logic in the next render
+                        setTimelineIsPlaying(false);
                     } else {
                         setTimelineCurrentTime(newTime);
                         animationFrameRef.current = requestAnimationFrame(rafLoop);
@@ -203,22 +243,18 @@ const Timeline: React.FC = () => {
                 }
             };
             animationFrameRef.current = requestAnimationFrame(rafLoop);
-        };
-
-        if (timelineIsPlaying) {
-            startPlayback(timelineCurrentTime);
-        } else {
-            stopPlayback();
         }
 
-        // Cleanup on unmount or when dependencies change
-        return () => stopPlayback();
-    }, [timelineIsPlaying, timelineClips, totalDuration, timelineCurrentTime, setTimelineIsPlaying, setTimelineCurrentTime]);
+        return cleanup;
+    }, [timelineIsPlaying, timelineCurrentTime, timelineClips, totalDuration, setTimelineIsPlaying, setTimelineCurrentTime]);
 
     const handleSeek = (event: React.MouseEvent<HTMLDivElement>) => {
         const rect = event.currentTarget.getBoundingClientRect();
         const x = event.clientX - rect.left;
-        const time = Math.max(0, x / PIXELS_PER_SECOND);
+        const time = Math.max(0, Math.min(x / PIXELS_PER_SECOND, totalDuration));
+        
+        // This is the key: when user seeks, update the canonical time.
+        // The playback `useEffect` will detect this change and restart playback from the new time.
         setTimelineCurrentTime(time);
     };
 

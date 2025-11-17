@@ -230,7 +230,8 @@ export const useWaveSurfer = ({
               setMarkerState(prev => ({...prev, markers: initialMarkers}));
               setHistoryState({ history: [initialMarkers], index: 0, canUndo: false, canRedo: false });
             }
-        } catch (e) {
+// FIX: Catch block parameter must be of type 'any' or 'unknown' if specified. Safely handle the error object by checking its type before accessing properties.
+        } catch (e: unknown) {
             setError(e instanceof Error ? e.message : '加载音频失败');
         } finally {
             setIsLoading(false);

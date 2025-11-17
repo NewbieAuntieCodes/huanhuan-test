@@ -28,8 +28,8 @@ const BatchEmotionAssistantModal: React.FC<BatchEmotionAssistantModalProps> = ({
           const character = row.characterId ? characterMap.get(row.characterId) : null;
 
             if (character) {
-// FIX: Replaced `character.name` with a safe access pattern `character?.name` to prevent potential runtime errors when character is null or undefined.
-            const charName = character?.name;
+// FIX: Removed redundant optional chaining. The 'if (character)' guard already ensures 'character' is not null.
+            const charName = character.name;
             // Skip functional characters
             if (charName && functionalCharacterNames.includes(charName)) {
                 return null;
