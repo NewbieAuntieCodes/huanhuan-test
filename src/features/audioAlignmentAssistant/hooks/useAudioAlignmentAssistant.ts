@@ -205,7 +205,7 @@ export const useAudioAlignmentAssistant = () => {
             await scanDirectory(handle, true);
 // FIX: The 'err' variable is of type 'unknown' in a catch block. Add an 'instanceof Error' check to safely access the 'name' property.
         } catch (err: unknown) {
-            // FIX: Add 'instanceof Error' guard to safely access 'name' property on 'unknown' type.
+            // FIX: The 'err' variable is of type 'unknown'. Add an 'instanceof Error' check to safely access the 'name' property.
             if (err instanceof Error && err.name === 'AbortError') {
                 // User cancelled, do nothing.
             } else {

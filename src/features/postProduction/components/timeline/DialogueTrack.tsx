@@ -1,6 +1,15 @@
 import React from 'react';
 import AudioClip from './AudioClip';
-import { TimelineClip } from './Timeline';
+import { ScriptLine, Character } from '../../../../types';
+
+export interface TimelineClip {
+    id: string;
+    startTime: number;
+    duration: number;
+    line: ScriptLine;
+    character?: Character;
+    audioBlobId: string;
+}
 
 interface DialogueTrackProps {
   clips: TimelineClip[];
