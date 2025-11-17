@@ -28,8 +28,9 @@ const BatchEmotionAssistantModal: React.FC<BatchEmotionAssistantModalProps> = ({
           const character = row.characterId ? characterMap.get(row.characterId) : null;
 
             if (character) {
-            // FIX: Add type assertion to resolve 'unknown' type error.
-            const charName = (character as Character).name;
+// FIX: The `character` variable was being inferred as `unknown`, causing a type error when accessing `.name`.
+// The unnecessary type assertion `as Character` has been removed as the `if (character)` check correctly narrows the type.
+            const charName = character.name;
             // Skip functional characters
             if (charName && functionalCharacterNames.includes(charName)) {
                 return null;

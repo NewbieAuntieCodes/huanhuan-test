@@ -3,7 +3,8 @@ import { useStore } from '../../../../store/useStore';
 import { db } from '../../../../db';
 import { LineType, ScriptLine, Character, SilencePairing } from '../../../../types';
 import LoadingSpinner from '../../../../components/ui/LoadingSpinner';
-import DialogueTrack from './DialogueTrack';
+import TrackGroup from './TrackGroup';
+import Track from '../Track';
 import TimeRuler from './TimeRuler';
 import { defaultSilenceSettings } from '../../../../lib/defaultSilenceSettings';
 import Playhead from './Playhead';
@@ -17,6 +18,18 @@ export interface TimelineClip {
     line: ScriptLine;
     character?: Character;
     audioBlobId: string;
+}
+
+interface TrackData {
+    name: string;
+    type: 'narration' | 'dialogue' | 'os' | 'telephone' | 'system' | 'other' | 'music' | 'sfx' | 'ambience';
+    clips: TimelineClip[];
+}
+
+interface TrackGroupData {
+    name: string;
+    isExpanded: boolean;
+    tracks: TrackData[];
 }
 
 const getLineType = (line: ScriptLine | undefined, characters: Character[]): LineType => {
@@ -39,7 +52,7 @@ const Timeline: React.FC = () => {
       timelineZoom,
     } = useStore();
     
-    const [timelineClips, setTimelineClips] = useState<TimelineClip[]>([]);
+    const [trackGroups, setTrackGroups] = useState<TrackGroupData[]>([]);
     const [totalDuration, setTotalDuration] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     
@@ -55,6 +68,7 @@ const Timeline: React.FC = () => {
 
     const currentProject = useMemo(() => projects.find(p => p.id === selectedProjectId), [projects, selectedProjectId]);
     const characterMap = useMemo(() => new Map(characters.map(c => [c.id, c])), [characters]);
+    const allClips = useMemo(() => trackGroups.flatMap(g => g.tracks.flatMap(t => t.clips)), [trackGroups]);
 
     useEffect(() => {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -68,7 +82,7 @@ const Timeline: React.FC = () => {
     useEffect(() => {
         if (!currentProject) {
             setIsLoading(false);
-            setTimelineClips([]);
+            setTrackGroups([]);
             setTotalDuration(0);
             return;
         }
@@ -84,7 +98,7 @@ const Timeline: React.FC = () => {
             
             const allLinesWithAudio = currentProject.chapters.flatMap(ch => ch.scriptLines).filter(line => line.audioBlobId);
             
-            const validItems = (await Promise.all(
+            const baseItemsUnsorted = (await Promise.all(
                 allLinesWithAudio.map(async (line) => {
                     const audioBlobData = await db.audioBlobs.get(line.audioBlobId!);
                     if (audioBlobData) {
@@ -92,7 +106,7 @@ const Timeline: React.FC = () => {
                             const metadata = await mm.parseBlob(audioBlobData.data);
                             const duration = metadata.format.duration;
                             if (duration && duration > 0) {
-                                return { line, audioBlobId: line.audioBlobId!, duration };
+                                return { line, duration };
                             }
                         } catch (e) {
                             console.error(`Failed to parse metadata for line ${line.id}:`, e);
@@ -101,27 +115,36 @@ const Timeline: React.FC = () => {
                     return null;
                 })
             )).filter((item): item is NonNullable<typeof item> => item !== null);
+
+            // Need to know line's original index to sort correctly
+            const lineOrderMap = new Map<string, number>();
+            currentProject.chapters.forEach((ch, chIdx) => {
+                ch.scriptLines.forEach((ln, lnIdx) => {
+                    lineOrderMap.set(ln.id, chIdx * 100000 + lnIdx);
+                });
+            });
+            baseItemsUnsorted.sort((a, b) => (lineOrderMap.get(a.line.id) ?? 0) - (lineOrderMap.get(b.line.id) ?? 0));
             
             const clips: TimelineClip[] = [];
-            for (let i = 0; i < validItems.length; i++) {
-                const item = validItems[i];
+            for (let i = 0; i < baseItemsUnsorted.length; i++) {
+                const item = baseItemsUnsorted[i];
                 clips.push({
                     id: item.line.id,
                     startTime: currentTime,
                     duration: item.duration,
                     line: item.line,
                     character: item.line.characterId ? characterMap.get(item.line.characterId) : undefined,
-                    audioBlobId: item.audioBlobId,
+                    audioBlobId: item.line.audioBlobId!,
                 });
                 currentTime += item.duration;
                 let silenceDuration = 0;
                 if (item.line.postSilence !== undefined && item.line.postSilence !== null) {
                     silenceDuration = item.line.postSilence;
                 } else {
-                    if (i === validItems.length - 1) {
+                    if (i === baseItemsUnsorted.length - 1) {
                         silenceDuration = silenceSettings.endPadding;
                     } else {
-                        const nextLine = validItems[i+1].line;
+                        const nextLine = baseItemsUnsorted[i+1].line;
                         const currentLineType = getLineType(item.line, characters);
                         const nextLineType = getLineType(nextLine, characters);
                         const pairKey = `${currentLineType}-to-${nextLineType}` as SilencePairing;
@@ -131,14 +154,50 @@ const Timeline: React.FC = () => {
                 currentTime += silenceDuration > 0 ? silenceDuration : 0;
             }
 
+            const dialogueTracks: Record<string, TimelineClip[]> = { narration: [], dialogue: [], os: [], telephone: [], system: [], other: [] };
+            const otherSoundTypes = new Set(currentProject.customSoundTypes || []);
+
+            clips.forEach(clip => {
+                const soundType = clip.line.soundType;
+                if (clip.character?.name === 'Narrator') dialogueTracks.narration.push(clip);
+                else if (soundType === 'OS') dialogueTracks.os.push(clip);
+                else if (soundType === '电话音') dialogueTracks.telephone.push(clip);
+                else if (soundType === '系统音') dialogueTracks.system.push(clip);
+                else if (soundType && otherSoundTypes.has(soundType)) dialogueTracks.other.push(clip);
+                else dialogueTracks.dialogue.push(clip);
+            });
+    
+// FIX: The `type` properties are explicitly cast to their literal types (e.g., `'narration' as const`)
+// to ensure they match the strict union type required by the `TrackData` interface, resolving the type mismatch error.
+            const dialogueTrackData: TrackData[] = [
+                { name: '旁白 (Narration)', type: 'narration' as const, clips: dialogueTracks.narration },
+                { name: '角色对白 (Dialogue)', type: 'dialogue' as const, clips: dialogueTracks.dialogue },
+                { name: '心音 (OS)', type: 'os' as const, clips: dialogueTracks.os },
+                { name: '电话音 (Telephone)', type: 'telephone' as const, clips: dialogueTracks.telephone },
+                { name: '系统音 (System)', type: 'system' as const, clips: dialogueTracks.system },
+                { name: '其他 (Others)', type: 'other' as const, clips: dialogueTracks.other },
+            ].filter(track => track.clips.length > 0);
+
+            const newTrackGroups: TrackGroupData[] = [];
+
+            if (dialogueTrackData.length > 0) {
+                newTrackGroups.push({
+                    name: '人声 (Dialogue)',
+                    isExpanded: true,
+                    tracks: dialogueTrackData
+                });
+            }
+            
             scheduledClipsRef.current.clear();
-            setTimelineClips(clips);
+            setTrackGroups(newTrackGroups);
             setTotalDuration(currentTime);
             setIsLoading(false);
         };
 
         calculateTimeline();
-    }, [currentProject, characters, characterMap, setTimelineCurrentTime, setTimelineIsPlaying]);
+// FIX: Removed stable Zustand setter functions (`setTimelineCurrentTime`, `setTimelineIsPlaying`) from the dependency array.
+// This is best practice as they do not change, and it resolves a potentially misleading TypeScript error about missing arguments.
+    }, [currentProject, characters, characterMap]);
 
     useEffect(() => {
         const audioContext = audioContextRef.current;
@@ -182,7 +241,7 @@ const Timeline: React.FC = () => {
                 const currentTime = playbackStartRef.current.timelineTime + elapsed;
                 const scheduleAheadTime = currentTime + scheduleWindow;
 
-                for (const clip of timelineClips) {
+                for (const clip of allClips) {
                     const isAlreadyScheduled = scheduledClipsRef.current.has(clip.id);
                     const shouldBePlaying = clip.startTime <= currentTime && clip.startTime + clip.duration > currentTime;
                     const willBePlayingSoon = clip.startTime > currentTime && clip.startTime < scheduleAheadTime;
@@ -248,12 +307,12 @@ const Timeline: React.FC = () => {
         }
 
         return cleanup;
-    }, [timelineIsPlaying, timelineClips, totalDuration, setTimelineIsPlaying, setTimelineCurrentTime]);
+    }, [timelineIsPlaying, allClips, totalDuration, setTimelineIsPlaying, setTimelineCurrentTime]);
 
     const handleSeek = (event: React.MouseEvent<HTMLDivElement>) => {
         const rect = event.currentTarget.getBoundingClientRect();
         const x = event.clientX - rect.left;
-        const time = Math.max(0, Math.min(x / pixelsPerSecond, totalDuration));
+        const time = Math.max(0, Math.min((event.currentTarget.scrollLeft + x) / pixelsPerSecond, totalDuration));
         
         setTimelineCurrentTime(time);
         
@@ -280,7 +339,7 @@ const Timeline: React.FC = () => {
         );
     }
     
-    if (timelineClips.length === 0) {
+    if (trackGroups.length === 0) {
         return (
             <div className="h-full flex flex-col">
                 <TimelineHeader />
@@ -294,11 +353,22 @@ const Timeline: React.FC = () => {
     return (
         <div className="h-full flex flex-col bg-slate-900">
             <TimelineHeader />
-            <div className="w-full h-full overflow-auto relative">
-                <div style={{ width: `${totalDuration * pixelsPerSecond}px`, minWidth: '100%' }} onMouseDown={handleSeek}>
+            <div className="w-full h-full overflow-auto relative" onMouseDown={handleSeek}>
+                <div style={{ width: `${totalDuration * pixelsPerSecond}px`, minWidth: '100%' }}>
                     <TimeRuler duration={totalDuration} pixelsPerSecond={pixelsPerSecond} />
-                    <div className="p-2 relative">
-                        <DialogueTrack clips={timelineClips} pixelsPerSecond={pixelsPerSecond} />
+                    <div className="relative">
+                        {trackGroups.map(group => (
+                            <TrackGroup key={group.name} name={group.name} defaultExpanded={group.isExpanded}>
+                                {group.tracks.map(track => (
+                                    <Track
+                                        key={track.name}
+                                        name={track.name}
+                                        clips={track.clips}
+                                        pixelsPerSecond={pixelsPerSecond}
+                                    />
+                                ))}
+                            </TrackGroup>
+                        ))}
                     </div>
                 </div>
                 <Playhead pixelsPerSecond={pixelsPerSecond} />

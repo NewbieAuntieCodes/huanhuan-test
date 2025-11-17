@@ -6,7 +6,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import ExportVoiceLibraryModal from './components/ExportVoiceLibraryModal';
 import { useVoiceLibrary } from './hooks/useVoiceLibrary';
 import { VoiceLibraryRowState } from './hooks/useVoiceLibrary'; // Import type from hook
-import { ScriptLine } from '../../types';
+import { ScriptLine, Character } from '../../types';
 import AudioTrimmerModal from './components/AudioTrimmerModal';
 import BatchEmotionAssistantModal from './components/BatchEmotionAssistantModal';
 
@@ -238,7 +238,9 @@ const VoiceLibraryPage: React.FC = () => {
           ) : (
             rows.map(row => {
               const line = row.originalLineId ? lineMap.get(row.originalLineId) : null;
-              const characterForRow = line?.characterId ? (characterMap.get(line.characterId) || null) : null;
+// FIX: The type `unknown` was being inferred for `characterForRow`, causing an error when accessing its `id` property.
+// Adding an explicit type annotation of `Character | null` resolves this type inference issue.
+              const characterForRow: Character | null = line?.characterId ? (characterMap.get(line.characterId) || null) : null;
               return (
               <VoiceLibraryRow
                 key={row.id}

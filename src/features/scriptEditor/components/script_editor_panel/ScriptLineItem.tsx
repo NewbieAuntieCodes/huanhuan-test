@@ -8,6 +8,7 @@ import { useEditorContext } from '../../contexts/EditorContext';
 
 interface ScriptLineItemProps {
   line: ScriptLine;
+  chapterId: string;
   characters: Character[];
   characterIdsInChapter: Set<string>;
   onUpdateText: (lineId: string, newText: string) => void;

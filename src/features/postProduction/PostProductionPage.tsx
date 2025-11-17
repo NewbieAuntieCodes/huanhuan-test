@@ -16,6 +16,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Timeline from './components/timeline/Timeline';
 import ResizablePanels from '../../components/ui/ResizablePanels';
 import ResizableVerticalPanels from '../../components/ui/ResizableVerticalPanels';
+import { TextMarker } from '../../types';
 
 const PostProductionPage: React.FC = () => {
     const { navigateTo, soundLibrary, soundObservationList, characters, selectedChapterId: initialChapterId } = useStore(state => ({
@@ -187,7 +188,9 @@ const PostProductionPage: React.FC = () => {
         );
     }
     
-    const existingSceneNames = useMemo(() => Array.from(new Set(textMarkers.filter(m => m.type === 'scene' && m.name).map(m => m.name!))), [textMarkers]);
+// FIX: The type checker was inferring `m.name` as potentially `undefined`, causing `new Set` to be of type `Set<unknown>`.
+// Added a type guard `(m): m is TextMarker & { name: string } => ...` to ensure that `m.name` is a `string` before mapping, satisfying the type requirements for creating a `Set<string>`.
+    const existingSceneNames = useMemo(() => Array.from(new Set(textMarkers.filter((m): m is TextMarker & { name: string } => m.type === 'scene' && !!m.name).map(m => m.name))), [textMarkers]);
 
     return (
         <div className="h-full flex flex-col bg-slate-900 text-slate-100">

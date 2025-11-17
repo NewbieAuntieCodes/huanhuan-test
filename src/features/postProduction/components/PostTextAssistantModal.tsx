@@ -248,7 +248,9 @@ const PostTextAssistantModal: React.FC<PostTextAssistantModalProps> = ({ isOpen,
     if (!pasted.trim()) {
       setPreviewMsg('');
       setCanApply(false);
-      setChangedCount({ sfx: 0, bgm: 0, scenes: 0 });
+// FIX: The 'changedCount' state update was missing the 'bgmEnd' property, causing a TypeScript error.
+// The property has been added with a default value of 0 to match the state's type definition.
+      setChangedCount({ sfx: 0, bgm: 0, bgmEnd: 0, scenes: 0 });
       return;
     }
     const { tokens } = tokenizeAiResult(pasted);
