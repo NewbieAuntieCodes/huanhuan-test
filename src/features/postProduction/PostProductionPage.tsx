@@ -15,6 +15,7 @@ import { usePostProduction } from './hooks/usePostProduction';
 import { usePaginatedChapters } from '../../features/scriptEditor/hooks/usePaginatedChapters';
 import { exportPostProductionToReaper } from '../../services/postProductionReaperExporter';
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
+import Timeline from './components/timeline/Timeline';
 
 const PostProductionPage: React.FC = () => {
     const { navigateTo, soundLibrary, soundObservationList, characters, selectedChapterId: initialChapterId } = useStore(state => ({
@@ -267,8 +268,8 @@ const PostProductionPage: React.FC = () => {
                     rightPanel={
                         <div className="h-full flex flex-col">
                             <TimelineHeader />
-                            <div className="flex-grow overflow-y-auto bg-slate-850 p-2">
-                                <p className="text-center text-slate-500 text-sm">时间轴功能待开发</p>
+                            <div className="flex-grow overflow-y-auto bg-slate-800">
+                                <Timeline />
                             </div>
                         </div>
                     }
