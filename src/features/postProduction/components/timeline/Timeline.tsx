@@ -15,6 +15,7 @@ export interface TimelineClip {
     duration: number;
     line: ScriptLine;
     character?: Character;
+    audioBuffer: AudioBuffer;
 }
 
 const getLineType = (line: ScriptLine | undefined, characters: Character[]): LineType => {
@@ -59,11 +60,12 @@ const Timeline: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        if (!currentProject) {
+        if (!currentProject || !audioContextRef.current) {
             setIsLoading(false);
             setTimelineClips([]);
             return;
         }
+        const audioContext = audioContextRef.current; // Use the persistent context
 
         const calculateTimeline = async () => {
             setIsLoading(true);
@@ -75,47 +77,55 @@ const Timeline: React.FC = () => {
             
             const allLinesWithAudio = currentProject.chapters.flatMap(ch => ch.scriptLines).filter(line => line.audioBlobId);
             
-            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-
-            try {
-                for (let i = 0; i < allLinesWithAudio.length; i++) {
-                    const line = allLinesWithAudio[i];
+            // Using Promise.all for parallel decoding
+            const decodedItems = await Promise.all(
+                allLinesWithAudio.map(async (line) => {
                     const audioBlobData = await db.audioBlobs.get(line.audioBlobId!);
                     if (audioBlobData) {
-                        const audioBuffer = await audioContext.decodeAudioData(await audioBlobData.data.arrayBuffer());
-                        const duration = audioBuffer.duration;
-
-                        clips.push({
-                            id: line.id,
-                            startTime: currentTime,
-                            duration: duration,
-                            line: line,
-                            character: line.characterId ? characterMap.get(line.characterId) : undefined,
-                        });
-
-                        currentTime += duration;
-
-                        let silenceDuration = 0;
-                        if (line.postSilence !== undefined && line.postSilence !== null) {
-                            silenceDuration = line.postSilence;
-                        } else {
-                            if (i === allLinesWithAudio.length - 1) {
-                                silenceDuration = silenceSettings.endPadding;
-                            } else {
-                                const nextLine = allLinesWithAudio[i+1];
-                                const currentLineType = getLineType(line, characters);
-                                const nextLineType = getLineType(nextLine, characters);
-                                const pairKey = `${currentLineType}-to-${nextLineType}` as SilencePairing;
-                                silenceDuration = silenceSettings.pairs[pairKey] ?? 1.0;
-                            }
+                        try {
+                            const audioBuffer = await audioContext.decodeAudioData(await audioBlobData.data.arrayBuffer());
+                            return { line, audioBuffer };
+                        } catch (e) {
+                            console.error(`Failed to decode audio for line ${line.id}:`, e);
+                            return null;
                         }
-                        currentTime += silenceDuration > 0 ? silenceDuration : 0;
+                    }
+                    return null;
+                })
+            );
+
+            const validItems = decodedItems.filter((item): item is { line: ScriptLine, audioBuffer: AudioBuffer } => item !== null);
+
+            for (let i = 0; i < validItems.length; i++) {
+                const { line, audioBuffer } = validItems[i];
+                const duration = audioBuffer.duration;
+
+                clips.push({
+                    id: line.id,
+                    startTime: currentTime,
+                    duration: duration,
+                    line: line,
+                    character: line.characterId ? characterMap.get(line.characterId) : undefined,
+                    audioBuffer: audioBuffer,
+                });
+
+                currentTime += duration;
+
+                let silenceDuration = 0;
+                if (line.postSilence !== undefined && line.postSilence !== null) {
+                    silenceDuration = line.postSilence;
+                } else {
+                    if (i === validItems.length - 1) {
+                        silenceDuration = silenceSettings.endPadding;
+                    } else {
+                        const nextLine = validItems[i+1].line;
+                        const currentLineType = getLineType(line, characters);
+                        const nextLineType = getLineType(nextLine, characters);
+                        const pairKey = `${currentLineType}-to-${nextLineType}` as SilencePairing;
+                        silenceDuration = silenceSettings.pairs[pairKey] ?? 1.0;
                     }
                 }
-            } finally {
-                if(audioContext.state !== 'closed') {
-                    await audioContext.close();
-                }
+                currentTime += silenceDuration > 0 ? silenceDuration : 0;
             }
 
             setTimelineClips(clips);
@@ -133,41 +143,50 @@ const Timeline: React.FC = () => {
 
         const stopPlayback = () => {
             activeSourcesRef.current.forEach(source => {
-                try { source.stop(); } catch (e) {}
+                try { 
+                    source.stop(); 
+                    source.disconnect(); // Also disconnect to be tidy
+                } catch (e) {
+                    // Ignore errors if already stopped
+                }
             });
             activeSourcesRef.current.clear();
             if (animationFrameRef.current) {
                 cancelAnimationFrame(animationFrameRef.current);
+                animationFrameRef.current = undefined;
             }
             playbackStartRef.current = null;
         };
 
-        const startPlayback = async (startTime: number) => {
-            if (audioContext.state === 'suspended') await audioContext.resume();
+        const startPlayback = (startTime: number) => {
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
             
             stopPlayback();
             playbackStartRef.current = { contextTime: audioContext.currentTime, timelineTime: startTime };
             
-            const promises = timelineClips
+            const newSources = timelineClips
                 .filter(clip => clip.startTime + clip.duration > startTime)
-                .map(async clip => {
-                    const audioBlobData = await db.audioBlobs.get(clip.line.audioBlobId!);
-                    if (!audioBlobData) return null;
-
-                    const audioBuffer = await audioContext.decodeAudioData(await audioBlobData.data.arrayBuffer());
+                .map(clip => {
                     const source = audioContext.createBufferSource();
-                    source.buffer = audioBuffer;
+                    source.buffer = clip.audioBuffer;
                     source.connect(audioContext.destination);
 
                     const whenToStart = playbackStartRef.current!.contextTime + Math.max(0, clip.startTime - startTime);
                     const offset = startTime > clip.startTime ? startTime - clip.startTime : 0;
                     
                     source.start(whenToStart, offset);
+                    
+                    // Cleanup when source ends
+                    source.onended = () => {
+                        activeSourcesRef.current.delete(source);
+                    };
+
                     return source;
                 });
             
-            const sources = (await Promise.all(promises)).filter((s): s is AudioBufferSourceNode => s !== null);
-            activeSourcesRef.current = new Set(sources);
+            activeSourcesRef.current = new Set(newSources);
 
             const rafLoop = () => {
                 if (playbackStartRef.current) {
@@ -176,7 +195,7 @@ const Timeline: React.FC = () => {
 
                     if (newTime >= totalDuration) {
                         setTimelineCurrentTime(totalDuration);
-                        setTimelineIsPlaying(false);
+                        setTimelineIsPlaying(false); // This will trigger the stop logic in the next render
                     } else {
                         setTimelineCurrentTime(newTime);
                         animationFrameRef.current = requestAnimationFrame(rafLoop);
@@ -192,6 +211,7 @@ const Timeline: React.FC = () => {
             stopPlayback();
         }
 
+        // Cleanup on unmount or when dependencies change
         return () => stopPlayback();
     }, [timelineIsPlaying, timelineClips, totalDuration, timelineCurrentTime, setTimelineIsPlaying, setTimelineCurrentTime]);
 
@@ -208,7 +228,7 @@ const Timeline: React.FC = () => {
                 <TimelineHeader />
                 <div className="flex-grow flex items-center justify-center">
                     <LoadingSpinner />
-                    <p className="ml-2 text-slate-300">正在计算时间轴...</p>
+                    <p className="ml-2 text-slate-300">正在计算并预加载时间轴音频...</p>
                 </div>
             </div>
         );
