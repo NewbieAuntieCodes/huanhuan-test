@@ -25,6 +25,47 @@ const formatTime = (seconds: number): string => {
     return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
 };
 
+const TimelineZoomControl: React.FC = () => {
+  const { timelineZoom, setTimelineZoom } = useStore(state => ({
+    timelineZoom: state.timelineZoom,
+    setTimelineZoom: state.setTimelineZoom
+  }));
+
+  const minZoom = 0.1;
+  const maxZoom = 5.0;
+  
+  const sliderValue = (Math.log(timelineZoom / minZoom) / Math.log(maxZoom / minZoom)) * 100;
+
+  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = parseFloat(e.target.value);
+    const newZoom = minZoom * Math.pow(maxZoom / minZoom, value / 100);
+    setTimelineZoom(newZoom);
+  };
+
+  return (
+    <div className="flex items-center gap-x-2">
+      <span className="text-xs text-slate-400">缩放:</span>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        value={sliderValue}
+        onChange={handleSliderChange}
+        className="w-32 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+        style={{
+          background: `linear-gradient(to right, #38bdf8 0%, #38bdf8 ${sliderValue}%, #475569 ${sliderValue}%, #475569 100%)`,
+        }}
+        aria-label="时间轴缩放"
+      />
+      <button
+        onClick={() => setTimelineZoom(0.3)}
+        className="text-xs px-2 py-1 text-slate-300 hover:text-white bg-slate-700 hover:bg-slate-600 rounded"
+      >
+        重置
+      </button>
+    </div>
+  );
+};
 
 const TimelineHeader: React.FC = () => {
     const { 
@@ -39,17 +80,20 @@ const TimelineHeader: React.FC = () => {
     };
 
     return (
-        <div className="flex-shrink-0 flex items-center gap-4 p-2 bg-slate-800 border-b border-slate-700">
-            <div className="flex items-center space-x-1">
-                <button title={timelineIsPlaying ? '暂停' : '播放'} onClick={handlePlayPause} className="p-2 rounded hover:bg-slate-700 text-slate-300">
-                    {timelineIsPlaying ? <PauseIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
-                </button>
-                <button title="停止" onClick={stopTimeline} className="p-2 rounded hover:bg-slate-700 text-slate-300"><StopIcon className="w-4 h-4" /></button>
-                <button title="循环" className="p-2 rounded hover:bg-slate-700 text-slate-300 opacity-50 cursor-not-allowed"><LoopIcon className="w-5 h-5" /></button>
+        <div className="flex-shrink-0 flex items-center justify-between gap-4 p-2 bg-slate-800 border-b border-slate-700">
+            <div className="flex items-center gap-4">
+                <div className="flex items-center space-x-1">
+                    <button title={timelineIsPlaying ? '暂停' : '播放'} onClick={handlePlayPause} className="p-2 rounded hover:bg-slate-700 text-slate-300">
+                        {timelineIsPlaying ? <PauseIcon className="w-5 h-5" /> : <PlayIcon className="w-5 h-5" />}
+                    </button>
+                    <button title="停止" onClick={stopTimeline} className="p-2 rounded hover:bg-slate-700 text-slate-300"><StopIcon className="w-4 h-4" /></button>
+                    <button title="循环" className="p-2 rounded hover:bg-slate-700 text-slate-300 opacity-50 cursor-not-allowed"><LoopIcon className="w-5 h-5" /></button>
+                </div>
+                <div className="font-mono text-lg text-sky-300">
+                    {formatTime(timelineCurrentTime)}
+                </div>
             </div>
-            <div className="font-mono text-lg text-sky-300">
-                {formatTime(timelineCurrentTime)}
-            </div>
+            <TimelineZoomControl />
         </div>
     );
 };

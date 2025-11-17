@@ -73,6 +73,7 @@ export interface UiSlice {
   // Timeline State
   timelineIsPlaying: boolean;
   timelineCurrentTime: number;
+  timelineZoom: number;
 
 
   navigateTo: (view: AppView) => void;
@@ -117,6 +118,7 @@ export interface UiSlice {
   setTimelineIsPlaying: (isPlaying: boolean) => void;
   setTimelineCurrentTime: (time: number) => void;
   stopTimeline: () => void;
+  setTimelineZoom: (zoom: number) => void;
 }
 
 export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get) => ({
@@ -151,6 +153,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   // Timeline State
   timelineIsPlaying: false,
   timelineCurrentTime: 0,
+  timelineZoom: 0.3,
 
   navigateTo: (view) => set({ currentView: view }),
   setIsLoading: (loading) => set({ isLoading: loading }),
@@ -323,4 +326,5 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   setTimelineIsPlaying: (isPlaying) => set({ timelineIsPlaying: isPlaying }),
   setTimelineCurrentTime: (time) => set({ timelineCurrentTime: time }),
   stopTimeline: () => set({ timelineIsPlaying: false, timelineCurrentTime: 0 }),
+  setTimelineZoom: (zoom) => set({ timelineZoom: zoom }),
 });

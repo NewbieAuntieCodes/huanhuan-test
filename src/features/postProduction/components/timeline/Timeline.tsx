@@ -27,8 +27,6 @@ const getLineType = (line: ScriptLine | undefined, characters: Character[]): Lin
     return 'dialogue';
 };
 
-const PIXELS_PER_SECOND = 100;
-
 const Timeline: React.FC = () => {
     const {
       selectedProjectId,
@@ -38,6 +36,7 @@ const Timeline: React.FC = () => {
       setTimelineIsPlaying,
       timelineCurrentTime,
       setTimelineCurrentTime,
+      timelineZoom,
     } = useStore();
     
     const [timelineClips, setTimelineClips] = useState<TimelineClip[]>([]);
@@ -50,6 +49,9 @@ const Timeline: React.FC = () => {
     const schedulerTimerRef = useRef<number>();
     const animationFrameRef = useRef<number>();
     const playbackStartRef = useRef<{ contextTime: number, timelineTime: number } | null>(null);
+
+    const BASE_PIXELS_PER_SECOND = 100;
+    const pixelsPerSecond = BASE_PIXELS_PER_SECOND * timelineZoom;
 
     const currentProject = useMemo(() => projects.find(p => p.id === selectedProjectId), [projects, selectedProjectId]);
     const characterMap = useMemo(() => new Map(characters.map(c => [c.id, c])), [characters]);
@@ -251,7 +253,7 @@ const Timeline: React.FC = () => {
     const handleSeek = (event: React.MouseEvent<HTMLDivElement>) => {
         const rect = event.currentTarget.getBoundingClientRect();
         const x = event.clientX - rect.left;
-        const time = Math.max(0, Math.min(x / PIXELS_PER_SECOND, totalDuration));
+        const time = Math.max(0, Math.min(x / pixelsPerSecond, totalDuration));
         
         setTimelineCurrentTime(time);
         
@@ -293,13 +295,13 @@ const Timeline: React.FC = () => {
         <div className="h-full flex flex-col bg-slate-900">
             <TimelineHeader />
             <div className="w-full h-full overflow-auto relative">
-                <div style={{ width: `${totalDuration * PIXELS_PER_SECOND}px`, minWidth: '100%' }} onMouseDown={handleSeek}>
-                    <TimeRuler duration={totalDuration} pixelsPerSecond={PIXELS_PER_SECOND} />
+                <div style={{ width: `${totalDuration * pixelsPerSecond}px`, minWidth: '100%' }} onMouseDown={handleSeek}>
+                    <TimeRuler duration={totalDuration} pixelsPerSecond={pixelsPerSecond} />
                     <div className="p-2 relative">
-                        <DialogueTrack clips={timelineClips} pixelsPerSecond={PIXELS_PER_SECOND} />
+                        <DialogueTrack clips={timelineClips} pixelsPerSecond={pixelsPerSecond} />
                     </div>
                 </div>
-                <Playhead pixelsPerSecond={PIXELS_PER_SECOND} />
+                <Playhead pixelsPerSecond={pixelsPerSecond} />
             </div>
         </div>
     );
