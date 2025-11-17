@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
 import { ChevronLeftIcon, ClearFormattingIcon, ArrowDownOnSquareIcon } from '../../components/ui/icons';
-import ResizablePanels from '../../components/ui/ResizablePanels';
 import { DialogueContent } from './components/DialogueContent';
 import SoundLibraryPanel from './components/SoundLibraryPanel';
 import AddSceneModal from './components/AddSceneModal';
@@ -16,6 +15,32 @@ import { exportPostProductionToReaper } from '../../services/postProductionReape
 import LoadingSpinner from '../../components/ui/LoadingSpinner';
 import Timeline from './components/timeline/Timeline';
 
+// A simple vertical resizer component
+const VerticalResizer: React.FC<{ onDrag: (deltaY: number) => void }> = ({ onDrag }) => {
+    const handleMouseDown = (e: React.MouseEvent) => {
+        const startY = e.clientY;
+        const handleMouseMove = (me: MouseEvent) => {
+            const deltaY = me.clientY - startY;
+            onDrag(deltaY);
+        };
+        const handleMouseUp = () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+    };
+
+    return (
+        <div
+            onMouseDown={handleMouseDown}
+            className="h-2 w-full bg-slate-700 hover:bg-sky-600 cursor-row-resize flex-shrink-0"
+            title="Resize panels"
+        />
+    );
+};
+
+
 const PostProductionPage: React.FC = () => {
     const { navigateTo, soundLibrary, soundObservationList, characters, selectedChapterId: initialChapterId } = useStore(state => ({
         navigateTo: state.navigateTo,
@@ -24,6 +49,12 @@ const PostProductionPage: React.FC = () => {
         characters: state.characters,
         selectedChapterId: state.selectedChapterId,
     }));
+    
+    const [bottomPanelHeight, setBottomPanelHeight] = useState(300);
+
+    const handleResize = (deltaY: number) => {
+        setBottomPanelHeight(prevHeight => Math.max(100, Math.min(window.innerHeight - 200, prevHeight - deltaY)));
+    };
 
     const {
         currentProject,
@@ -81,28 +112,23 @@ const PostProductionPage: React.FC = () => {
 
     const projectCharacters = useMemo(() => {
         if (!currentProject) return [];
-        // Scope characters to the current project for accuracy.
         return characters.filter(c => !c.projectId || c.projectId === currentProject.id);
     }, [currentProject, characters]);
 
     const silentCharIds = useMemo(() => {
-        // Look for all silent character IDs for a more robust lookup.
         return projectCharacters.filter(c => c.name === '[静音]').map(c => c.id);
     }, [projectCharacters]);
 
     const chaptersForDisplay = useMemo(() => {
         if (!currentProject) return [];
-        // If no silent character IDs are found, return chapters unfiltered.
         if (silentCharIds.length === 0) return currentProject.chapters;
 
-        // Filter out script lines assigned to any '[静音]' character.
         return currentProject.chapters.map(chapter => ({
             ...chapter,
             scriptLines: chapter.scriptLines.filter(line => !line.characterId || !silentCharIds.includes(line.characterId))
         }));
     }, [currentProject, silentCharIds]);
 
-    // Apply VoiceLibrary-like chapter filter on top of the silent-line filtered chapters
     const filteredChaptersForDisplay = useMemo(() => {
         const filter = chapterFilter.trim();
         if (!filter) return chaptersForDisplay;
@@ -130,7 +156,6 @@ const PostProductionPage: React.FC = () => {
       projectId: currentProject?.id,
       initialSelectedChapterIdForViewing: initialChapterId,
       onSelectChapterForViewing: (id) => {
-        // When the hook navigates to a chapter, expand it.
         if (id) {
           setExpandedChapterId(id);
         }
@@ -141,7 +166,6 @@ const PostProductionPage: React.FC = () => {
       chaptersPerPage: 100,
     });
     
-    // Effect to expand the initial chapter from the store
     useEffect(() => {
         if (initialChapterId) {
             setExpandedChapterId(initialChapterId);
@@ -236,40 +260,17 @@ const PostProductionPage: React.FC = () => {
                     </button>
                 </div>
             </header>
-
-            <div className="flex-grow flex overflow-hidden">
-                <ResizablePanels
-                    leftPanel={
-                        <ResizablePanels
-                            leftPanel={<SoundLibraryPanel />}
-                            rightPanel={<DialogueContent 
-                                chapters={paginatedChapters} 
-                                allProjectChapters={currentProject.chapters} 
-                                characters={projectCharacters}
-                                onTextSelect={handleTextSelect}
-                                textMarkers={textMarkers}
-                                suspendLayout={suspendLayout}
-                                soundLibrary={soundLibrary}
-                                soundObservationList={soundObservationList}
-                                expandedChapterId={expandedChapterId}
-                                setExpandedChapterId={setExpandedChapterId}
-                                currentPage={currentPage}
-                                totalPages={totalPages}
-                                onPageChange={handlePageChange}
-                                onContextMenuRequest={handleContextMenuRequest}
-                                currentProject={currentProject}
-                                onPinSound={handlePinSound}
-                                onUpdateLineText={updateLineText}
-                            />}
-                            initialLeftWidthPercent={30}
-                        />
-                    }
-                    rightPanel={
-                       <Timeline />
-                    }
-                    initialLeftWidthPercent={70}
-                />
+            
+            <div className="flex-grow flex flex-col overflow-hidden">
+                <div className="flex-grow overflow-hidden">
+                     {/* Horizontal resizer for sound lib and dialogue */}
+                </div>
+                <VerticalResizer onDrag={handleResize} />
+                <div style={{ height: `${bottomPanelHeight}px` }} className="flex-shrink-0 bg-slate-900">
+                    <Timeline />
+                </div>
             </div>
+
 
             {sfxContextMenu && (
                 <div

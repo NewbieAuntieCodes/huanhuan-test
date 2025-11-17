@@ -282,7 +282,7 @@ const Timeline: React.FC = () => {
     }
 
     return (
-        <div className="h-full flex flex-col bg-slate-800">
+        <div className="h-full flex flex-col bg-slate-900">
             <TimelineHeader />
             <div className="w-full h-full overflow-auto relative">
                 <div style={{ width: `${totalDuration * PIXELS_PER_SECOND}px`, minWidth: '100%' }} onMouseDown={handleSeek}>

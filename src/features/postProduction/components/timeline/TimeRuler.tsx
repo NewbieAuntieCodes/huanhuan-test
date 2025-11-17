@@ -6,11 +6,15 @@ interface TimeRulerProps {
 }
 
 const formatTime = (seconds: number): string => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
-    const milliseconds = Math.floor((seconds * 1000) % 1000).toString().padStart(3, '0');
-    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}.${milliseconds}`;
+    if (!isFinite(seconds) || seconds < 0) return '00:00.000';
+    const totalMs = Math.floor(seconds * 1000);
+    const minutes = Math.floor(totalMs / 60000);
+    const remainingMs = totalMs % 60000;
+    const secs = Math.floor(remainingMs / 1000);
+    const ms = remainingMs % 1000;
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
 };
+
 
 const TimeRuler: React.FC<TimeRulerProps> = ({ duration, pixelsPerSecond }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -21,7 +25,7 @@ const TimeRuler: React.FC<TimeRulerProps> = ({ duration, pixelsPerSecond }) => {
     if (!canvas) return;
     
     const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
+    const rect = { width: totalWidth, height: 24 };
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
 
