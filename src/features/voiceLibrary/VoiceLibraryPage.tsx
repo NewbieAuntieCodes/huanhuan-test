@@ -238,7 +238,7 @@ const VoiceLibraryPage: React.FC = () => {
           ) : (
             rows.map(row => {
               const line = row.originalLineId ? lineMap.get(row.originalLineId) : null;
-// FIX: The type `unknown` was being inferred for `characterForRow`, causing an error when accessing its `id` property.
+              // FIX: The type `unknown` was being inferred for `characterForRow`, causing an error when accessing its `id` property.
 // Adding an explicit type annotation of `Character | null` resolves this type inference issue.
               const characterForRow: Character | null = line?.characterId ? (characterMap.get(line.characterId) || null) : null;
               return (

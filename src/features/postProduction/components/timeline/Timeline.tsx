@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useStore } from '../../../../store/useStore';
 import { db } from '../../../../db';
-import { LineType, ScriptLine, Character, SilencePairing } from '../../../../types';
+import { LineType, ScriptLine, Character, SilencePairing, SoundLibraryItem } from '../../../../types';
 import LoadingSpinner from '../../../../components/ui/LoadingSpinner';
 import TrackGroup from './TrackGroup';
 import Track from '../Track';
@@ -15,9 +15,11 @@ export interface TimelineClip {
     id: string;
     startTime: number;
     duration: number;
-    line: ScriptLine;
+    line: ScriptLine; // For dialogue
+    name?: string; // For SFX/BGM
     character?: Character;
-    audioBlobId: string;
+    audioBlobId?: string; // For dialogue
+    soundLibraryItem?: SoundLibraryItem; // For SFX/BGM
 }
 
 interface TrackData {
@@ -45,6 +47,7 @@ const Timeline: React.FC = () => {
       selectedProjectId,
       projects,
       characters,
+      soundLibrary,
       timelineIsPlaying,
       setTimelineIsPlaying,
       timelineCurrentTime,
@@ -67,13 +70,15 @@ const Timeline: React.FC = () => {
     const pixelsPerSecond = BASE_PIXELS_PER_SECOND * timelineZoom;
 
     const currentProject = useMemo(() => projects.find(p => p.id === selectedProjectId), [projects, selectedProjectId]);
-    const characterMap = useMemo(() => new Map(characters.map(c => [c.id, c])), [characters]);
+    // FIX: Explicitly type the Map to ensure correct type inference for its values.
+    const characterMap = useMemo<Map<string, Character>>(() => new Map(characters.map(c => [c.id, c])), [characters]);
     const allClips = useMemo(() => trackGroups.flatMap(g => g.tracks.flatMap(t => t.clips)), [trackGroups]);
 
     useEffect(() => {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
         return () => {
             if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+                // FIX: Add a parameter to the catch block to support older ES targets.
                 audioContextRef.current.close().catch(console.error);
             }
         };
@@ -116,7 +121,6 @@ const Timeline: React.FC = () => {
                 })
             )).filter((item): item is NonNullable<typeof item> => item !== null);
 
-            // Need to know line's original index to sort correctly
             const lineOrderMap = new Map<string, number>();
             currentProject.chapters.forEach((ch, chIdx) => {
                 ch.scriptLines.forEach((ln, lnIdx) => {
@@ -125,10 +129,10 @@ const Timeline: React.FC = () => {
             });
             baseItemsUnsorted.sort((a, b) => (lineOrderMap.get(a.line.id) ?? 0) - (lineOrderMap.get(b.line.id) ?? 0));
             
-            const clips: TimelineClip[] = [];
+            const dialogueClips: TimelineClip[] = [];
             for (let i = 0; i < baseItemsUnsorted.length; i++) {
                 const item = baseItemsUnsorted[i];
-                clips.push({
+                dialogueClips.push({
                     id: item.line.id,
                     startTime: currentTime,
                     duration: item.duration,
@@ -154,10 +158,51 @@ const Timeline: React.FC = () => {
                 currentTime += silenceDuration > 0 ? silenceDuration : 0;
             }
 
+            // --- Process Pinned Sounds ---
+            const sfxClips: TimelineClip[] = [];
+            const bgmClips: TimelineClip[] = [];
+            // FIX: Explicitly type the Map and filter out items with no ID to ensure correct type inference.
+            const soundLibraryMap = useMemo<Map<number, SoundLibraryItem>>(() => new Map(soundLibrary.filter(s => s.id !== undefined).map(s => [s.id!, s])), [soundLibrary]);
+
+            for (const clip of dialogueClips) {
+                if (clip.line.pinnedSounds) {
+                    for (const pin of clip.line.pinnedSounds) {
+                        const soundItem = soundLibraryMap.get(pin.soundId);
+                        if (!soundItem) continue;
+
+                        const isBgm = pin.keyword.startsWith('<') && pin.keyword.endsWith('>');
+                        const lineTextLength = clip.line.text.length || 1;
+                        const timeOffset = (pin.index / lineTextLength) * clip.duration;
+                        const startTime = clip.startTime + timeOffset;
+
+                        const newClip: TimelineClip = {
+                            id: `pin_${pin.soundId}_${pin.index}_${clip.id}`,
+                            startTime,
+                            duration: soundItem.duration,
+                            name: soundItem.name,
+                            soundLibraryItem: soundItem,
+                            line: clip.line, // for context
+                        };
+
+                        if (isBgm) {
+                            bgmClips.push(newClip);
+                        } else {
+                            sfxClips.push(newClip);
+                        }
+                    }
+                }
+            }
+
+            let finalDuration = currentTime;
+            [...sfxClips, ...bgmClips].forEach(clip => {
+                finalDuration = Math.max(finalDuration, clip.startTime + clip.duration);
+            });
+
+            // --- Build Track Groups ---
             const dialogueTracks: Record<string, TimelineClip[]> = { narration: [], dialogue: [], os: [], telephone: [], system: [], other: [] };
             const otherSoundTypes = new Set(currentProject.customSoundTypes || []);
 
-            clips.forEach(clip => {
+            dialogueClips.forEach(clip => {
                 const soundType = clip.line.soundType;
                 if (clip.character?.name === 'Narrator') dialogueTracks.narration.push(clip);
                 else if (soundType === 'OS') dialogueTracks.os.push(clip);
@@ -167,8 +212,6 @@ const Timeline: React.FC = () => {
                 else dialogueTracks.dialogue.push(clip);
             });
     
-// FIX: The `type` properties are explicitly cast to their literal types (e.g., `'narration' as const`)
-// to ensure they match the strict union type required by the `TrackData` interface, resolving the type mismatch error.
             const dialogueTrackData: TrackData[] = [
                 { name: '旁白 (Narration)', type: 'narration' as const, clips: dialogueTracks.narration },
                 { name: '角色对白 (Dialogue)', type: 'dialogue' as const, clips: dialogueTracks.dialogue },
@@ -187,17 +230,30 @@ const Timeline: React.FC = () => {
                     tracks: dialogueTrackData
                 });
             }
+
+            if (bgmClips.length > 0) {
+                newTrackGroups.push({
+                    name: '音乐 (Music)',
+                    isExpanded: true,
+                    tracks: [{ name: '音乐 1', type: 'music' as const, clips: bgmClips }]
+                });
+            }
+            if (sfxClips.length > 0) {
+                newTrackGroups.push({
+                    name: '音效 (SFX)',
+                    isExpanded: true,
+                    tracks: [{ name: '音效 1', type: 'sfx' as const, clips: sfxClips }]
+                });
+            }
             
             scheduledClipsRef.current.clear();
             setTrackGroups(newTrackGroups);
-            setTotalDuration(currentTime);
+            setTotalDuration(finalDuration);
             setIsLoading(false);
         };
 
         calculateTimeline();
-// FIX: Removed stable Zustand setter functions (`setTimelineCurrentTime`, `setTimelineIsPlaying`) from the dependency array.
-// This is best practice as they do not change, and it resolves a potentially misleading TypeScript error about missing arguments.
-    }, [currentProject, characters, characterMap]);
+    }, [currentProject, characters, characterMap, soundLibrary]);
 
     useEffect(() => {
         const audioContext = audioContextRef.current;
@@ -251,9 +307,17 @@ const Timeline: React.FC = () => {
 
                         (async () => {
                             try {
-                                const audioBlobData = await db.audioBlobs.get(clip.audioBlobId);
-                                if (!audioBlobData) return;
-                                const arrayBuffer = await audioBlobData.data.arrayBuffer();
+                                let audioBlob: Blob | null = null;
+                                if (clip.audioBlobId) {
+                                    const audioBlobData = await db.audioBlobs.get(clip.audioBlobId);
+                                    if (audioBlobData) audioBlob = audioBlobData.data;
+                                } else if (clip.soundLibraryItem?.handle) {
+                                    audioBlob = await clip.soundLibraryItem.handle.getFile();
+                                }
+                                
+                                if (!audioBlob) return;
+
+                                const arrayBuffer = await audioBlob.arrayBuffer();
                                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                                 
                                 if (!timelineIsPlaying || !playbackStartRef.current) return;

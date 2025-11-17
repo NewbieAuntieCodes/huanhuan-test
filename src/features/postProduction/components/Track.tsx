@@ -8,7 +8,15 @@ interface TrackProps {
   pixelsPerSecond: number;
 }
 
+const getClipTypeFromTrackType = (trackType: string): 'dialogue' | 'sfx' | 'bgm' => {
+    if (trackType.includes('music') || trackType.includes('ambience')) return 'bgm';
+    if (trackType.includes('sfx')) return 'sfx';
+    return 'dialogue';
+};
+
 const Track: React.FC<TrackProps> = ({ name, clips, pixelsPerSecond }) => {
+  const clipType = getClipTypeFromTrackType(name.toLowerCase());
+
   return (
     <div className="flex border-b border-slate-800 min-h-[80px]">
       {/* Track Header */}
@@ -23,8 +31,9 @@ const Track: React.FC<TrackProps> = ({ name, clips, pixelsPerSecond }) => {
             startTime={clip.startTime}
             duration={clip.duration}
             pixelsPerSecond={pixelsPerSecond}
-            lineText={clip.line.text}
-            characterName={clip.character?.name || '旁白'}
+            lineText={clip.name || clip.line.text}
+            characterName={clip.character?.name || clip.name || '音效'}
+            type={clipType}
           />
         ))}
       </div>
