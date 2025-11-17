@@ -25,7 +25,7 @@ const TimeRuler: React.FC<TimeRulerProps> = ({ duration, pixelsPerSecond }) => {
     if (!canvas) return;
     
     const dpr = window.devicePixelRatio || 1;
-    const rect = { width: totalWidth, height: 24 };
+    const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
 
@@ -65,7 +65,7 @@ const TimeRuler: React.FC<TimeRulerProps> = ({ duration, pixelsPerSecond }) => {
   }, [duration, pixelsPerSecond, totalWidth]);
 
   return (
-    <div className="h-6 flex-shrink-0 sticky top-0 bg-slate-900 z-20 overflow-hidden">
+    <div className="h-6 flex-shrink-0 bg-slate-900 overflow-hidden w-full">
       <canvas ref={canvasRef} style={{ width: `${totalWidth}px`, height: '24px' }} />
     </div>
   );

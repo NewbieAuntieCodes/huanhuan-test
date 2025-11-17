@@ -45,7 +45,7 @@ const AudioClip: React.FC<AudioClipProps> = React.memo(({ startTime, duration, p
   };
 
   return (
-    <div style={style} title={`${characterName}: ${lineText}`} onMouseDown={(e) => e.stopPropagation()}>
+    <div style={style} title={`${characterName}: ${lineText}`} onMouseDown={(e) => e.stopPropagation()} data-clip-id={startTime}>
       <strong className="font-semibold truncate">{characterName}</strong>
       <p className="truncate opacity-80">{lineText}</p>
     </div>

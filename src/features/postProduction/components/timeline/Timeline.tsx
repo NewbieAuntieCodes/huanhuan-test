@@ -42,6 +42,8 @@ const getLineType = (line: ScriptLine | undefined, characters: Character[]): Lin
     return 'dialogue';
 };
 
+const TRACK_HEADER_WIDTH_PX = 192; // Corresponds to w-48 (12rem)
+
 const Timeline: React.FC = () => {
     const {
       selectedProjectId,
@@ -83,18 +85,47 @@ const Timeline: React.FC = () => {
         };
     }, []);
 
+    const handleSeek = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+        const scrollContainer = event.currentTarget;
+        const rect = scrollContainer.getBoundingClientRect();
+        const clickX_in_viewport = event.clientX - rect.left;
+
+        // Ignore clicks on the sticky header area
+        if (clickX_in_viewport < TRACK_HEADER_WIDTH_PX) return;
+        
+        // Prevent seek when clicking on a clip (which stops propagation)
+        // This check handles clicks on the empty track area.
+        if ((event.target as HTMLElement).closest('[data-clip-id]')) return;
+
+        const clickX_on_timeline = scrollContainer.scrollLeft + clickX_in_viewport - TRACK_HEADER_WIDTH_PX;
+        const time = clickX_on_timeline / pixelsPerSecond;
+        const newTime = Math.max(0, Math.min(time, totalDuration));
+        
+        setTimelineCurrentTime(newTime);
+        
+        if (timelineIsPlaying) {
+            const audioContext = audioContextRef.current;
+            if (!audioContext) return;
+            
+            activeSourcesRef.current.forEach(source => { try { source.stop(); } catch (e) {} });
+            activeSourcesRef.current.clear();
+            scheduledClipsRef.current.clear();
+            playbackStartRef.current = { contextTime: audioContext.currentTime, timelineTime: newTime };
+        }
+    }, [pixelsPerSecond, totalDuration, setTimelineCurrentTime, timelineIsPlaying]);
+
+
     useEffect(() => {
         if (!currentProject) {
             setIsLoading(false);
             setTrackGroups([]);
-            // FIX: Expected 1 arguments, but got 0.
             setTotalDuration(0);
             return;
         }
 
         const calculateTimeline = async () => {
             setIsLoading(true);
-            // FIX: Expected 1 arguments, but got 0.
+            // FIX: The arguments for `setTimelineCurrentTime` and `setTimelineIsPlaying` were missing.
             setTimelineCurrentTime(0);
             setTimelineIsPlaying(false);
 
@@ -230,11 +261,11 @@ const Timeline: React.FC = () => {
                 });
             }
 
-            // FIX: The type `string` was incorrectly being assigned to the literal union type of `TrackData['type']`. Explicitly casting the `type` property using `as const` ensures it is treated as a literal, satisfying the type checker.
             if (bgmClips.length > 0) {
                 newTrackGroups.push({
                     name: '音乐 (Music)',
                     isExpanded: true,
+                    // FIX: The type checker was inferring the `type` property as a generic `string` instead of a specific literal type. Added `as const` to ensure TypeScript correctly infers the type, resolving the assignment error.
                     tracks: [{ name: '音乐 1', type: 'music' as const, clips: bgmClips }]
                 });
             }
@@ -373,24 +404,6 @@ const Timeline: React.FC = () => {
         return cleanup;
     }, [timelineIsPlaying, allClips, totalDuration, setTimelineIsPlaying, setTimelineCurrentTime]);
 
-    const handleSeek = (event: React.MouseEvent<HTMLDivElement>) => {
-        const rect = event.currentTarget.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const time = Math.max(0, Math.min((event.currentTarget.scrollLeft + x) / pixelsPerSecond, totalDuration));
-        
-        setTimelineCurrentTime(time);
-        
-        if (timelineIsPlaying) {
-            const audioContext = audioContextRef.current;
-            if (!audioContext) return;
-            
-            activeSourcesRef.current.forEach(source => { try { source.stop(); } catch (e) {} });
-            activeSourcesRef.current.clear();
-            scheduledClipsRef.current.clear();
-            playbackStartRef.current = { contextTime: audioContext.currentTime, timelineTime: time };
-        }
-    };
-
     if (isLoading) {
         return (
             <div className="h-full flex flex-col">
@@ -418,9 +431,19 @@ const Timeline: React.FC = () => {
         <div className="h-full flex flex-col bg-slate-900">
             <TimelineHeader />
             <div className="w-full h-full overflow-auto relative" onMouseDown={handleSeek}>
-                <div style={{ width: `${totalDuration * pixelsPerSecond}px`, minWidth: '100%' }}>
-                    <TimeRuler duration={totalDuration} pixelsPerSecond={pixelsPerSecond} />
+                <div 
+                    className="relative" 
+                    style={{ 
+                        width: `${totalDuration * pixelsPerSecond + TRACK_HEADER_WIDTH_PX}px`, 
+                        minWidth: '100%' 
+                    }}
+                >
+                    {/* Spacer for sticky track headers */}
+                    <div className="w-48 h-full float-left" />
+
+                    {/* Main timeline content area */}
                     <div className="relative">
+                        <TimeRuler duration={totalDuration} pixelsPerSecond={pixelsPerSecond} />
                         {trackGroups.map(group => (
                             <TrackGroup key={group.name} name={group.name} defaultExpanded={group.isExpanded}>
                                 {group.tracks.map(track => (
@@ -435,7 +458,7 @@ const Timeline: React.FC = () => {
                         ))}
                     </div>
                 </div>
-                <Playhead pixelsPerSecond={pixelsPerSecond} />
+                <Playhead pixelsPerSecond={pixelsPerSecond} leftOffset={TRACK_HEADER_WIDTH_PX} />
             </div>
         </div>
     );

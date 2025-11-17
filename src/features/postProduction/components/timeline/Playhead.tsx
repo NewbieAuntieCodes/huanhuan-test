@@ -3,11 +3,12 @@ import { useStore } from '../../../../store/useStore';
 
 interface PlayheadProps {
   pixelsPerSecond: number;
+  leftOffset?: number;
 }
 
-const Playhead: React.FC<PlayheadProps> = ({ pixelsPerSecond }) => {
+const Playhead: React.FC<PlayheadProps> = ({ pixelsPerSecond, leftOffset = 0 }) => {
   const currentTime = useStore(state => state.timelineCurrentTime);
-  const left = currentTime * pixelsPerSecond;
+  const left = (currentTime * pixelsPerSecond) + leftOffset;
 
   return (
     <div

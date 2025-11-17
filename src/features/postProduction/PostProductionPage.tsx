@@ -189,7 +189,7 @@ const PostProductionPage: React.FC = () => {
     }
     
     // FIX: The type checker was inferring `m.name` as potentially `undefined`, causing `new Set` to be of type `Set<unknown>`.
-// Added a type guard `(m): m is TextMarker & { name: string } => ...` to ensure that `m.name` is a `string` before mapping, satisfying the type requirements for creating a `Set<string>`.
+    // Added a type guard `(m): m is TextMarker & { name: string } => ...` to ensure that `m.name` is a `string` before mapping, satisfying the type requirements for creating a `Set<string>`.
     const existingSceneNames = useMemo(() => Array.from(new Set(textMarkers.filter((m): m is TextMarker & { name: string } => m.type === 'scene' && !!m.name).map(m => m.name))), [textMarkers]);
 
     return (
