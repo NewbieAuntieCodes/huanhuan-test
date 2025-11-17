@@ -153,7 +153,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   // Timeline State
   timelineIsPlaying: false,
   timelineCurrentTime: 0,
-  timelineZoom: 0.3,
+  timelineZoom: 0.1,
 
   navigateTo: (view) => set({ currentView: view }),
   setIsLoading: (loading) => set({ isLoading: loading }),
