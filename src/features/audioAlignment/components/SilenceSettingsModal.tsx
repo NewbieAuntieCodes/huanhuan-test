@@ -3,7 +3,7 @@ import { Project, SilenceSettings, SilencePairing } from '../../../types';
 import { useStore } from '../../../store/useStore';
 import { XMarkIcon } from '../../../components/ui/icons';
 import NumberInput from '../../../components/ui/NumberInput';
-import { defaultSilenceSettings } from '../../../lib/defaultSilenceSettings';
+import { defaultSilenceSettings, alignmentSilenceSettings } from '../../../lib/defaultSilenceSettings';
 
 interface SilenceSettingsModalProps {
   isOpen: boolean;
@@ -30,13 +30,32 @@ const typeColors: Record<string, string> = {
     '音效': 'bg-amber-800 text-amber-200'
 };
 
+const presets = [
+    { key: 'default', name: '默认 (0秒间隔)', settings: defaultSilenceSettings },
+    { key: 'alignment', name: '对轨', settings: alignmentSilenceSettings },
+];
+
+const areSettingsEqual = (s1: SilenceSettings, s2: SilenceSettings) => {
+    return JSON.stringify(s1) === JSON.stringify(s2);
+};
+
 const SilenceSettingsModal: React.FC<SilenceSettingsModalProps> = ({ isOpen, onClose, project }) => {
     const { updateProjectSilenceSettings } = useStore();
     const [settings, setSettings] = useState<SilenceSettings>(project.silenceSettings || defaultSilenceSettings);
+    const [activePreset, setActivePreset] = useState('custom');
 
     useEffect(() => {
         if (isOpen) {
-            setSettings(project.silenceSettings || defaultSilenceSettings);
+            const currentSettings = project.silenceSettings || defaultSilenceSettings;
+            setSettings(currentSettings);
+            
+            if (areSettingsEqual(currentSettings, defaultSilenceSettings)) {
+                setActivePreset('default');
+            } else if (areSettingsEqual(currentSettings, alignmentSilenceSettings)) {
+                setActivePreset('alignment');
+            } else {
+                setActivePreset('custom');
+            }
         }
     }, [isOpen, project.silenceSettings]);
     
@@ -44,15 +63,29 @@ const SilenceSettingsModal: React.FC<SilenceSettingsModalProps> = ({ isOpen, onC
         updateProjectSilenceSettings(project.id, settings);
         onClose();
     };
+
+    const handleSettingChange = (updater: (prev: SilenceSettings) => SilenceSettings) => {
+        setSettings(updater);
+        setActivePreset('custom');
+    };
     
     const handlePairChange = (key: SilencePairing, value: number) => {
-        setSettings(prev => ({
+        handleSettingChange(prev => ({
             ...prev,
             pairs: {
                 ...prev.pairs,
                 [key]: value
             }
         }));
+    };
+
+    const handlePresetChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const selectedKey = e.target.value;
+        const preset = presets.find(p => p.key === selectedKey);
+        if (preset) {
+            setSettings(preset.settings);
+            setActivePreset(preset.key);
+        }
     };
 
     if (!isOpen) return null;
@@ -64,8 +97,14 @@ const SilenceSettingsModal: React.FC<SilenceSettingsModalProps> = ({ isOpen, onC
                     <h2 className="text-xl font-semibold text-slate-100">间隔配置</h2>
                      <div className="flex items-center gap-x-2">
                         <label htmlFor="preset-select" className="text-sm text-slate-400">配置:</label>
-                        <select id="preset-select" className="bg-slate-700 border border-slate-600 text-white text-sm rounded-md focus:ring-sky-500 focus:border-sky-500 p-2">
-                            <option>默认</option>
+                        <select 
+                            id="preset-select" 
+                            value={activePreset}
+                            onChange={handlePresetChange}
+                            className="bg-slate-700 border border-slate-600 text-white text-sm rounded-md focus:ring-sky-500 focus:border-sky-500 p-2"
+                        >
+                            {presets.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}
+                            {activePreset === 'custom' && <option value="custom">自定义</option>}
                         </select>
                     </div>
                 </div>
@@ -76,7 +115,7 @@ const SilenceSettingsModal: React.FC<SilenceSettingsModalProps> = ({ isOpen, onC
                         <div className="flex items-center gap-x-2">
                             <NumberInput
                                 value={settings.startPadding}
-                                onChange={val => setSettings(prev => ({ ...prev, startPadding: val }))}
+                                onChange={val => handleSettingChange(prev => ({ ...prev, startPadding: val }))}
                                 step={0.1}
                                 min={0}
                                 precision={1}
@@ -109,7 +148,7 @@ const SilenceSettingsModal: React.FC<SilenceSettingsModalProps> = ({ isOpen, onC
                         <div className="flex items-center gap-x-2">
                             <NumberInput
                                 value={settings.endPadding}
-                                onChange={val => setSettings(prev => ({ ...prev, endPadding: val }))}
+                                onChange={val => handleSettingChange(prev => ({ ...prev, endPadding: val }))}
                                 step={0.1}
                                 min={0}
                                 precision={1}

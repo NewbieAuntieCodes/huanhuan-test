@@ -1,6 +1,6 @@
 import { SilenceSettings } from '../types';
 
-export const defaultSilenceSettings: SilenceSettings = {
+export const alignmentSilenceSettings: SilenceSettings = {
   startPadding: 1.0,
   endPadding: 1.0,
   pairs: {
@@ -13,5 +13,21 @@ export const defaultSilenceSettings: SilenceSettings = {
     'sfx-to-dialogue': 0.7,
     'sfx-to-narration': 0.7,
     'sfx-to-sfx': 0.7,
+  },
+};
+
+export const defaultSilenceSettings: SilenceSettings = {
+  startPadding: 0,
+  endPadding: 0,
+  pairs: {
+    'narration-to-narration': 0,
+    'narration-to-dialogue': 0,
+    'narration-to-sfx': 0,
+    'dialogue-to-dialogue': 0,
+    'dialogue-to-narration': 0,
+    'dialogue-to-sfx': 0,
+    'sfx-to-dialogue': 0,
+    'sfx-to-narration': 0,
+    'sfx-to-sfx': 0,
   },
 };

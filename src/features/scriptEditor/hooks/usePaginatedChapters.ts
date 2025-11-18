@@ -41,7 +41,7 @@ export const usePaginatedChapters = ({
     if (pageNumber !== currentPage) {
       setCurrentPage(pageNumber);
     }
-  }, [initialSelectedChapterIdForViewing, chapters, chaptersPerPage, currentPage]);
+  }, [initialSelectedChapterIdForViewing, chapters, chaptersPerPage]);
   
   // When the project changes, jump to the page containing the initially selected
   // chapter (if provided). Otherwise, default to page 1.

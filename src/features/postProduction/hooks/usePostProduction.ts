@@ -204,7 +204,7 @@ export const usePostProduction = () => {
             });
         });
     
-        // Part C: Remove scene markers that intersect with the selection
+        // Part C: Remove scene/BGM markers that intersect with the selection
         const intersects = (mStart: { lineId: string; offset?: number }, mEnd: { lineId: string; offset?: number }) => {
             const keyOf = (id: string, off: number) => (orderMap.get(id) ?? 0) * 1e4 + off;
             const selA = keyOf(first.lineId, first.offset);
@@ -217,7 +217,8 @@ export const usePostProduction = () => {
         };
         const originalMarkerCount = (projectClone.textMarkers || []).length;
         projectClone.textMarkers = (projectClone.textMarkers || []).filter(m => {
-            if (m.type !== 'scene' || !m.startLineId || !m.endLineId) return true;
+            // 同时清理场景(scene)和 BGM(bgm) 标记，只要它们与当前选区有交集
+            if ((m.type !== 'scene' && m.type !== 'bgm') || !m.startLineId || !m.endLineId) return true;
             return !intersects({ lineId: m.startLineId, offset: m.startOffset ?? 0 }, { lineId: m.endLineId, offset: m.endOffset ?? 0 });
         });
         if (originalMarkerCount !== projectClone.textMarkers.length) {
@@ -270,6 +271,13 @@ export const usePostProduction = () => {
         const startResult = findLineIdAndOffset(startContainer, startOffset);
         const endResult = findLineIdAndOffset(endContainer, endOffset);
 
+        console.log('[BGM] handleSaveBgm selection', {
+            name,
+            hasSelection: !!selectedRange,
+            startResult,
+            endResult,
+        });
+
         if (startResult && endResult) {
             const newMarker: TextMarker = {
                 id: `bgm_${Date.now()}`,
@@ -280,7 +288,37 @@ export const usePostProduction = () => {
                 endLineId: endResult.lineId,
                 endOffset: endResult.offset,
             };
-            updateProjectTextMarkers(currentProject.id, [...textMarkers, newMarker]);
+            const nextMarkers = [...textMarkers, newMarker];
+            console.log('[BGM] handleSaveBgm add marker', newMarker, 'allMarkersCount', nextMarkers.length);
+            updateProjectTextMarkers(currentProject.id, nextMarkers);
+
+            // 旧逻辑：在文本中插入 <名称>，用于 <♫-xxx> 高亮和范围计算
+            const { lineId, offset } = startResult;
+            let targetChapterId: string | null = null;
+            let currentLineText: string | null = null;
+            for (const ch of currentProject.chapters) {
+                const line = ch.scriptLines.find(l => l.id === lineId);
+                if (line) {
+                    targetChapterId = ch.id;
+                    currentLineText = line.text || '';
+                    break;
+                }
+            }
+            if (!targetChapterId || currentLineText === null) {
+                alert('�Ҳ���Ŀ���ı��У�������');
+            } else {
+                const bracketedPlain = `<${name}>`;
+                const newText = currentLineText.slice(0, offset) + bracketedPlain + currentLineText.slice(offset);
+                console.log('[BGM] handleSaveBgm insert text', {
+                    projectId: currentProject.id,
+                    targetChapterId,
+                    lineId,
+                    offset,
+                    before: currentLineText,
+                    after: newText,
+                });
+                updateLineText(currentProject.id, targetChapterId, lineId, newText);
+            }
         } else {
             alert('无法确定所选文本的起止位置，请重新选择');
         }
@@ -288,6 +326,270 @@ export const usePostProduction = () => {
         setIsBgmModalOpen(false);
         clearSelection();
     }, [selectedRange, currentProject, textMarkers, updateProjectTextMarkers, clearSelection]);
+
+    // 新的精确版：统一更新 Project（文本 + BGM 标记），避免异步状态覆盖
+    const handleSaveBgmMerged = useCallback((bgmName: string) => {
+        if (!selectedRange || !currentProject) {
+            alert('���ȿ�ѡһ���ı���ָ��BGM��Χ��');
+            return;
+        }
+        const name = bgmName.trim();
+        if (!name) {
+          alert('�����뱳�����֣�BGM�����ƻ��ʶ');
+          return;
+        }
+
+        const { startContainer, startOffset, endContainer, endOffset } = selectedRange;
+        const startResult = findLineIdAndOffset(startContainer, startOffset);
+        const endResult = findLineIdAndOffset(endContainer, endOffset);
+
+        console.log('[BGM] handleSaveBgmMerged selection', {
+            name,
+            hasSelection: !!selectedRange,
+            startResult,
+            endResult,
+        });
+
+        if (startResult && endResult) {
+            const projectClone: Project = JSON.parse(JSON.stringify(currentProject));
+
+            // 插入文本本身会改变后续字符的偏移量，特别是当起点和终点在同一行时。
+            // 这里先算出插入字符串长度，再对 endOffset 做一次修正，保证高亮范围与肉眼看到的选区一致。
+            const bracketedPlain = `<${name}>`;
+            const insertionLineId = startResult.lineId;
+            const insertionOffset = startResult.offset;
+            let adjustedStartOffset = insertionOffset;
+            let adjustedEndOffset = endResult.offset;
+
+            if (endResult.lineId === insertionLineId && endResult.offset >= insertionOffset) {
+                adjustedEndOffset += bracketedPlain.length;
+            }
+
+            const newMarker: TextMarker = {
+                id: `bgm_${Date.now()}`,
+                type: 'bgm',
+                name: name,
+                startLineId: insertionLineId,
+                startOffset: adjustedStartOffset,
+                endLineId: endResult.lineId,
+                endOffset: adjustedEndOffset,
+            };
+
+            const existingMarkers = projectClone.textMarkers || [];
+            projectClone.textMarkers = [...existingMarkers, newMarker];
+
+            const { lineId, offset } = startResult;
+            let targetChapterId: string | null = null;
+            let currentLineText: string | null = null;
+
+            for (const ch of projectClone.chapters) {
+                const line = ch.scriptLines.find(l => l.id === lineId);
+                if (line) {
+                    targetChapterId = ch.id;
+                    currentLineText = line.text || '';
+                    const newText = currentLineText.slice(0, offset) + bracketedPlain + currentLineText.slice(offset);
+                    line.text = newText;
+                    console.log('[BGM] handleSaveBgmMerged projectClone update', {
+                        marker: newMarker,
+                        targetChapterId,
+                        lineId,
+                        offset,
+                        before: currentLineText,
+                        after: newText,
+                    });
+                    break;
+                }
+            }
+
+            if (!targetChapterId || currentLineText === null) {
+                alert('�Ҳ���Ŀ���ı��У�������');
+            } else {
+                updateProject(projectClone);
+            }
+        } else {
+            alert('�޷�ȷ����ѡ�ı�����ֹλ�ã�������ѡ��');
+        }
+
+        setIsBgmModalOpen(false);
+        clearSelection();
+    }, [selectedRange, currentProject, updateProject, clearSelection]);
+
+    const handleSaveBgmWithEndMarker = useCallback((bgmName: string) => {
+        if (!selectedRange || !currentProject) {
+            alert('?????????????????BGM??��??');
+            return;
+        }
+        const name = bgmName.trim();
+        if (!name) {
+          alert('?????????????BGM?????????');
+          return;
+        }
+
+        const { startContainer, startOffset, endContainer, endOffset, collapsed } = selectedRange as any;
+        const startResult = findLineIdAndOffset(startContainer, startOffset);
+        const endResult = findLineIdAndOffset(endContainer, endOffset);
+
+        console.log('[BGM] handleSaveBgmWithEndMarker selection', {
+            name,
+            hasSelection: !!selectedRange,
+            collapsed,
+            startResult,
+            endResult,
+        });
+
+        // 如果当前只是一个光标（没有选中文本），采用“方式 B”：只在光标处插入 <名称>，不插入 //，结束由用户稍后手动输入 // 再统一解析
+        if (collapsed && startResult) {
+            const projectClone: Project = JSON.parse(JSON.stringify(currentProject));
+            const startLineId = startResult.lineId;
+            const insertionOffset = startResult.offset;
+
+            let lineRef: ScriptLine | null = null;
+            for (const ch of projectClone.chapters) {
+                const line = ch.scriptLines.find(l => l.id === startLineId);
+                if (line) {
+                    lineRef = line;
+                    break;
+                }
+            }
+
+            if (!lineRef) {
+                alert('�޷�ȷ����BGM ��ʼ�����У�������ѡ��λ��');
+            } else {
+                const original = lineRef.text || '';
+                const bracketedPlain = `<${name}>`;
+                const newText = original.slice(0, insertionOffset) + bracketedPlain + original.slice(insertionOffset);
+                lineRef.text = newText;
+
+                console.log('[BGM] handleSaveBgmWithEndMarker (collapsed, start only)', {
+                    lineId: startLineId,
+                    offset: insertionOffset,
+                    before: original,
+                    after: newText,
+                });
+
+                updateProject(projectClone);
+            }
+
+        } else if (startResult && endResult) {
+            const projectClone: Project = JSON.parse(JSON.stringify(currentProject));
+            const bracketedPlain = `<${name}>`;
+            const endMarker = `//`;
+
+            const startLineId = startResult.lineId;
+            const endLineId = endResult.lineId;
+            const startOffsetVal = startResult.offset;
+            const endOffsetRaw = endResult.offset;
+
+            let startLineRef: ScriptLine | null = null;
+            let endLineRef: ScriptLine | null = null;
+
+            for (const ch of projectClone.chapters) {
+                if (!startLineRef) {
+                    const line = ch.scriptLines.find(l => l.id === startLineId);
+                    if (line) {
+                        startLineRef = line;
+                    }
+                }
+                if (!endLineRef) {
+                    const line = ch.scriptLines.find(l => l.id === endLineId);
+                    if (line) {
+                        endLineRef = line;
+                    }
+                }
+                if (startLineRef && endLineRef) break;
+            }
+
+            if (!startLineRef || !endLineRef) {
+                alert('????????????��???????');
+            } else {
+                const existingMarkers = projectClone.textMarkers || [];
+                let newMarker: TextMarker;
+
+                if (startLineId === endLineId) {
+                    const original = startLineRef.text || '';
+                    const a = Math.min(startOffsetVal, endOffsetRaw);
+                    const b = Math.max(startOffsetVal, endOffsetRaw);
+
+                    const before = original.slice(0, a);
+                    const middle = original.slice(a, b);
+                    const after = original.slice(b);
+
+                    const newText = before + bracketedPlain + middle + endMarker + after;
+
+                    const markerStartOffset = before.length + bracketedPlain.length;
+                    const markerEndOffset = before.length + bracketedPlain.length + middle.length;
+
+                    newMarker = {
+                        id: `bgm_${Date.now()}`,
+                        type: 'bgm',
+                        name,
+                        startLineId,
+                        startOffset: markerStartOffset,
+                        endLineId,
+                        endOffset: markerEndOffset,
+                    };
+
+                    startLineRef.text = newText;
+
+                    console.log('[BGM] handleSaveBgmWithEndMarker update (single line)', {
+                        marker: newMarker,
+                        lineId: startLineId,
+                        selectionStart: a,
+                        selectionEnd: b,
+                        before: original,
+                        after: newText,
+                    });
+                } else {
+                    const startOriginal = startLineRef.text || '';
+                    const endOriginal = endLineRef.text || '';
+
+                    const startBefore = startOriginal.slice(0, startOffsetVal);
+                    const startAfter = startOriginal.slice(startOffsetVal);
+                    const newStartText = startBefore + bracketedPlain + startAfter;
+
+                    const endBefore = endOriginal.slice(0, endOffsetRaw);
+                    const endAfter = endOriginal.slice(endOffsetRaw);
+                    const newEndText = endBefore + endMarker + endAfter;
+
+                    const markerStartOffset = startBefore.length + bracketedPlain.length;
+                    const markerEndOffset = endBefore.length;
+
+                    newMarker = {
+                        id: `bgm_${Date.now()}`,
+                        type: 'bgm',
+                        name,
+                        startLineId,
+                        startOffset: markerStartOffset,
+                        endLineId,
+                        endOffset: markerEndOffset,
+                    };
+
+                    startLineRef.text = newStartText;
+                    endLineRef.text = newEndText;
+
+                    console.log('[BGM] handleSaveBgmWithEndMarker update (multi line)', {
+                        marker: newMarker,
+                        startLineId,
+                        endLineId,
+                        startOffset: startOffsetVal,
+                        endOffset: endOffsetRaw,
+                        startBefore,
+                        startAfter,
+                        endBefore,
+                        endAfter,
+                    });
+                }
+
+                projectClone.textMarkers = [...existingMarkers, newMarker];
+                updateProject(projectClone);
+            }
+        } else {
+            alert('?????????????????��????????????');
+        }
+
+        setIsBgmModalOpen(false);
+        clearSelection();
+    }, [selectedRange, currentProject, updateProject, clearSelection]);
 
     const handleSaveSfx = useCallback((rawSfxText: string) => {
         if (!selectedRange || !currentProject) return;
@@ -347,6 +649,21 @@ export const usePostProduction = () => {
         if (!currentProject) return;
         const next = textMarkers.filter((m) => m.id !== id);
         updateProjectTextMarkers(currentProject.id, next);
+
+        // 同步清理 DOM 中对应的 BGM 高亮，避免删除印记后背景色残留
+        try {
+            const marks = document.querySelectorAll(`mark.bgm-highlight[data-marker-id=\"${id}\"]`);
+            marks.forEach((mark) => {
+                const parent = mark.parentNode;
+                if (parent) {
+                    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+                    parent.removeChild(mark);
+                }
+            });
+        } catch {
+            // 在非浏览器环境下忽略 DOM 操作错误
+        }
+
         setEditingMarker(null);
     }, [currentProject, textMarkers, updateProjectTextMarkers]);
 
@@ -394,15 +711,11 @@ export const usePostProduction = () => {
                     scriptLines: ch.scriptLines.map(line => {
                         if (line.id === lineId) {
                             const existingPinned = line.pinnedSounds || [];
-                            // Remove any existing pin for this keyword instance
                             const filtered = existingPinned.filter(p => !(p.keyword === keyword && p.index === charIndex));
                             
                             if (soundId !== null && soundName !== null) {
                                 const newPin: PinnedSound = { keyword, index: charIndex, soundId, soundName };
-                                return {
-                                    ...line,
-                                    pinnedSounds: [...filtered, newPin]
-                                };
+                                return { ...line, pinnedSounds: [...filtered, newPin] };
                             } else { // unpinning
                                 return {
                                     ...line,
@@ -432,14 +745,30 @@ export const usePostProduction = () => {
         handleTextSelect,
         openSceneModal: () => { if(selectedRange) setIsSceneModalOpen(true); },
         closeSceneModal: () => setIsSceneModalOpen(false),
-        openBgmModal: () => { if(selectedRange) setIsBgmModalOpen(true); },
+        openBgmModal: (range?: Range) => {
+            const finalRange = range || selectedRange;
+            if (finalRange) {
+              if (range) {
+                setSelectedRange(range);
+              }
+              setIsBgmModalOpen(true);
+            }
+        },
         closeBgmModal: () => setIsBgmModalOpen(false),
-        openSfxModal: () => { if(selectedRange) setIsSfxModalOpen(true); },
+        openSfxModal: (range?: Range) => {
+            const finalRange = range || selectedRange;
+            if (finalRange) {
+              if (range) {
+                setSelectedRange(range);
+              }
+              setIsSfxModalOpen(true);
+            }
+        },
         closeSfxModal: () => setIsSfxModalOpen(false),
         openEditModal: setEditingMarker,
         closeEditModal: () => setEditingMarker(null),
         handleSaveScene,
-        handleSaveBgm,
+        handleSaveBgm: handleSaveBgmWithEndMarker,
         handleSaveSfx,
         handleDeleteMarker,
         handleRenameMarker,

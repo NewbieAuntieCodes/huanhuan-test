@@ -113,8 +113,11 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
     const hideBgmPopoverTimeout = useRef<number | null>(null);
     
     const processedChaptersWithHighlight = useMemo(() => {
-        let isInMusicRange = false;
         return chapters.map(chapter => {
+            // 每个章节内部单独计算 BGM 范围：
+            // 起始行 = 含有 <BGM> 的行，结束行 = 含有 // 的行。
+            let isInMusicRange = false;
+
             const newScriptLines = chapter.scriptLines.map(line => {
                 const bgmRegex = /<[^<>]+>/;
                 const endMarker = '//';
@@ -575,7 +578,7 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
                                         const nameForCheck = (char?.name || '').replace(/[\[\]()]/g, '').toLowerCase();
                                         const isSfx = nameForCheck === '音效' || nameForCheck === 'sfx';
                                         const display = isSfx ? bracketIfNeeded(line.text) : line.text;
-                                        const wrapperClass = line.shouldHighlight ? 'music-range-highlight rounded-md' : '';
+                                        const wrapperClass = '';
 
                                         return (
                                           <div key={line.id} className={wrapperClass}>

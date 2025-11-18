@@ -70,7 +70,14 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
     });
   },
   updateProject: async (updatedProject) => {
-    const projectWithTimestamp = { ...updatedProject, lastModified: Date.now() };
+    const state = get();
+    const existing = state.projects.find(p => p.id === updatedProject.id);
+    const baseMarkers = existing?.textMarkers || updatedProject.textMarkers || [];
+    const projectWithTimestamp: Project = {
+      ...updatedProject,
+      lastModified: Date.now(),
+      textMarkers: recalculateBgmMarkersFromText(updatedProject, baseMarkers),
+    };
     await db.projects.put(projectWithTimestamp);
     set(state => {
       const updatedProjects = state.projects
@@ -364,7 +371,7 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
     const project = get().projects.find(p => p.id === projectId);
     if (!project) return;
 
-    const updatedProject: Project = {
+    let updatedProject: Project = {
       ...project,
       chapters: project.chapters.map(ch => {
         if (ch.id === chapterId) {
@@ -382,6 +389,10 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
         return ch;
       }),
       lastModified: Date.now(),
+    };
+    updatedProject = {
+      ...updatedProject,
+      textMarkers: recalculateBgmMarkersFromText(updatedProject, project.textMarkers || []),
     };
     await db.projects.put(updatedProject);
     set(state => ({
@@ -460,3 +471,92 @@ export const createProjectSlice: StateCreator<AppState, [], [], ProjectSlice> = 
     }));
   },
 });
+
+// ---- Helpers ----
+
+/**
+ * 从项目纯文本（<BGM> + //）重新计算所有 BGM 文本标记，只保留/替换 type === 'bgm' 的部分。
+ * 其余类型的标记（scene、sfx）原样保留。
+ */
+function recalculateBgmMarkersFromText(project: Project, existingMarkers: TextMarker[]): TextMarker[] {
+  const nonBgmMarkers = (existingMarkers || []).filter(m => m.type !== 'bgm');
+  const existingBgmMarkers = (existingMarkers || []).filter(m => m.type === 'bgm');
+
+  const bgmMarkers: TextMarker[] = [];
+
+  // 支持 <名字> / <♫-名字> / <BGM-名字> 形式
+  const bgmStartPattern = /<\s*(?:(?:BGM|[\u266A\u266B])\s*-\s*)?([^>]+)>/;
+
+  type Pending = { name: string; startLineId: string; startOffset: number };
+  let active: Pending | null = null;
+
+  const chapters = project.chapters || [];
+
+  for (const ch of chapters) {
+    for (const line of ch.scriptLines || []) {
+      const text = line.text || '';
+      let i = 0;
+
+      while (i < text.length) {
+        const chCode = text[i];
+
+        // 处理 BGM 结束标记 //
+        if (active && chCode === '/' && text[i + 1] === '/') {
+          const startLineId = active.startLineId;
+          const startOffset = active.startOffset;
+          const endLineId = line.id;
+          const endOffset = i; // 高亮到 // 之前
+          const name = active.name.trim();
+
+          // 尝试复用已有的 BGM 标记（保持 id / color 等）
+          const existing = existingBgmMarkers.find(m =>
+            m.startLineId === startLineId &&
+            m.endLineId === endLineId &&
+            (m.startOffset ?? 0) === startOffset &&
+            (m.endOffset ?? 0) === endOffset &&
+            (m.name || '').trim() === name
+          );
+
+          const id = existing?.id || `bgm_${Date.now()}_${bgmMarkers.length}_${Math.random().toString(36).slice(2, 6)}`;
+
+          bgmMarkers.push({
+            id,
+            type: 'bgm',
+            name,
+            startLineId,
+            startOffset,
+            endLineId,
+            endOffset,
+            color: existing?.color,
+          });
+
+          active = null;
+          i += 2;
+          continue;
+        }
+
+        // 处理 BGM 起始标记 <...>
+        if (!active && chCode === '<') {
+          const rest = text.slice(i);
+          const match = rest.match(bgmStartPattern);
+          if (match && match.index === 0) {
+            const rawTag = match[0];
+            const name = match[1].trim();
+            const tagLen = rawTag.length;
+            const startOffset = i + tagLen; // 高亮从 > 之后开始
+
+            active = { name, startLineId: line.id, startOffset };
+            i += tagLen;
+            continue;
+          }
+        }
+
+        i++;
+      }
+    }
+  }
+
+  // 未闭合的 BGM（只有 <name> 没有 //）不生成标记
+
+  return [...nonBgmMarkers, ...bgmMarkers];
+}

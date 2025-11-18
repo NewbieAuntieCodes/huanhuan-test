@@ -33,7 +33,11 @@ export const useMarkerRendering = (
     const lastMarkersRef = useRef<TextMarker[]>([]);
     const [bgmLabelOverlays, setBgmLabelOverlays] = useState<BgmLabelOverlay[]>([]);
 
-    const bgmMarkers = useMemo(() => [], []); // No more BGM markers
+    // 从所有文本标记中过滤出类型为 BGM 的标记，用于渲染高亮和左侧标签
+    const bgmMarkers = useMemo(
+        () => textMarkers.filter((m) => m.type === 'bgm'),
+        [textMarkers]
+    );
 
     const lineIdToChapterIndex = useMemo(() => {
         const map = new Map<string, number>();
@@ -102,7 +106,23 @@ export const useMarkerRendering = (
         const contentEl = contentRef.current;
         if (!contentEl || suspendLayout) return;
 
-        // Clean up previous highlights
+        // 调试：观察当前 BGM 标记和高亮计算是否正常触发
+        console.log('[BGM] recalculateBgmHighlights', {
+            markerCount: bgmMarkers.length,
+            markers: bgmMarkers.map((m) => ({
+                id: m.id,
+                name: m.name,
+                startLineId: m.startLineId,
+                startOffset: m.startOffset,
+                endLineId: m.endLineId,
+                endOffset: m.endOffset,
+            })),
+        });
+
+        // 为避免高亮闪烁，这里暂时不主动清理旧的 bgm-highlight，
+        // 而是直接在当前文本结构上追加 / 覆盖高亮区域。
+
+        // 先移除已有的 bgm-highlight，避免删除标记后背景色残留
         contentEl.querySelectorAll('mark.bgm-highlight').forEach((mark) => {
             const parent = mark.parentNode;
             if (parent) {
@@ -117,7 +137,33 @@ export const useMarkerRendering = (
             const lineBlocks = Array.from(contentEl.querySelectorAll('[data-line-id]')) as HTMLElement[];
             const sIdx = lineBlocks.findIndex(el => el.dataset.lineId === marker.startLineId);
             const eIdx = lineBlocks.findIndex(el => el.dataset.lineId === marker.endLineId);
-            if (sIdx === -1 || eIdx === -1) return;
+            if (sIdx === -1 || eIdx === -1) {
+                console.warn('[BGM] line block not found for marker', marker);
+                return;
+            }
+
+            // �� DOM �е�紫��起�㡼<♫-name>�� ��ֹ�㡼//����ȷ���߱�����Χ
+            const startBlock = lineBlocks[sIdx];
+            const endBlock = lineBlocks[eIdx];
+            const startParagraph = startBlock.querySelector('p');
+            const endParagraph = endBlock.querySelector('p');
+
+            let startAnchorEl: HTMLElement | null = null;
+            let endAnchorEl: HTMLElement | null = null;
+
+            if (startParagraph) {
+                const candidates = Array.from(startParagraph.querySelectorAll('strong.bgm-marker-inline')) as HTMLElement[];
+                startAnchorEl =
+                    candidates.find(el => el.dataset.bgmName === (marker.name || '')) ||
+                    candidates[0] ||
+                    null;
+            }
+
+            if (endParagraph) {
+                endAnchorEl = endParagraph.querySelector('strong.bgm-marker-inline[data-bgm-end=\"1\"]') as HTMLElement | null;
+            }
+
+            const canUseDomAnchors = !!startAnchorEl && !!endAnchorEl;
 
             const findNode = (p: Element, offset: number) => {
               const walker = document.createTreeWalker(p, NodeFilter.SHOW_TEXT);
@@ -136,18 +182,53 @@ export const useMarkerRendering = (
                 if (!p || !p.firstChild) continue;
                 try {
                     const range = document.createRange();
-                    if (i === sIdx) range.setStart(findNode(p, marker.startOffset).node, findNode(p, marker.startOffset).offset);
-                    else range.setStart(p.firstChild, 0);
-                    if (i === eIdx) range.setEnd(findNode(p, marker.endOffset).node, findNode(p, marker.endOffset).offset);
-                    else range.setEndAfter(p.lastChild);
+
+                    if (canUseDomAnchors) {
+                        // 使用 DOM 锚点：起点在 <♫-name> 之后，终点在 // 之前
+                        if (i === sIdx && startAnchorEl) {
+                            range.setStartAfter(startAnchorEl);
+                        } else {
+                            range.setStart(p.firstChild, 0);
+                        }
+
+                        if (i === eIdx && endAnchorEl) {
+                            range.setEndBefore(endAnchorEl);
+                        } else {
+                            range.setEndAfter(p.lastChild);
+                        }
+                    } else if (marker.startOffset !== undefined && marker.endOffset !== undefined) {
+                        // 回退：仍然支持旧的基于 offset 的高亮（兼容历史数据）
+                        if (i === sIdx) {
+                            const start = findNode(p, marker.startOffset);
+                            range.setStart(start.node, start.offset);
+                        } else {
+                            range.setStart(p.firstChild, 0);
+                        }
+                        if (i === eIdx) {
+                            const end = findNode(p, marker.endOffset);
+                            range.setEnd(end.node, end.offset);
+                        } else {
+                            range.setEndAfter(p.lastChild);
+                        }
+                    } else {
+                        continue;
+                    }
 
                     const mark = document.createElement('mark');
                     mark.className = 'bgm-highlight';
                     mark.dataset.markerId = marker.id;
-                    mark.style.backgroundColor = marker.color || getBgmColor(markerOrdinalMap.get(marker.id) ?? 1);
+                    // 使用与旧版 music-range-highlight 相近的黄色背景，并强制黑色文字，保证可读性
+                    mark.style.backgroundColor = '#FFF9C4';
+                    mark.style.color = '#000000';
                     mark.style.borderRadius = '3px';
                     mark.title = marker.name || 'BGM';
                     range.surroundContents(mark);
+                    console.log('[BGM] applied highlight', {
+                        markerId: marker.id,
+                        lineIndex: i,
+                        startOffset: marker.startOffset,
+                        endOffset: marker.endOffset,
+                    });
                 } catch (e) {
                     console.error('BGM highlight error:', e);
                 }

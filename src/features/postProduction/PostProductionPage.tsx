@@ -61,24 +61,24 @@ const PostProductionPage: React.FC = () => {
     const [isPostTextAssistantOpen, setIsPostTextAssistantOpen] = useState(false);
     const [chapterFilter, setChapterFilter] = useState('');
     const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
-    const [sfxContextMenu, setSfxContextMenu] = useState<{ top: number; left: number; range: Range } | null>(null);
+    const [contextMenu, setContextMenu] = useState<{ top: number; left: number; range: Range } | null>(null);
     const [isExportingToReaper, setIsExportingToReaper] = useState(false);
 
 
     useEffect(() => {
         const handleClickOutside = () => {
-            setSfxContextMenu(null);
+            setContextMenu(null);
         };
-        if (sfxContextMenu) {
+        if (contextMenu) {
             window.addEventListener('click', handleClickOutside, { once: true });
         }
         return () => {
             window.removeEventListener('click', handleClickOutside);
         };
-    }, [sfxContextMenu]);
+    }, [contextMenu]);
 
     const handleContextMenuRequest = (event: React.MouseEvent, range: Range) => {
-        setSfxContextMenu({ top: event.clientY, left: event.clientX, range });
+        setContextMenu({ top: event.clientY, left: event.clientX, range });
     };
 
     const projectCharacters = useMemo(() => {
@@ -211,8 +211,8 @@ const PostProductionPage: React.FC = () => {
                     </div>
                     <button onClick={() => setIsPostTextAssistantOpen(true)} className="px-3 py-1.5 text-sm bg-amber-600 hover:bg-amber-700 rounded-md">后期文本辅助</button>
                     <button onClick={openSceneModal} disabled={!selectedRange} className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50">添加场景</button>
-                    <button onClick={openBgmModal} disabled={!selectedRange} className="px-3 py-1.5 text-sm bg-purple-600 hover:bg-purple-700 rounded-md disabled:opacity-50">添加 BGM</button>
-                    <button onClick={openSfxModal} disabled={!selectedRange} title={!selectedRange ? '请先在文本中点击定位或选择一段文本' : ''} className="px-3 py-1.5 text-sm bg-rose-600 hover:bg-rose-700 rounded-md disabled:opacity-50">添加音效</button>
+                    <button onClick={() => openBgmModal()} disabled={!selectedRange} className="px-3 py-1.5 text-sm bg-purple-600 hover:bg-purple-700 rounded-md disabled:opacity-50">添加 BGM</button>
+                    <button onClick={() => openSfxModal()} disabled={!selectedRange} title={!selectedRange ? '请先在文本中点击定位或选择一段文本' : ''} className="px-3 py-1.5 text-sm bg-rose-600 hover:bg-rose-700 rounded-md disabled:opacity-50">添加音效</button>
                     <button onClick={handleClearFormatting} disabled={!selectedRange} className="flex items-center px-3 py-1.5 text-sm bg-yellow-600 hover:bg-yellow-700 rounded-md disabled:opacity-50">
                         <ClearFormattingIcon className="w-4 h-4 mr-1.5" />
                         清除格式
@@ -269,21 +269,29 @@ const PostProductionPage: React.FC = () => {
             </div>
 
 
-            {sfxContextMenu && (
+            {contextMenu && (
                 <div
-                    style={{ top: sfxContextMenu.top, left: sfxContextMenu.left }}
-                    className="absolute z-50 bg-slate-700 rounded-md shadow-lg border border-slate-600 text-sm"
+                    style={{ top: contextMenu.top, left: contextMenu.left }}
+                    className="absolute z-50 bg-slate-700 rounded-md shadow-lg border border-slate-600 text-sm p-1"
                     onClick={(e) => e.stopPropagation()}
                 >
                     <button
                         onClick={() => {
-                            handleTextSelect(sfxContextMenu.range);
-                            openSfxModal();
-                            setSfxContextMenu(null);
+                            openSfxModal(contextMenu.range);
+                            setContextMenu(null);
                         }}
-                        className="block w-full text-left px-4 py-2 text-slate-100 hover:bg-sky-600 rounded-md"
+                        className="block w-full text-left px-3 py-1.5 text-slate-100 hover:bg-sky-600 rounded-md"
                     >
                         在此处添加音效...
+                    </button>
+                    <button
+                        onClick={() => {
+                            openBgmModal(contextMenu.range);
+                            setContextMenu(null);
+                        }}
+                        className="block w-full text-left px-3 py-1.5 text-slate-100 hover:bg-sky-600 rounded-md"
+                    >
+                        在此处添加BGM...
                     </button>
                 </div>
             )}
