@@ -98,7 +98,7 @@ const VoiceLibraryPage: React.FC = () => {
     setCharacterSearchTerm('');
   };
 
-  const characterMap = useMemo(() => new Map(charactersInProject.map(c => [c.id, c])), [charactersInProject]);
+  const characterMap = useMemo<Map<string, Character>>(() => new Map(charactersInProject.map(c => [c.id, c])), [charactersInProject]);
   const lineMap = useMemo(() => {
       if (!currentProject) return new Map();
       const map = new Map<string, ScriptLine>();

@@ -386,23 +386,8 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
     }, [expandedChapterId]);
 
 
-    useEffect(() => {
-        const el = contentRef.current;
-        if (!el) return;
-        const onClick = (e: MouseEvent) => {
-            const target = e.target as HTMLElement;
-            const mark = target.closest('mark.bgm-highlight');
-            if (mark) {
-                const id = (mark as HTMLElement).dataset.markerId;
-                if (id) {
-                    const found = textMarkers.find((m) => m.id === id);
-                    if (found) (window as any).__openEditMarker?.(found);
-                }
-            }
-        };
-        el.addEventListener('click', onClick);
-        return () => el.removeEventListener('click', onClick);
-    }, [textMarkers]);
+    // BGM �ı�ĸ߱�����ͨ�����޸� <...> �� // �����ڵ��������ֶ���ɾ
+    // ���������� marker ������ BGM ���ر༭�󴰿�
 
     const bracketIfNeeded = (text: string) => {
         let t = (text || '').trim();
@@ -538,11 +523,8 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
                                 left: overlay.left,
                                 backgroundColor: overlay.bgColor,
                                 color: overlay.textColor,
-                                pointerEvents: 'auto',
-                            }}
-                            onClick={() => {
-                                const marker = textMarkers.find((m) => m.id === overlay.id);
-                                if (marker) (window as any).__openEditMarker?.(marker);
+                                // BGM ��ǩ��ת��Ϊ��Ϣչʾ������ͨ�����򵼵� BGM �༭�Ի���
+                                pointerEvents: 'none',
                             }}
                             title={`BGM: ${overlay.name}`}
                         >

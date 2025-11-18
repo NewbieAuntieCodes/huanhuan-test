@@ -765,7 +765,15 @@ export const usePostProduction = () => {
             }
         },
         closeSfxModal: () => setIsSfxModalOpen(false),
-        openEditModal: setEditingMarker,
+        // ���ޣ�ֻ�� scene ����ǣ�BGM ��ʹ�ÿ���޸Ļ��򷳳�Χ��ͨ��ֱ���༭ <...> �� //
+        // ��ɫ��� BGM ��Ǿ��� recalculateBgmMarkersFromText �� useMarkerRendering ��ͨ���ı�
+        // �Զ������
+        openEditModal: (marker: TextMarker | null) => {
+            if (marker && marker.type !== 'scene') {
+                return;
+            }
+            setEditingMarker(marker);
+        },
         closeEditModal: () => setEditingMarker(null),
         handleSaveScene,
         handleSaveBgm: handleSaveBgmWithEndMarker,

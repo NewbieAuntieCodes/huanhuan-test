@@ -10,6 +10,11 @@ const sanitizeForRpp = (str: string): string => {
     return str.replace(/"/g, "'").replace(/[\r\n]/g, ' ');
 }
 
+// Force convert paths to Windows style (backslashes) for Reaper compatibility on Windows
+const toWindowsPath = (path: string): string => {
+    return path.replace(/\//g, '\\');
+}
+
 const sanitizeFilename = (name: string, maxLength: number = 200): string => {
     const sanitized = name.replace(/[\r\n]/g, ' ').replace(/[<>:"/\\|?*]+/g, '_').replace(/_+/g, '_');
     const trimmed = sanitized.replace(/^[_ ]+|[_ ]+$/g, '');
@@ -48,7 +53,7 @@ const generateDialogueRppTrackItems = (items: TimelineItem[], sourceFileName: st
       NAME "${sanitizeForRpp(item.generatedItemName)}"
       SOFFS ${item.sourceStartTime.toFixed(6)}
       <SOURCE WAVE
-        FILE "${sanitizeForRpp(sourceFileName)}"
+        FILE "${sanitizeForRpp(toWindowsPath(sourceFileName))}"
       >
     >
     `).join('');
@@ -61,7 +66,7 @@ const generateSfxRppTrackItems = (clips: any[]): string => {
       LENGTH ${clip.duration.toFixed(6)}
       NAME "${sanitizeForRpp(clip.name)}"
       <SOURCE WAVE
-        FILE "${sanitizeForRpp(clip.filePath)}"
+        FILE "${sanitizeForRpp(toWindowsPath(clip.filePath))}"
       >
     >
     `).join('');
@@ -84,7 +89,7 @@ const generateBgmRppTrackItems = (clips: any[]): string => {
       NAME "${sanitizeForRpp(clip.name)}"
       SOFFS 0
       <SOURCE WAVE
-        FILE "${sanitizeForRpp(clip.filePath)}"
+        FILE "${sanitizeForRpp(toWindowsPath(clip.filePath))}"
       >
     >`;
         }
@@ -136,6 +141,15 @@ export const exportPostProductionToReaper = async (
     const { silenceSettings = defaultSilenceSettings } = project;
     const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     const zip = new JSZip();
+
+    // Create a map for faster sound lookup by ID
+    // The key is the sound ID (number)
+    const soundLibraryMap = new Map<number, SoundLibraryItem>();
+    soundLibrary.forEach(s => {
+        if (s.id !== undefined) {
+            soundLibraryMap.set(s.id, s);
+        }
+    });
 
     try {
         // Step 1: Process dialogue (same as original exporter)
@@ -232,12 +246,15 @@ export const exportPostProductionToReaper = async (
         const usedSoundFiles = new Map<number, { blob: Blob, path: string }>();
         const lineStartTimes = new Map<string, number>(finalTimelineItems.map(item => [item.line.id, item.mainTimelineStartTime]));
         const lineDurations = new Map<string, number>(finalTimelineItems.map(item => [item.line.id, item.duration]));
+        
+        // Regex for legacy text-based markers
         const sfxRegex = /\[音效-([^\]]+)\]/g;
-        // 兼容 <名称>、<♫-名称>、<BGM-名称>
         const bgmStartRegex = /<\s*(?:(?:BGM|[\u266A\u266B])\s*-\s*)?([^>]+)>/g;
+        
         let activeBgm: { name: string, startTime: number } | null = null;
         
         const allLinesChronological = project.chapters.flatMap(ch => ch.scriptLines);
+        
         for (const line of allLinesChronological) {
             const lineStartTime = lineStartTimes.get(line.id);
             if (lineStartTime === undefined) continue;
@@ -245,10 +262,46 @@ export const exportPostProductionToReaper = async (
             const lineDuration = lineDurations.get(line.id) || 0;
             const text = line.text;
 
+            // 1. Process Pinned Sounds (Priority)
+            if (line.pinnedSounds && line.pinnedSounds.length > 0) {
+                for (const pin of line.pinnedSounds) {
+                    // Use soundLibraryMap for fast O(1) lookup
+                    const sound = soundLibraryMap.get(pin.soundId);
+                    
+                    if (sound && sound.id) {
+                        // Distinguish between BGM and SFX
+                        // Current UI logic: keyword wrapped in <> is BGM, others are SFX
+                        const isBgmPin = pin.keyword.startsWith('<') && pin.keyword.endsWith('>');
+                        
+                        if (!isBgmPin) {
+                            if (!usedSoundFiles.has(sound.id)) {
+                                const file = await sound.handle.getFile();
+                                usedSoundFiles.set(sound.id, { blob: file, path: `sfx/${sanitizeFilename(sound.name)}` });
+                            }
+                            
+                            // Calculate absolute start time on timeline
+                            const textLen = text.length > 0 ? text.length : 1;
+                            const safeIndex = Math.min(pin.index, textLen);
+                            const relativeTime = (safeIndex / textLen) * lineDuration;
+                            
+                            sfxClips.push({
+                                startTime: lineStartTime + relativeTime,
+                                duration: sound.duration,
+                                name: `SFX: ${sound.name}`,
+                                filePath: usedSoundFiles.get(sound.id)!.path
+                            });
+                        }
+                    }
+                }
+            }
+
+            // 2. Process Legacy Text Markers [音效-xxx]
             let sfxMatch;
             while ((sfxMatch = sfxRegex.exec(text)) !== null) {
                 const sfxName = sfxMatch[1];
+                // Search in full library list for legacy name match
                 const sound = soundLibrary.find(s => s.name.toLowerCase().includes(sfxName.toLowerCase()));
+                
                 if (sound?.id) {
                     if (!usedSoundFiles.has(sound.id)) {
                         const file = await sound.handle.getFile();
@@ -263,6 +316,7 @@ export const exportPostProductionToReaper = async (
                 }
             }
 
+            // 3. Process BGM Markers (Timeline logic)
             if (activeBgm && text.includes('//')) {
                 const endTime = lineStartTime + (text.indexOf('//') / text.length) * lineDuration;
                 const sound = soundLibrary.find(s => s.name.toLowerCase().includes(activeBgm!.name.toLowerCase()));
