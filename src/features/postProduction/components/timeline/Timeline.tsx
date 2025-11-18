@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useStore } from '../../../../store/useStore';
 import { db } from '../../../../db';
@@ -73,6 +74,7 @@ const Timeline: React.FC = () => {
 
     const loadTimeline = async () => {
         setIsLoading(true);
+        // Create a temporary context for decoding durations
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
         const silenceSettings = currentProject.silenceSettings || defaultSilenceSettings;
         
@@ -87,14 +89,15 @@ const Timeline: React.FC = () => {
 
         let currentTime = silenceSettings.startPadding || 0;
         
-        try {
-            for (const chapter of currentProject.chapters) {
-                for (const line of chapter.scriptLines) {
-                    // 关键修复：如果没有音频Blob，直接跳过，不增加时间，不产生空隙
-                    if (!line.audioBlobId) {
-                        continue;
-                    }
+        // Iterate chapters and lines
+        for (const chapter of currentProject.chapters) {
+            for (const line of chapter.scriptLines) {
+                // Skip lines without audio assignment
+                if (!line.audioBlobId) {
+                    continue;
+                }
 
+                try {
                     let clipDuration = 0;
                     let blob: Blob | undefined = undefined;
 
@@ -102,8 +105,18 @@ const Timeline: React.FC = () => {
                     if (record) {
                         blob = record.data;
                         // Decode to get accurate duration
-                        const buffer = await audioContext.decodeAudioData(await blob.arrayBuffer());
-                        clipDuration = buffer.duration;
+                        // 使用 try-catch 包裹解码过程，防止单个损坏文件导致整个时间轴加载失败
+                        try {
+                            const buffer = await audioContext.decodeAudioData(await blob.arrayBuffer());
+                            clipDuration = buffer.duration;
+                        } catch (decodeError) {
+                            console.warn(`无法解码音频 (Line ID: ${line.id}):`, decodeError);
+                            // 如果解码失败，我们仍然可以显示一个占位符或跳过，这里选择跳过以保证播放稳定性
+                            continue;
+                        }
+                    } else {
+                        // 数据库中找不到对应的 blob 记录
+                        continue;
                     }
                     
                     if (clipDuration > 0 && blob) {
@@ -131,22 +144,24 @@ const Timeline: React.FC = () => {
                          if (line.postSilence !== undefined && line.postSilence !== null) {
                              silenceDuration = line.postSilence;
                          } else {
-                            // 简化逻辑：默认间隔。
-                            // 真正的应用可能需要像导出器一样根据前后角色类型计算间隔。
+                            // 简化逻辑：默认间隔
                             silenceDuration = 0.2; 
                          }
                          currentTime += silenceDuration;
                     }
+                } catch (lineError) {
+                    console.error(`处理行数据时出错 (Line ID: ${line.id}):`, lineError);
+                    // 继续处理下一行
                 }
             }
-            
-            setTracks(newTracks);
-            setTotalDuration(currentTime + (silenceSettings.endPadding || 0));
-        } catch (e) {
-            console.error("Failed to load timeline", e);
-        } finally {
-            setIsLoading(false);
-            if (audioContext.state !== 'closed') audioContext.close();
+        }
+        
+        setTracks(newTracks);
+        setTotalDuration(currentTime + (silenceSettings.endPadding || 0));
+        setIsLoading(false);
+
+        if (audioContext.state !== 'closed') {
+            audioContext.close().catch(() => {});
         }
     };
 
@@ -156,7 +171,7 @@ const Timeline: React.FC = () => {
   // 2. Playback Logic
   const stopPlayback = useCallback(() => {
      if (audioContextRef.current) {
-         audioContextRef.current.suspend();
+         try { audioContextRef.current.suspend(); } catch {}
      }
      activeSourcesRef.current.forEach(source => {
          try { source.stop(); } catch {}
@@ -176,11 +191,14 @@ const Timeline: React.FC = () => {
               audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
           }
           const ctx = audioContextRef.current;
-          if (ctx.state === 'suspended') ctx.resume();
+          if (ctx.state === 'suspended') {
+              ctx.resume().catch(e => console.error("AudioContext resume failed", e));
+          }
           
           const startTime = ctx.currentTime;
           playbackStartRef.current = { contextTime: startTime, timelineTime: timelineCurrentTime };
           
+          // Flatten clips for scheduling
           const allClips = Object.values(tracks).flat().sort((a, b) => a.startTime - b.startTime);
 
           // Scheduler loop
@@ -188,24 +206,49 @@ const Timeline: React.FC = () => {
           const timerInterval = 50; // ms check interval
 
           const schedule = () => {
-              const currentTime = ctx.currentTime;
-              // Current logical time in timeline
-              const timelinePlayhead = (currentTime - startTime) + timelineCurrentTime;
+              const currentCtxTime = ctx.currentTime;
+              
+              // Calculate where the playhead IS right now relative to the timeline start
+              // Base time + (Elapsed Audio Context Time)
+              if (!playbackStartRef.current) return;
+              
+              const elapsed = currentCtxTime - playbackStartRef.current.contextTime;
+              const timelinePlayhead = playbackStartRef.current.timelineTime + elapsed;
               const lookaheadTime = timelinePlayhead + scheduleAheadTime;
 
               allClips.forEach(clip => {
-                  // Check if clip is within the scheduling window
-                  const isStartingSoon = clip.startTime >= timelinePlayhead && clip.startTime < lookaheadTime;
-                  const isCurrentlyPlaying = clip.startTime < timelinePlayhead && (clip.startTime + clip.duration) > timelinePlayhead;
+                  // 1. Check if clip hasn't been scheduled yet
+                  if (scheduledClipsRef.current.has(clip.id)) return;
 
-                  if ((isStartingSoon || isCurrentlyPlaying) && !scheduledClipsRef.current.has(clip.id) && clip.audioBlob) {
-                       let startOffset = 0;
-                       // If we are jumping into the middle of a clip
+                  // 2. Check validity
+                  if (!clip.audioBlob) return;
+
+                  // 3. Check intersection with lookahead window
+                  const clipEnd = clip.startTime + clip.duration;
+                  
+                  // Case A: Clip is starting soon
+                  const isStartingSoon = clip.startTime >= timelinePlayhead && clip.startTime < lookaheadTime;
+                  
+                  // Case B: We jumped into the middle of a clip (Timeline Playhead is INSIDE the clip)
+                  const isCurrentlyPlaying = clip.startTime < timelinePlayhead && clipEnd > timelinePlayhead;
+
+                  if (isStartingSoon || isCurrentlyPlaying) {
+                       let startOffset = 0; // Where to start playing INSIDE the audio file
+                       let delay = 0;       // When to start playing relative to NOW
+
                        if (isCurrentlyPlaying) {
+                           // We need to start playing from the middle
                            startOffset = timelinePlayhead - clip.startTime;
+                           delay = 0; // Play immediately
+                       } else {
+                           // We need to schedule it for the future
+                           startOffset = 0;
+                           // Time until clip start = Clip Start Time - Current Timeline Time
+                           delay = clip.startTime - timelinePlayhead;
                        }
                        
-                       scheduleClip(ctx, clip, startTime - timelineCurrentTime, startOffset);
+                       // Schedule it
+                       scheduleClip(ctx, clip, delay, startOffset);
                        scheduledClipsRef.current.add(clip.id);
                   }
               });
@@ -216,46 +259,41 @@ const Timeline: React.FC = () => {
               }
           };
 
-          const scheduleClip = async (context: AudioContext, clip: TimelineClip, timeOffset: number, startOffset = 0) => {
+          const scheduleClip = async (context: AudioContext, clip: TimelineClip, delay: number, startOffset = 0) => {
               if (!clip.audioBlob) return;
               try {
+                // Note: decoding inside the playback loop is not ideal for performance but necessary if we don't pre-decode everything.
+                // A better approach for huge apps is a "lookahead downloader/decoder".
                 const buffer = await context.decodeAudioData(await clip.audioBlob.arrayBuffer());
+                
                 const source = context.createBufferSource();
                 source.buffer = buffer;
                 source.connect(context.destination);
                 
-                // Exact start time in AudioContext coordinate system
-                // clip.startTime (Timeline Abs) + timeOffset (Context Start - Timeline Start)
-                const whenToPlay = clip.startTime + timeOffset;
+                // Calculate precise start time in AudioContext time
+                // We schedule it 'delay' seconds from 'now'
+                const playAt = context.currentTime + Math.max(0, delay);
                 
-                // Handle playback
-                if (startOffset > 0) {
-                    // Playing from middle
-                    // We play "now" (or slightly immediate) but offset into the buffer
-                    // We assume context.currentTime is roughly whenToPlay + startOffset
-                    source.start(context.currentTime, startOffset, clip.duration - startOffset);
-                } else {
-                    // Scheduled for future or immediate start
-                    source.start(Math.max(context.currentTime, whenToPlay), 0, clip.duration);
-                }
+                // source.start(when, offset, duration)
+                // duration param is optional, if omitted it plays to end.
+                // We subtract startOffset from duration to play the remainder.
+                source.start(playAt, startOffset, clip.duration - startOffset);
 
                 activeSourcesRef.current.add(source);
                 source.onended = () => activeSourcesRef.current.delete(source);
               } catch (e) {
-                  console.error("Error playing clip", clip.name, e);
+                  console.error("Error scheduling clip", clip.name, e);
               }
           };
 
           schedulerTimerRef.current = window.setInterval(schedule, timerInterval);
 
-          // UI Update loop
+          // UI Update loop (visuals only)
           const updateUI = () => {
-              if (!ctx) return;
+              if (!ctx || !playbackStartRef.current) return;
               const currentCtxTime = ctx.currentTime;
-              if (playbackStartRef.current) {
-                  const newTime = (currentCtxTime - playbackStartRef.current.contextTime) + playbackStartRef.current.timelineTime;
-                  setTimelineCurrentTime(newTime);
-              }
+              const newTime = (currentCtxTime - playbackStartRef.current.contextTime) + playbackStartRef.current.timelineTime;
+              setTimelineCurrentTime(newTime);
               animationFrameRef.current = requestAnimationFrame(updateUI);
           };
           animationFrameRef.current = requestAnimationFrame(updateUI);
