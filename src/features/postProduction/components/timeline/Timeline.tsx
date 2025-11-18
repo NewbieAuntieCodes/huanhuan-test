@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { useStore } from '../../../../store/useStore';
 import { db } from '../../../../db';
-import { ScriptLine, Character, LineType, SilencePairing } from '../../../../types';
+import { ScriptLine, Character, LineType, SilencePairing, SoundLibraryItem } from '../../../../types';
 import { defaultSilenceSettings } from '../../../../lib/defaultSilenceSettings';
 import TimelineHeader from '../TimelineHeader';
 import TimeRuler from './TimeRuler';
@@ -43,6 +43,7 @@ const Timeline: React.FC = () => {
     setTimelineCurrentTime,
     timelineZoom,
     characters,
+    soundLibrary, // 获取音效库，用于查找 pinnedSounds 对应的文件
     setTimelineZoom
   } = useStore();
 
@@ -87,41 +88,44 @@ const Timeline: React.FC = () => {
             other: []
         };
 
+        // 创建 soundLibrary 的查找表，提高性能
+        const soundMap = new Map<number, SoundLibraryItem>();
+        soundLibrary.forEach(item => {
+            if (item.id !== undefined) soundMap.set(item.id, item);
+        });
+
         let currentTime = silenceSettings.startPadding || 0;
         
         // Iterate chapters and lines
         for (const chapter of currentProject.chapters) {
             for (const line of chapter.scriptLines) {
-                // Skip lines without audio assignment
-                if (!line.audioBlobId) {
-                    continue;
-                }
-
                 try {
                     let clipDuration = 0;
                     let blob: Blob | undefined = undefined;
 
-                    const record = await db.audioBlobs.get(line.audioBlobId);
-                    if (record) {
-                        blob = record.data;
-                        // Decode to get accurate duration
-                        // 使用 try-catch 包裹解码过程，防止单个损坏文件导致整个时间轴加载失败
-                        try {
-                            const buffer = await audioContext.decodeAudioData(await blob.arrayBuffer());
-                            clipDuration = buffer.duration;
-                        } catch (decodeError) {
-                            console.warn(`无法解码音频 (Line ID: ${line.id}):`, decodeError);
-                            // 如果解码失败，我们仍然可以显示一个占位符或跳过，这里选择跳过以保证播放稳定性
-                            continue;
+                    // 1. 处理对白/旁白音频
+                    if (line.audioBlobId) {
+                        const record = await db.audioBlobs.get(line.audioBlobId);
+                        if (record) {
+                            blob = record.data;
+                            try {
+                                const buffer = await audioContext.decodeAudioData(await blob.arrayBuffer());
+                                clipDuration = buffer.duration;
+                            } catch (decodeError) {
+                                console.warn(`无法解码音频 (Line ID: ${line.id}):`, decodeError);
+                            }
                         }
-                    } else {
-                        // 数据库中找不到对应的 blob 记录
-                        continue;
+                    }
+
+                    // 如果没有音频，根据字数估算时长，以便占位和计算后续时间
+                    if (clipDuration === 0) {
+                        // 假设每字 0.25 秒，最少 0.5 秒
+                        clipDuration = Math.max(0.5, (line.text.length) * 0.25);
                     }
                     
-                    if (clipDuration > 0 && blob) {
+                    // 添加对白 Clip (即使没有音频Blob，也可能需要显示占位符，这里暂时只添加有音频的)
+                    if (blob) { 
                          const character = characters.find(c => c.id === line.characterId);
-                         
                          const clip: TimelineClip = {
                              id: line.id,
                              startTime: currentTime,
@@ -136,22 +140,71 @@ const Timeline: React.FC = () => {
                          else if (line.soundType === 'OS') newTracks.os.push(clip);
                          else if (line.soundType && line.soundType !== '清除') newTracks.other.push(clip);
                          else newTracks.dialogue.push(clip);
-                         
-                         currentTime += clipDuration;
-
-                         // Apply silence padding only after a VALID clip
-                         let silenceDuration = 0;
-                         if (line.postSilence !== undefined && line.postSilence !== null) {
-                             silenceDuration = line.postSilence;
-                         } else {
-                            // 简化逻辑：默认间隔
-                            silenceDuration = 0.2; 
-                         }
-                         currentTime += silenceDuration;
+                    } else {
+                        // TODO: 可以选择添加一个 "Missing Audio" 的视觉占位符
                     }
+
+                    // 2. 处理钉住的 BGM 和 SFX (pinnedSounds)
+                    if (line.pinnedSounds && line.pinnedSounds.length > 0) {
+                        for (const pin of line.pinnedSounds) {
+                            const soundItem = soundMap.get(pin.soundId);
+                            if (soundItem) {
+                                try {
+                                    const file = await soundItem.handle.getFile();
+                                    // 获取音效时长 (优先使用 metadata 中的 duration，如果没有则解码)
+                                    let soundDuration = soundItem.duration;
+                                    if (!soundDuration || soundDuration === 0) {
+                                        const buffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+                                        soundDuration = buffer.duration;
+                                    }
+
+                                    // 计算插入时间点
+                                    // 根据 pin.index 在文本中的百分比，计算在当前行音频中的相对时间
+                                    const textLen = Math.max(1, line.text.length);
+                                    const relativePos = Math.min(1, Math.max(0, pin.index / textLen));
+                                    const startTimeOffset = relativePos * clipDuration;
+                                    const absoluteStartTime = currentTime + startTimeOffset;
+
+                                    const soundClip: TimelineClip = {
+                                        id: `${line.id}_pin_${pin.soundId}_${pin.index}`, // 唯一ID
+                                        startTime: absoluteStartTime,
+                                        duration: soundDuration,
+                                        name: soundItem.name,
+                                        line: line,
+                                        audioBlob: file
+                                    };
+
+                                    // 判断是 BGM 还是 SFX
+                                    // 简单的启发式：如果关键词包含 < > 或者是 music 分类
+                                    const isBgm = pin.keyword.startsWith('<') || soundItem.category.includes('music') || soundItem.category.includes('ambience');
+                                    
+                                    if (isBgm) {
+                                        newTracks.bgm.push(soundClip);
+                                    } else {
+                                        newTracks.sfx.push(soundClip);
+                                    }
+
+                                } catch (err) {
+                                    console.error("加载钉住的音效失败:", err);
+                                }
+                            }
+                        }
+                    }
+                         
+                    currentTime += clipDuration;
+
+                    // Apply silence padding
+                    let silenceDuration = 0;
+                    if (line.postSilence !== undefined && line.postSilence !== null) {
+                         silenceDuration = line.postSilence;
+                    } else {
+                        // 默认间隔
+                        silenceDuration = 0.2; 
+                    }
+                    currentTime += silenceDuration;
+
                 } catch (lineError) {
                     console.error(`处理行数据时出错 (Line ID: ${line.id}):`, lineError);
-                    // 继续处理下一行
                 }
             }
         }
@@ -166,7 +219,7 @@ const Timeline: React.FC = () => {
     };
 
     loadTimeline();
-  }, [currentProject, characters]);
+  }, [currentProject, characters, soundLibrary]); // Add soundLibrary to dependency
 
   // 2. Playback Logic
   const stopPlayback = useCallback(() => {
@@ -208,8 +261,6 @@ const Timeline: React.FC = () => {
           const schedule = () => {
               const currentCtxTime = ctx.currentTime;
               
-              // Calculate where the playhead IS right now relative to the timeline start
-              // Base time + (Elapsed Audio Context Time)
               if (!playbackStartRef.current) return;
               
               const elapsed = currentCtxTime - playbackStartRef.current.contextTime;
@@ -226,28 +277,21 @@ const Timeline: React.FC = () => {
                   // 3. Check intersection with lookahead window
                   const clipEnd = clip.startTime + clip.duration;
                   
-                  // Case A: Clip is starting soon
                   const isStartingSoon = clip.startTime >= timelinePlayhead && clip.startTime < lookaheadTime;
-                  
-                  // Case B: We jumped into the middle of a clip (Timeline Playhead is INSIDE the clip)
                   const isCurrentlyPlaying = clip.startTime < timelinePlayhead && clipEnd > timelinePlayhead;
 
                   if (isStartingSoon || isCurrentlyPlaying) {
-                       let startOffset = 0; // Where to start playing INSIDE the audio file
-                       let delay = 0;       // When to start playing relative to NOW
+                       let startOffset = 0; 
+                       let delay = 0;       
 
                        if (isCurrentlyPlaying) {
-                           // We need to start playing from the middle
                            startOffset = timelinePlayhead - clip.startTime;
-                           delay = 0; // Play immediately
+                           delay = 0; 
                        } else {
-                           // We need to schedule it for the future
                            startOffset = 0;
-                           // Time until clip start = Clip Start Time - Current Timeline Time
                            delay = clip.startTime - timelinePlayhead;
                        }
                        
-                       // Schedule it
                        scheduleClip(ctx, clip, delay, startOffset);
                        scheduledClipsRef.current.add(clip.id);
                   }
@@ -256,31 +300,28 @@ const Timeline: React.FC = () => {
               // Auto-stop at end
               if (timelinePlayhead > totalDuration && totalDuration > 0) {
                   stopPlayback();
+                  // Reset to start if reached end
+                  setTimelineCurrentTime(0);
               }
           };
 
           const scheduleClip = async (context: AudioContext, clip: TimelineClip, delay: number, startOffset = 0) => {
               if (!clip.audioBlob) return;
               try {
-                // Note: decoding inside the playback loop is not ideal for performance but necessary if we don't pre-decode everything.
-                // A better approach for huge apps is a "lookahead downloader/decoder".
                 const buffer = await context.decodeAudioData(await clip.audioBlob.arrayBuffer());
                 
                 const source = context.createBufferSource();
                 source.buffer = buffer;
                 source.connect(context.destination);
                 
-                // Calculate precise start time in AudioContext time
-                // We schedule it 'delay' seconds from 'now'
                 const playAt = context.currentTime + Math.max(0, delay);
                 
-                // source.start(when, offset, duration)
-                // duration param is optional, if omitted it plays to end.
-                // We subtract startOffset from duration to play the remainder.
-                source.start(playAt, startOffset, clip.duration - startOffset);
-
-                activeSourcesRef.current.add(source);
-                source.onended = () => activeSourcesRef.current.delete(source);
+                const playDuration = Math.max(0, clip.duration - startOffset);
+                if (playDuration > 0) {
+                    source.start(playAt, startOffset, playDuration);
+                    activeSourcesRef.current.add(source);
+                    source.onended = () => activeSourcesRef.current.delete(source);
+                }
               } catch (e) {
                   console.error("Error scheduling clip", clip.name, e);
               }
@@ -303,7 +344,7 @@ const Timeline: React.FC = () => {
       }
       
       return () => stopPlayback();
-  }, [timelineIsPlaying, tracks, totalDuration, setTimelineCurrentTime, stopPlayback]);
+  }, [timelineIsPlaying, tracks, totalDuration, setTimelineCurrentTime, stopPlayback]); // removed timelineCurrentTime from dep array to avoid restart loop, handled by ref
 
   // Pixels per second calculation
   const pixelsPerSecond = timelineZoom * 200; 
@@ -317,7 +358,7 @@ const Timeline: React.FC = () => {
       {isLoading && (
          <div className="absolute inset-0 flex items-center justify-center z-50 bg-slate-900/50">
              <LoadingSpinner />
-             <span className="ml-2 text-sm">加载时间轴...</span>
+             <span className="ml-2 text-sm">正在生成时间轴...</span>
          </div>
       )}
 

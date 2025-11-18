@@ -1,3 +1,4 @@
+
 import React from 'react';
 import AudioClip from './timeline/AudioClip';
 import { TimelineClip } from './timeline/Timeline';
@@ -19,8 +20,11 @@ const Track: React.FC<TrackProps> = ({ name, clips, pixelsPerSecond }) => {
 
   return (
     <div className="flex border-b border-slate-800 h-[80px] box-border">
-      {/* Track Header - Sticky to left */}
-      <div className="w-48 flex-shrink-0 bg-slate-800 border-r border-slate-700/50 p-2 flex items-center sticky left-0 z-10 shadow-[1px_0_5px_rgba(0,0,0,0.3)]">
+      {/* Track Header - Sticky to left. Width matches TRACK_HEADER_WIDTH in Timeline.tsx */}
+      <div 
+        className="flex-shrink-0 bg-slate-800 border-r border-slate-700/50 p-2 flex items-center sticky left-0 z-10 shadow-[1px_0_5px_rgba(0,0,0,0.3)]"
+        style={{ width: '192px' }}
+      >
         <span className="text-xs text-slate-300 truncate font-medium" title={name}>{name}</span>
       </div>
       
