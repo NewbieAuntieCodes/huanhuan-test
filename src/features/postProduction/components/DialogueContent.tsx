@@ -407,6 +407,46 @@ export const DialogueContent: React.FC<DialogueContentProps> = ({
         if (!line || !line.pinnedSounds) return null;
         return line.pinnedSounds.find(p => p.keyword === popoverState.keyword && p.index === popoverState.index);
     }, [popoverState, currentProject]);
+
+    useEffect(() => {
+        if (!currentProject || !contentRef.current) return;
+
+        const applyPinnedClasses = () => {
+            const root = contentRef.current;
+            if (!root) return;
+
+            currentProject.chapters.forEach(chapter => {
+                const chapterEl = root.querySelector(`[data-chapter-id="${chapter.id}"]`);
+                if (!chapterEl) return;
+
+                chapter.scriptLines.forEach(line => {
+                    const lineEl = chapterEl.querySelector(`[data-line-id="${line.id}"]`);
+                    if (!lineEl) return;
+
+                    const markers = lineEl.querySelectorAll<HTMLSpanElement>('span.sound-keyword-highlight[data-keyword][data-index]');
+                    markers.forEach(span => {
+                        const keyword = span.dataset.keyword || '';
+                        const index = span.dataset.index ? parseInt(span.dataset.index, 10) : NaN;
+                        if (!keyword || Number.isNaN(index)) return;
+
+                        const isPinned = !!line.pinnedSounds?.some(p => p.keyword === keyword && p.index === index);
+                        if (isPinned) {
+                            span.classList.add('sound-keyword-highlight--pinned');
+                        } else {
+                            span.classList.remove('sound-keyword-highlight--pinned');
+                        }
+                    });
+                });
+            });
+        };
+
+        applyPinnedClasses();
+        const timer = window.setTimeout(applyPinnedClasses, 0);
+
+        return () => {
+            window.clearTimeout(timer);
+        };
+    }, [currentProject, chapters]);
     
     const currentPinnedBgm = useMemo(() => {
         if (!bgmPopoverState || !currentProject) return null;

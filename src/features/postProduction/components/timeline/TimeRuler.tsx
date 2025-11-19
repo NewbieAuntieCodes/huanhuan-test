@@ -18,7 +18,6 @@ const formatTime = (seconds: number): string => {
 
 const TimeRuler: React.FC<TimeRulerProps> = ({ duration, pixelsPerSecond }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  // Ensure the ruler is at least as wide as the viewport or content
   const totalWidth = duration * pixelsPerSecond;
 
   useEffect(() => {
@@ -26,61 +25,47 @@ const TimeRuler: React.FC<TimeRulerProps> = ({ duration, pixelsPerSecond }) => {
     if (!canvas) return;
     
     const dpr = window.devicePixelRatio || 1;
-    // Use client dimensions or props to determine size
-    canvas.width = totalWidth * dpr;
-    canvas.height = 24 * dpr; // Fixed height 24px
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     ctx.scale(dpr, dpr);
-    ctx.clearRect(0, 0, totalWidth, 24);
+    ctx.clearRect(0, 0, rect.width, rect.height);
     
     ctx.fillStyle = '#0f172a'; // slate-900
-    ctx.fillRect(0, 0, totalWidth, 24);
+    ctx.fillRect(0, 0, rect.width, rect.height);
 
     ctx.fillStyle = '#94a3b8'; // slate-400
-    ctx.strokeStyle = '#475569'; // slate-600 for lines
+    ctx.strokeStyle = '#94a3b8';
     ctx.font = '10px monospace';
     ctx.textBaseline = 'top';
     
-    // Dynamic interval based on zoom
-    let tickInterval = 1; 
-    let subTickInterval = 0.1;
-    
-    if (pixelsPerSecond < 20) {
-        tickInterval = 10; subTickInterval = 1;
-    } else if (pixelsPerSecond < 50) {
-        tickInterval = 5; subTickInterval = 1;
-    }
+    const tickInterval = 1; // 1 second for major ticks
+    const subTickInterval = 0.1; // 100ms for minor ticks
 
     for (let time = 0; time <= duration; time += subTickInterval) {
-        const x = Math.floor(time * pixelsPerSecond) + 0.5;
+        const x = Math.floor(time * pixelsPerSecond) + 0.5; // Use integer positions for crisp lines
         
         ctx.beginPath();
-        ctx.moveTo(x, 24);
+        ctx.moveTo(x, rect.height);
 
-        // Avoid float precision issues with epsilon
-        const isMajor = Math.abs(time % tickInterval) < 0.001;
-        const isMedium = Math.abs(time % (tickInterval/2)) < 0.001;
-
-        if (isMajor) { 
+        if (Math.round(time * 10) % Math.round(tickInterval * 10) === 0) { // Major tick every second
             ctx.lineTo(x, 10);
             ctx.fillText(formatTime(time), x + 4, 2);
-            ctx.strokeStyle = '#94a3b8'; // lighter for major
-        } else if (isMedium) {
+        } else if (Math.round(time * 10) % 5 === 0) { // Medium tick every 0.5s
             ctx.lineTo(x, 15);
-            ctx.strokeStyle = '#475569';
-        } else { 
-            ctx.lineTo(x, 18);
-            ctx.strokeStyle = '#334155';
+        } else { // Minor tick every 0.1s
+            ctx.lineTo(x, 20);
         }
         ctx.stroke();
     }
   }, [duration, pixelsPerSecond, totalWidth]);
 
   return (
-    <div className="h-6 flex-shrink-0 bg-slate-900 overflow-hidden">
+    <div className="h-6 flex-shrink-0 bg-slate-900 overflow-hidden w-full">
       <canvas ref={canvasRef} style={{ width: `${totalWidth}px`, height: '24px' }} />
     </div>
   );

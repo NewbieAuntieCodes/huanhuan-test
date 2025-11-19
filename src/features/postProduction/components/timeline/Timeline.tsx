@@ -1,25 +1,37 @@
-
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useStore } from '../../../../store/useStore';
 import { db } from '../../../../db';
-import { ScriptLine, Character, LineType, SilencePairing, SoundLibraryItem } from '../../../../types';
-import { defaultSilenceSettings } from '../../../../lib/defaultSilenceSettings';
-import TimelineHeader from '../TimelineHeader';
-import TimeRuler from './TimeRuler';
+import { LineType, ScriptLine, Character, SilencePairing, SoundLibraryItem } from '../../../../types';
+import LoadingSpinner from '../../../../components/ui/LoadingSpinner';
 import TrackGroup from './TrackGroup';
 import Track from '../Track';
+import TimeRuler from './TimeRuler';
+import { defaultSilenceSettings } from '../../../../lib/defaultSilenceSettings';
 import Playhead from './Playhead';
-import LoadingSpinner from '../../../../components/ui/LoadingSpinner';
+import TimelineHeader from '../TimelineHeader';
+import * as mm from 'music-metadata-browser';
 
-// Export TimelineClip for use in Track.tsx
 export interface TimelineClip {
-  id: string;
-  startTime: number;
-  duration: number;
-  name: string;
-  line: ScriptLine;
-  character?: Character;
-  audioBlob?: Blob;
+    id: string;
+    startTime: number;
+    duration: number;
+    line: ScriptLine; // For dialogue
+    name?: string; // For SFX/BGM
+    character?: Character;
+    audioBlobId?: string; // For dialogue
+    soundLibraryItem?: SoundLibraryItem; // For SFX/BGM
+}
+
+interface TrackData {
+    name: string;
+    type: 'narration' | 'dialogue' | 'os' | 'telephone' | 'system' | 'other' | 'music' | 'sfx' | 'ambience';
+    clips: TimelineClip[];
+}
+
+interface TrackGroupData {
+    name: string;
+    isExpanded: boolean;
+    tracks: TrackData[];
 }
 
 const getLineType = (line: ScriptLine | undefined, characters: Character[]): LineType => {
@@ -30,379 +42,496 @@ const getLineType = (line: ScriptLine | undefined, characters: Character[]): Lin
     return 'dialogue';
 };
 
-// 轨道头宽度常量 (Tailwind w-48 = 12rem = 192px)
-const TRACK_HEADER_WIDTH = 192;
+const TRACK_HEADER_WIDTH_PX = 192; // Corresponds to w-48 (12rem)
 
 const Timeline: React.FC = () => {
-  const {
-    selectedProjectId,
-    projects,
-    timelineIsPlaying,
-    setTimelineIsPlaying,
-    timelineCurrentTime,
-    setTimelineCurrentTime,
-    timelineZoom,
-    characters,
-    soundLibrary, // 获取音效库，用于查找 pinnedSounds 对应的文件
-    setTimelineZoom
-  } = useStore();
+    const {
+      selectedProjectId,
+      projects,
+      characters,
+      soundLibrary,
+      timelineIsPlaying,
+      setTimelineIsPlaying,
+      timelineCurrentTime,
+      setTimelineCurrentTime,
+      timelineZoom,
+    } = useStore();
+    
+    const [trackGroups, setTrackGroups] = useState<TrackGroupData[]>([]);
+    const [totalDuration, setTotalDuration] = useState(0);
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasTimelineFocus, setHasTimelineFocus] = useState(false);
+    
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+    const scheduledClipsRef = useRef<Set<string>>(new Set());
+    const schedulerTimerRef = useRef<number>();
+    const animationFrameRef = useRef<number>();
+    const playbackStartRef = useRef<{ contextTime: number, timelineTime: number } | null>(null);
 
-  const currentProject = useMemo(() => projects.find(p => p.id === selectedProjectId), [projects, selectedProjectId]);
+    const BASE_PIXELS_PER_SECOND = 100;
+    const pixelsPerSecond = BASE_PIXELS_PER_SECOND * timelineZoom;
 
-  // Refs for audio playback engine
-  const audioContextRef = useRef<AudioContext | undefined>(undefined);
-  const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
-  const scheduledClipsRef = useRef<Set<string>>(new Set());
-  const schedulerTimerRef = useRef<number | undefined>(undefined);
-  const animationFrameRef = useRef<number | undefined>(undefined);
-  const playbackStartRef = useRef<{ contextTime: number, timelineTime: number } | null>(null);
-  
-  // State for rendered tracks
-  const [isLoading, setIsLoading] = useState(false);
-  const [tracks, setTracks] = useState<Record<string, TimelineClip[]>>({
-      narration: [],
-      dialogue: [],
-      os: [],
-      sfx: [],
-      bgm: [],
-      other: []
-  });
-  const [totalDuration, setTotalDuration] = useState(0);
+    const currentProject = useMemo(() => projects.find(p => p.id === selectedProjectId), [projects, selectedProjectId]);
+    const characterMap = useMemo<Map<string, Character>>(() => new Map(characters.map(c => [c.id, c])), [characters]);
+    const soundLibraryMap = useMemo<Map<number, SoundLibraryItem>>(() => new Map(soundLibrary.filter(s => s.id !== undefined).map(s => [s.id!, s])), [soundLibrary]);
+    const allClips = useMemo(() => trackGroups.flatMap(g => g.tracks.flatMap(t => t.clips)), [trackGroups]);
 
-  // 1. Load Timeline Data
-  useEffect(() => {
-    if (!currentProject) return;
-
-    const loadTimeline = async () => {
-        setIsLoading(true);
-        // Create a temporary context for decoding durations
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const silenceSettings = currentProject.silenceSettings || defaultSilenceSettings;
-        
-        const newTracks: Record<string, TimelineClip[]> = {
-            narration: [],
-            dialogue: [],
-            os: [],
-            sfx: [],
-            bgm: [],
-            other: []
+    useEffect(() => {
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        return () => {
+            if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+                audioContextRef.current.close().catch(console.error);
+            }
         };
+    }, []);
 
-        // 创建 soundLibrary 的查找表，提高性能
-        const soundMap = new Map<number, SoundLibraryItem>();
-        soundLibrary.forEach(item => {
-            if (item.id !== undefined) soundMap.set(item.id, item);
-        });
+    const handleTimelineMouseDownCapture = useCallback(() => {
+        setHasTimelineFocus(true);
+    }, []);
 
-        let currentTime = silenceSettings.startPadding || 0;
+    const handleSeek = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+        const scrollContainer = event.currentTarget;
+        const rect = scrollContainer.getBoundingClientRect();
+        const clickX_in_viewport = event.clientX - rect.left;
+
+        // Ignore clicks on the sticky header area
+        if (clickX_in_viewport < TRACK_HEADER_WIDTH_PX) return;
         
-        // Iterate chapters and lines
-        for (const chapter of currentProject.chapters) {
-            for (const line of chapter.scriptLines) {
-                try {
-                    let clipDuration = 0;
-                    let blob: Blob | undefined = undefined;
+        // Prevent seek when clicking on a clip (which stops propagation)
+        // This check handles clicks on the empty track area.
+        if ((event.target as HTMLElement).closest('[data-clip-id]')) return;
 
-                    // 1. 处理对白/旁白音频
-                    if (line.audioBlobId) {
-                        const record = await db.audioBlobs.get(line.audioBlobId);
-                        if (record) {
-                            blob = record.data;
-                            try {
-                                const buffer = await audioContext.decodeAudioData(await blob.arrayBuffer());
-                                clipDuration = buffer.duration;
-                            } catch (decodeError) {
-                                console.warn(`无法解码音频 (Line ID: ${line.id}):`, decodeError);
-                            }
-                        }
-                    }
+        const clickX_on_timeline = scrollContainer.scrollLeft + clickX_in_viewport - TRACK_HEADER_WIDTH_PX;
+        const time = clickX_on_timeline / pixelsPerSecond;
+        const newTime = Math.max(0, Math.min(time, totalDuration));
+        
+        setTimelineCurrentTime(newTime);
+        
+        if (timelineIsPlaying) {
+            const audioContext = audioContextRef.current;
+            if (!audioContext) return;
+            
+            activeSourcesRef.current.forEach(source => { try { source.stop(); } catch (e) {} });
+            activeSourcesRef.current.clear();
+            scheduledClipsRef.current.clear();
+            playbackStartRef.current = { contextTime: audioContext.currentTime, timelineTime: newTime };
+        }
+    }, [pixelsPerSecond, totalDuration, setTimelineCurrentTime, timelineIsPlaying]);
 
-                    // 如果没有音频，根据字数估算时长，以便占位和计算后续时间
-                    if (clipDuration === 0) {
-                        // 假设每字 0.25 秒，最少 0.5 秒
-                        clipDuration = Math.max(0.5, (line.text.length) * 0.25);
-                    }
-                    
-                    // 添加对白 Clip (即使没有音频Blob，也可能需要显示占位符，这里暂时只添加有音频的)
-                    if (blob) { 
-                         const character = characters.find(c => c.id === line.characterId);
-                         const clip: TimelineClip = {
-                             id: line.id,
-                             startTime: currentTime,
-                             duration: clipDuration,
-                             name: line.text,
-                             line,
-                             character,
-                             audioBlob: blob
-                         };
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (!hasTimelineFocus) return;
 
-                         if (character?.name === 'Narrator') newTracks.narration.push(clip);
-                         else if (line.soundType === 'OS') newTracks.os.push(clip);
-                         else if (line.soundType && line.soundType !== '清除') newTracks.other.push(clip);
-                         else newTracks.dialogue.push(clip);
-                    } else {
-                        // TODO: 可以选择添加一个 "Missing Audio" 的视觉占位符
-                    }
+            if (!(event.code === 'Space' || event.key === ' ')) return;
 
-                    // 2. 处理钉住的 BGM 和 SFX (pinnedSounds)
-                    if (line.pinnedSounds && line.pinnedSounds.length > 0) {
-                        for (const pin of line.pinnedSounds) {
-                            const soundItem = soundMap.get(pin.soundId);
-                            if (soundItem) {
-                                try {
-                                    const file = await soundItem.handle.getFile();
-                                    // 获取音效时长 (优先使用 metadata 中的 duration，如果没有则解码)
-                                    let soundDuration = soundItem.duration;
-                                    if (!soundDuration || soundDuration === 0) {
-                                        const buffer = await audioContext.decodeAudioData(await file.arrayBuffer());
-                                        soundDuration = buffer.duration;
-                                    }
-
-                                    // 计算插入时间点
-                                    // 根据 pin.index 在文本中的百分比，计算在当前行音频中的相对时间
-                                    const textLen = Math.max(1, line.text.length);
-                                    const relativePos = Math.min(1, Math.max(0, pin.index / textLen));
-                                    const startTimeOffset = relativePos * clipDuration;
-                                    const absoluteStartTime = currentTime + startTimeOffset;
-
-                                    const soundClip: TimelineClip = {
-                                        id: `${line.id}_pin_${pin.soundId}_${pin.index}`, // 唯一ID
-                                        startTime: absoluteStartTime,
-                                        duration: soundDuration,
-                                        name: soundItem.name,
-                                        line: line,
-                                        audioBlob: file
-                                    };
-
-                                    // 判断是 BGM 还是 SFX
-                                    // 简单的启发式：如果关键词包含 < > 或者是 music 分类
-                                    const isBgm = pin.keyword.startsWith('<') || soundItem.category.includes('music') || soundItem.category.includes('ambience');
-                                    
-                                    if (isBgm) {
-                                        newTracks.bgm.push(soundClip);
-                                    } else {
-                                        newTracks.sfx.push(soundClip);
-                                    }
-
-                                } catch (err) {
-                                    console.error("加载钉住的音效失败:", err);
-                                }
-                            }
-                        }
-                    }
-                         
-                    currentTime += clipDuration;
-
-                    // Apply silence padding
-                    let silenceDuration = 0;
-                    if (line.postSilence !== undefined && line.postSilence !== null) {
-                         silenceDuration = line.postSilence;
-                    } else {
-                        // 默认间隔
-                        silenceDuration = 0.2; 
-                    }
-                    currentTime += silenceDuration;
-
-                } catch (lineError) {
-                    console.error(`处理行数据时出错 (Line ID: ${line.id}):`, lineError);
+            const target = event.target as HTMLElement | null;
+            if (target) {
+                const tagName = target.tagName;
+                const isEditable =
+                    tagName === 'INPUT' ||
+                    tagName === 'TEXTAREA' ||
+                    tagName === 'SELECT' ||
+                    target.isContentEditable;
+                if (isEditable) {
+                    return;
                 }
             }
+
+            event.preventDefault();
+            setTimelineIsPlaying(!timelineIsPlaying);
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [hasTimelineFocus, timelineIsPlaying, setTimelineIsPlaying]);
+
+
+    useEffect(() => {
+        if (!currentProject) {
+            setIsLoading(false);
+            setTrackGroups([]);
+            setTotalDuration(0);
+            return;
         }
-        
-        setTracks(newTracks);
-        setTotalDuration(currentTime + (silenceSettings.endPadding || 0));
-        setIsLoading(false);
 
-        if (audioContext.state !== 'closed') {
-            audioContext.close().catch(() => {});
-        }
-    };
+        const calculateTimeline = async () => {
+            setIsLoading(true);
+            // FIX: The arguments for `setTimelineCurrentTime` and `setTimelineIsPlaying` were missing.
+            setTimelineCurrentTime(0);
+            setTimelineIsPlaying(false);
 
-    loadTimeline();
-  }, [currentProject, characters, soundLibrary]); // Add soundLibrary to dependency
+            let currentTime = 0;
+            const silenceSettings = currentProject.silenceSettings || defaultSilenceSettings;
+            currentTime += silenceSettings.startPadding > 0 ? silenceSettings.startPadding : 0;
+            
+            const allLinesWithAudio = currentProject.chapters.flatMap(ch => ch.scriptLines).filter(line => line.audioBlobId);
+            
+            const baseItemsUnsorted = (await Promise.all(
+                allLinesWithAudio.map(async (line) => {
+                    const audioBlobData = await db.audioBlobs.get(line.audioBlobId!);
+                    if (audioBlobData) {
+                        try {
+                            const metadata = await mm.parseBlob(audioBlobData.data);
+                            const duration = metadata.format.duration;
+                            if (duration && duration > 0) {
+                                return { line, duration };
+                            }
+                        } catch (e) {
+                            console.error(`Failed to parse metadata for line ${line.id}:`, e);
+                        }
+                    }
+                    return null;
+                })
+            )).filter((item): item is NonNullable<typeof item> => item !== null);
 
-  // 2. Playback Logic
-  const stopPlayback = useCallback(() => {
-     if (audioContextRef.current) {
-         try { audioContextRef.current.suspend(); } catch {}
-     }
-     activeSourcesRef.current.forEach(source => {
-         try { source.stop(); } catch {}
-     });
-     activeSourcesRef.current.clear();
-     scheduledClipsRef.current.clear();
-     
-     if (schedulerTimerRef.current) window.clearInterval(schedulerTimerRef.current);
-     if (animationFrameRef.current) window.cancelAnimationFrame(animationFrameRef.current);
-     
-     setTimelineIsPlaying(false);
-  }, [setTimelineIsPlaying]);
-
-  useEffect(() => {
-      if (timelineIsPlaying) {
-          if (!audioContextRef.current) {
-              audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-          }
-          const ctx = audioContextRef.current;
-          if (ctx.state === 'suspended') {
-              ctx.resume().catch(e => console.error("AudioContext resume failed", e));
-          }
-          
-          const startTime = ctx.currentTime;
-          playbackStartRef.current = { contextTime: startTime, timelineTime: timelineCurrentTime };
-          
-          // Flatten clips for scheduling
-          const allClips = Object.values(tracks).flat().sort((a, b) => a.startTime - b.startTime);
-
-          // Scheduler loop
-          const scheduleAheadTime = 0.2; // seconds lookahead
-          const timerInterval = 50; // ms check interval
-
-          const schedule = () => {
-              const currentCtxTime = ctx.currentTime;
-              
-              if (!playbackStartRef.current) return;
-              
-              const elapsed = currentCtxTime - playbackStartRef.current.contextTime;
-              const timelinePlayhead = playbackStartRef.current.timelineTime + elapsed;
-              const lookaheadTime = timelinePlayhead + scheduleAheadTime;
-
-              allClips.forEach(clip => {
-                  // 1. Check if clip hasn't been scheduled yet
-                  if (scheduledClipsRef.current.has(clip.id)) return;
-
-                  // 2. Check validity
-                  if (!clip.audioBlob) return;
-
-                  // 3. Check intersection with lookahead window
-                  const clipEnd = clip.startTime + clip.duration;
-                  
-                  const isStartingSoon = clip.startTime >= timelinePlayhead && clip.startTime < lookaheadTime;
-                  const isCurrentlyPlaying = clip.startTime < timelinePlayhead && clipEnd > timelinePlayhead;
-
-                  if (isStartingSoon || isCurrentlyPlaying) {
-                       let startOffset = 0; 
-                       let delay = 0;       
-
-                       if (isCurrentlyPlaying) {
-                           startOffset = timelinePlayhead - clip.startTime;
-                           delay = 0; 
-                       } else {
-                           startOffset = 0;
-                           delay = clip.startTime - timelinePlayhead;
-                       }
-                       
-                       scheduleClip(ctx, clip, delay, startOffset);
-                       scheduledClipsRef.current.add(clip.id);
-                  }
-              });
-              
-              // Auto-stop at end
-              if (timelinePlayhead > totalDuration && totalDuration > 0) {
-                  stopPlayback();
-                  // Reset to start if reached end
-                  setTimelineCurrentTime(0);
-              }
-          };
-
-          const scheduleClip = async (context: AudioContext, clip: TimelineClip, delay: number, startOffset = 0) => {
-              if (!clip.audioBlob) return;
-              try {
-                const buffer = await context.decodeAudioData(await clip.audioBlob.arrayBuffer());
-                
-                const source = context.createBufferSource();
-                source.buffer = buffer;
-                source.connect(context.destination);
-                
-                const playAt = context.currentTime + Math.max(0, delay);
-                
-                const playDuration = Math.max(0, clip.duration - startOffset);
-                if (playDuration > 0) {
-                    source.start(playAt, startOffset, playDuration);
-                    activeSourcesRef.current.add(source);
-                    source.onended = () => activeSourcesRef.current.delete(source);
+            const lineOrderMap = new Map<string, number>();
+            currentProject.chapters.forEach((ch, chIdx) => {
+                ch.scriptLines.forEach((ln, lnIdx) => {
+                    lineOrderMap.set(ln.id, chIdx * 100000 + lnIdx);
+                });
+            });
+            baseItemsUnsorted.sort((a, b) => (lineOrderMap.get(a.line.id) ?? 0) - (lineOrderMap.get(b.line.id) ?? 0));
+            
+            const dialogueClips: TimelineClip[] = [];
+            for (let i = 0; i < baseItemsUnsorted.length; i++) {
+                const item = baseItemsUnsorted[i];
+                dialogueClips.push({
+                    id: item.line.id,
+                    startTime: currentTime,
+                    duration: item.duration,
+                    line: item.line,
+                    character: item.line.characterId ? characterMap.get(item.line.characterId) : undefined,
+                    audioBlobId: item.line.audioBlobId!,
+                });
+                currentTime += item.duration;
+                let silenceDuration = 0;
+                if (item.line.postSilence !== undefined && item.line.postSilence !== null) {
+                    silenceDuration = item.line.postSilence;
+                } else {
+                    if (i === baseItemsUnsorted.length - 1) {
+                        silenceDuration = silenceSettings.endPadding;
+                    } else {
+                        const nextLine = baseItemsUnsorted[i+1].line;
+                        const currentLineType = getLineType(item.line, characters);
+                        const nextLineType = getLineType(nextLine, characters);
+                        const pairKey = `${currentLineType}-to-${nextLineType}` as SilencePairing;
+                        silenceDuration = silenceSettings.pairs[pairKey] ?? 1.0;
+                    }
                 }
-              } catch (e) {
-                  console.error("Error scheduling clip", clip.name, e);
-              }
-          };
+                currentTime += silenceDuration > 0 ? silenceDuration : 0;
+            }
 
-          schedulerTimerRef.current = window.setInterval(schedule, timerInterval);
+            // --- Process Pinned Sounds ---
+            const sfxClips: TimelineClip[] = [];
+            const bgmClips: TimelineClip[] = [];
+            const ambienceClips: TimelineClip[] = [];
 
-          // UI Update loop (visuals only)
-          const updateUI = () => {
-              if (!ctx || !playbackStartRef.current) return;
-              const currentCtxTime = ctx.currentTime;
-              const newTime = (currentCtxTime - playbackStartRef.current.contextTime) + playbackStartRef.current.timelineTime;
-              setTimelineCurrentTime(newTime);
-              animationFrameRef.current = requestAnimationFrame(updateUI);
-          };
-          animationFrameRef.current = requestAnimationFrame(updateUI);
+            for (const clip of dialogueClips) {
+                if (clip.line.pinnedSounds) {
+                    for (const pin of clip.line.pinnedSounds) {
+                        const soundItem = soundLibraryMap.get(pin.soundId);
+                        if (!soundItem) continue;
 
-      } else {
-          stopPlayback();
-      }
-      
-      return () => stopPlayback();
-  }, [timelineIsPlaying, tracks, totalDuration, setTimelineCurrentTime, stopPlayback]); // removed timelineCurrentTime from dep array to avoid restart loop, handled by ref
+                        const isBgm = pin.keyword.startsWith('<') && pin.keyword.endsWith('>');
+                        const lineTextLength = clip.line.text.length || 1;
+                        const timeOffset = (pin.index / lineTextLength) * clip.duration;
+                        const startTime = clip.startTime + timeOffset;
 
-  // Pixels per second calculation
-  const pixelsPerSecond = timelineZoom * 200; 
-  // Ensure visible width covers total duration plus some padding
-  const timelineWidth = Math.max(2000, (totalDuration + 5) * pixelsPerSecond);
+                        const newClip: TimelineClip = {
+                            id: `pin_${pin.soundId}_${pin.index}_${clip.id}`,
+                            startTime,
+                            duration: soundItem.duration,
+                            name: soundItem.name,
+                            soundLibraryItem: soundItem,
+                            line: clip.line, // for context
+                        };
 
-  return (
-    <div className="flex flex-col h-full bg-slate-950 text-slate-200 select-none overflow-hidden">
-      <TimelineHeader />
-      
-      {isLoading && (
-         <div className="absolute inset-0 flex items-center justify-center z-50 bg-slate-900/50">
-             <LoadingSpinner />
-             <span className="ml-2 text-sm">正在生成时间轴...</span>
-         </div>
-      )}
+                        const category = (soundItem.category || '').toLowerCase();
+                        const isAmbienceCategory = category.includes('ambience');
 
-      <div className="flex-grow overflow-auto relative flex flex-col">
-         {/* Ruler Container: Fixed Header Left + Scrollable Ruler Right */}
-         <div className="flex flex-shrink-0 sticky top-0 z-20 bg-slate-900 border-b border-slate-800">
-            <div style={{ width: `${TRACK_HEADER_WIDTH}px` }} className="flex-shrink-0 bg-slate-800 border-r border-slate-700/50 p-2 text-xs font-bold text-slate-400 flex items-end pb-1">
-                轨道列表
-            </div>
-            <div className="flex-grow relative overflow-hidden" style={{ width: timelineWidth }}>
-                <TimeRuler duration={totalDuration + 10} pixelsPerSecond={pixelsPerSecond} />
-                {/* Render Playhead Top Part in Ruler */}
-                <div 
-                    className="absolute top-0 bottom-0 w-px bg-red-500 z-30 pointer-events-none"
-                    style={{ left: `${timelineCurrentTime * pixelsPerSecond}px` }}
-                >
-                     <div className="absolute top-0 -left-1.5 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-red-500" />
+                        if (isAmbienceCategory) {
+                            ambienceClips.push(newClip);
+                        } else if (isBgm) {
+                            bgmClips.push(newClip);
+                        } else {
+                            sfxClips.push(newClip);
+                        }
+                    }
+                }
+            }
+
+            let finalDuration = currentTime;
+            [...sfxClips, ...bgmClips, ...ambienceClips].forEach(clip => {
+                finalDuration = Math.max(finalDuration, clip.startTime + clip.duration);
+            });
+
+            // --- Build Track Groups ---
+            const dialogueTracks: Record<string, TimelineClip[]> = { narration: [], dialogue: [], os: [], telephone: [], system: [], other: [] };
+            const otherSoundTypes = new Set(currentProject.customSoundTypes || []);
+
+            dialogueClips.forEach(clip => {
+                const soundType = clip.line.soundType;
+                if (clip.character?.name === 'Narrator') dialogueTracks.narration.push(clip);
+                else if (soundType === 'OS') dialogueTracks.os.push(clip);
+                else if (soundType === '电话音') dialogueTracks.telephone.push(clip);
+                else if (soundType === '系统音') dialogueTracks.system.push(clip);
+                else if (soundType && otherSoundTypes.has(soundType)) dialogueTracks.other.push(clip);
+                else dialogueTracks.dialogue.push(clip);
+            });
+    
+            const dialogueTrackData: TrackData[] = [
+                { name: '旁白 (Narration)', type: 'narration', clips: dialogueTracks.narration },
+                { name: '角色对白 (Dialogue)', type: 'dialogue', clips: dialogueTracks.dialogue },
+                { name: '心音 (OS)', type: 'os', clips: dialogueTracks.os },
+                { name: '电话音 (Telephone)', type: 'telephone', clips: dialogueTracks.telephone },
+                { name: '系统音 (System)', type: 'system', clips: dialogueTracks.system },
+                { name: '其他 (Others)', type: 'other', clips: dialogueTracks.other },
+            ].filter(track => track.clips.length > 0);
+
+            const newTrackGroups: TrackGroupData[] = [];
+
+            if (dialogueTrackData.length > 0) {
+                newTrackGroups.push({
+                    name: '人声 (Dialogue)',
+                    isExpanded: true,
+                    tracks: dialogueTrackData
+                });
+            }
+
+            if (bgmClips.length > 0) {
+                newTrackGroups.push({
+                    name: '音乐 (Music)',
+                    isExpanded: true,
+                    // FIX: The type checker was inferring the `type` property as a generic `string` instead of a specific literal type. Added `as const` to ensure TypeScript correctly infers the type, resolving the assignment error.
+                    tracks: [{ name: '音乐 1', type: 'music' as const, clips: bgmClips }]
+                });
+            }
+            if (sfxClips.length > 0) {
+                newTrackGroups.push({
+                    name: '音效 (SFX)',
+                    isExpanded: true,
+                    tracks: [{ name: '音效 1', type: 'sfx' as const, clips: sfxClips }]
+                });
+            }
+            
+            scheduledClipsRef.current.clear();
+
+            const finalTrackGroups: TrackGroupData[] = [...newTrackGroups];
+            if (ambienceClips.length > 0) {
+                const ambienceGroup: TrackGroupData = {
+                    name: '\u73af\u5883\u97f3 (Ambience)',
+                    isExpanded: true,
+                    tracks: [{ name: '\u73af\u5883\u97f3 1', type: 'ambience', clips: ambienceClips }],
+                };
+                const sfxIndex = finalTrackGroups.findIndex(g => g.name.includes('(SFX)'));
+                if (sfxIndex >= 0) {
+                    finalTrackGroups.splice(sfxIndex, 0, ambienceGroup);
+                } else {
+                    finalTrackGroups.push(ambienceGroup);
+                }
+            }
+
+            const getGroupOrder = (name: string): number => {
+                if (name.includes('(Dialogue)')) return 0;
+                if (name.includes('(Ambience)')) return 1;
+                if (name.includes('(SFX)')) return 2;
+                if (name.includes('(Music)')) return 3;
+                return 4;
+            };
+            finalTrackGroups.sort((a, b) => getGroupOrder(a.name) - getGroupOrder(b.name));
+
+            setTrackGroups(finalTrackGroups);
+            setTotalDuration(finalDuration);
+            setIsLoading(false);
+        };
+
+        calculateTimeline();
+    }, [currentProject, characters, characterMap, soundLibrary, soundLibraryMap, setTimelineCurrentTime, setTimelineIsPlaying]);
+
+    useEffect(() => {
+        const audioContext = audioContextRef.current;
+        if (!audioContext) return;
+        
+        const cleanup = () => {
+            clearInterval(schedulerTimerRef.current);
+            schedulerTimerRef.current = undefined;
+            if (animationFrameRef.current) {
+                cancelAnimationFrame(animationFrameRef.current);
+                animationFrameRef.current = undefined;
+            }
+            activeSourcesRef.current.forEach(source => {
+                try { 
+                    source.onended = null;
+                    source.stop(); 
+                    source.disconnect();
+                } catch (e) { /* Ignore errors if already stopped */ }
+            });
+            activeSourcesRef.current.clear();
+            playbackStartRef.current = null;
+        };
+        
+        if (timelineIsPlaying) {
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            scheduledClipsRef.current.clear();
+            playbackStartRef.current = {
+                contextTime: audioContext.currentTime,
+                timelineTime: timelineCurrentTime,
+            };
+            const scheduleWindow = 0.5;
+            const scheduleInterval = 250;
+
+            const scheduler = () => {
+                if (!playbackStartRef.current) return;
+                
+                const audioCtxTime = audioContext.currentTime;
+                const elapsed = audioCtxTime - playbackStartRef.current.contextTime;
+                const currentTime = playbackStartRef.current.timelineTime + elapsed;
+                const scheduleAheadTime = currentTime + scheduleWindow;
+
+                for (const clip of allClips) {
+                    const isAlreadyScheduled = scheduledClipsRef.current.has(clip.id);
+                    const shouldBePlaying = clip.startTime <= currentTime && clip.startTime + clip.duration > currentTime;
+                    const willBePlayingSoon = clip.startTime > currentTime && clip.startTime < scheduleAheadTime;
+
+                    if ((shouldBePlaying || willBePlayingSoon) && !isAlreadyScheduled) {
+                        scheduledClipsRef.current.add(clip.id);
+
+                        (async () => {
+                            try {
+                                let audioBlob: Blob | null = null;
+                                if (clip.audioBlobId) {
+                                    const audioBlobData = await db.audioBlobs.get(clip.audioBlobId);
+                                    if (audioBlobData) audioBlob = audioBlobData.data;
+                                } else if (clip.soundLibraryItem?.handle) {
+                                    audioBlob = await clip.soundLibraryItem.handle.getFile();
+                                }
+                                
+                                if (!audioBlob) return;
+
+                                const arrayBuffer = await audioBlob.arrayBuffer();
+                                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                                
+                                if (!timelineIsPlaying || !playbackStartRef.current) return;
+                                
+                                const source = audioContext.createBufferSource();
+                                source.buffer = audioBuffer;
+                                source.connect(audioContext.destination);
+
+                                const startDelay = clip.startTime - playbackStartRef.current.timelineTime;
+                                const playAt = playbackStartRef.current.contextTime + startDelay;
+                                
+                                let offset = 0;
+                                let actualPlayTime = playAt;
+                                
+                                if (playAt < audioContext.currentTime) {
+                                    offset = audioContext.currentTime - playAt;
+                                    actualPlayTime = audioContext.currentTime;
+                                }
+                                
+                                source.start(actualPlayTime, offset);
+                                
+                                activeSourcesRef.current.add(source);
+                                source.onended = () => {
+                                    activeSourcesRef.current.delete(source);
+                                };
+                            } catch (e) {
+                                console.error(`Error scheduling clip ${clip.id}:`, e);
+                                scheduledClipsRef.current.delete(clip.id);
+                            }
+                        })();
+                    }
+                }
+            };
+            scheduler();
+            schedulerTimerRef.current = window.setInterval(scheduler, scheduleInterval);
+            
+            const rafLoop = () => {
+                if (playbackStartRef.current) {
+                    const elapsed = audioContext.currentTime - playbackStartRef.current.contextTime;
+                    const newTime = playbackStartRef.current.timelineTime + elapsed;
+                    if (newTime >= totalDuration) {
+                        setTimelineCurrentTime(totalDuration);
+                        setTimelineIsPlaying(false);
+                    } else {
+                        setTimelineCurrentTime(newTime);
+                        animationFrameRef.current = requestAnimationFrame(rafLoop);
+                    }
+                }
+            };
+            animationFrameRef.current = requestAnimationFrame(rafLoop);
+        }
+
+        return cleanup;
+    }, [timelineIsPlaying, allClips, totalDuration, setTimelineIsPlaying, setTimelineCurrentTime]);
+
+    if (isLoading) {
+        return (
+            <div className="h-full flex flex-col">
+                <TimelineHeader />
+                <div className="flex-grow flex items-center justify-center">
+                    <LoadingSpinner />
+                    <p className="ml-2 text-slate-300">正在计算时间轴...</p>
                 </div>
             </div>
-         </div>
+        );
+    }
+    
+    if (trackGroups.length === 0) {
+        return (
+            <div className="h-full flex flex-col">
+                <TimelineHeader />
+                <div className="flex-grow flex items-center justify-center">
+                    <p className="text-center text-slate-500 text-sm p-4">没有已对轨的音频可供显示。</p>
+                </div>
+            </div>
+        );
+    }
 
-         {/* Tracks Container */}
-         <div className="flex-grow relative min-w-full">
-             <div className="relative min-w-fit">
-                 {/* Playhead Line across tracks */}
-                 <Playhead pixelsPerSecond={pixelsPerSecond} leftOffset={TRACK_HEADER_WIDTH} />
+    return (
+        <div className="h-full flex flex-col bg-slate-900">
+            <TimelineHeader />
+            <div
+                className="w-full h-full overflow-auto relative"
+                onMouseDownCapture={handleTimelineMouseDownCapture}
+                onMouseDown={handleSeek}
+            >
+                <div 
+                    className="relative" 
+                    style={{ 
+                        width: `${totalDuration * pixelsPerSecond + TRACK_HEADER_WIDTH_PX}px`, 
+                        minWidth: '100%' 
+                    }}
+                >
+                    {/* Spacer for sticky track headers */}
+                    <div className="w-48 h-full float-left" />
 
-                 <TrackGroup name="对白 (Dialogue)">
-                     <Track name="旁白 (Narrator)" clips={tracks.narration} pixelsPerSecond={pixelsPerSecond} />
-                     <Track name="角色 (Characters)" clips={tracks.dialogue} pixelsPerSecond={pixelsPerSecond} />
-                     <Track name="心音 (OS)" clips={tracks.os} pixelsPerSecond={pixelsPerSecond} />
-                     <Track name="其他 (Other)" clips={tracks.other} pixelsPerSecond={pixelsPerSecond} />
-                 </TrackGroup>
-                 <TrackGroup name="音效 (SFX)">
-                     <Track name="音效" clips={tracks.sfx} pixelsPerSecond={pixelsPerSecond} />
-                 </TrackGroup>
-                 <TrackGroup name="音乐 (BGM)">
-                     <Track name="背景音乐" clips={tracks.bgm} pixelsPerSecond={pixelsPerSecond} />
-                 </TrackGroup>
-             </div>
-         </div>
-      </div>
-    </div>
-  );
+                    {/* Main timeline content area */}
+                    <div className="relative">
+                        <TimeRuler duration={totalDuration} pixelsPerSecond={pixelsPerSecond} />
+                        {trackGroups.map(group => (
+                            <TrackGroup key={group.name} name={group.name} defaultExpanded={group.isExpanded}>
+                                {group.tracks.map(track => (
+                                    <Track
+                                        key={track.name}
+                                        name={track.name}
+                                        clips={track.clips}
+                                        pixelsPerSecond={pixelsPerSecond}
+                                        trackType={track.type}
+                                    />
+                                ))}
+                            </TrackGroup>
+                        ))}
+                    </div>
+                </div>
+                <Playhead pixelsPerSecond={pixelsPerSecond} leftOffset={TRACK_HEADER_WIDTH_PX} />
+            </div>
+        </div>
+    );
 };
 
 export default Timeline;

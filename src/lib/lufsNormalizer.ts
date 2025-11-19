@@ -1,27 +1,11 @@
-import { bufferToWav } from './wavEncoder';
-
 /**
- * Normalizes the perceived loudness of an AudioBuffer to a target level.
- * This is an approximation using RMS power, not a true EBU R 128 LUFS calculation,
- * but it's effective for client-side loudness consistency.
+ * Estimates perceived loudness of an AudioBuffer using an RMS-based
+ * approximation. This is not a full EBU R 128 implementation but is
+ * sufficient for client-side consistency and gain calculation.
  *
- * @param audioBuffer The original AudioBuffer to process.
- * @param targetLoudnessDb The target loudness in dBFS (e.g., -18).
- * @returns A Promise that resolves to a new, normalized AudioBuffer.
+ * Returns a value in dBFS that can be treated as an approximate LUFS.
  */
-export async function normalizeAudioBuffer(
-  audioBuffer: AudioBuffer,
-  targetLoudnessDb: number,
-): Promise<AudioBuffer> {
-  // Use an OfflineAudioContext to process the audio without playing it.
-  // Using the original buffer's properties ensures format consistency.
-  const offlineContext = new OfflineAudioContext(
-    audioBuffer.numberOfChannels,
-    audioBuffer.length,
-    audioBuffer.sampleRate
-  );
-
-  // Calculate the Root Mean Square (RMS) power of the original buffer.
+export function estimateLufsFromAudioBuffer(audioBuffer: AudioBuffer): number {
   let rms = 0;
   for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
     const data = audioBuffer.getChannelData(i);
@@ -33,19 +17,40 @@ export async function normalizeAudioBuffer(
   }
   rms = Math.sqrt(rms / audioBuffer.numberOfChannels);
 
-  // If the audio is silent, no processing is needed.
   if (rms === 0) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  return 20 * Math.log10(rms);
+}
+
+/**
+ * Normalizes the perceived loudness of an AudioBuffer to a target level.
+ * This uses the same RMS approximation as estimateLufsFromAudioBuffer.
+ *
+ * @param audioBuffer The original AudioBuffer to process.
+ * @param targetLoudnessDb The target loudness in dBFS (e.g., -18).
+ * @returns A Promise that resolves to a new, normalized AudioBuffer.
+ */
+export async function normalizeAudioBuffer(
+  audioBuffer: AudioBuffer,
+  targetLoudnessDb: number,
+): Promise<AudioBuffer> {
+  const currentDb = estimateLufsFromAudioBuffer(audioBuffer);
+
+  if (!isFinite(currentDb)) {
     return audioBuffer;
   }
 
-  // Convert RMS power to dBFS (decibels relative to full scale).
-  const currentDb = 20 * Math.log10(rms);
+  const offlineContext = new OfflineAudioContext(
+    audioBuffer.numberOfChannels,
+    audioBuffer.length,
+    audioBuffer.sampleRate,
+  );
 
-  // Calculate the gain required to reach the target loudness.
   const gainDb = targetLoudnessDb - currentDb;
   const gainLinear = Math.pow(10, gainDb / 20);
 
-  // Create an audio graph to apply the gain.
   const source = offlineContext.createBufferSource();
   source.buffer = audioBuffer;
 
@@ -58,7 +63,6 @@ export async function normalizeAudioBuffer(
 
   const processedBuffer = await offlineContext.startRendering();
 
-  // Manually clip the processed audio to prevent distortion if the gain pushed it beyond [-1.0, 1.0].
   for (let i = 0; i < processedBuffer.numberOfChannels; i++) {
     const data = processedBuffer.getChannelData(i);
     for (let j = 0; j < data.length; j++) {

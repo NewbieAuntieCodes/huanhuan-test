@@ -1,6 +1,6 @@
 import { StateCreator } from 'zustand';
 import { AppState } from '../useStore'; // Import AppState for cross-slice type reference
-import { AppView, ScriptLine, Character } from '../../types';
+import { AppView, ScriptLine, Character, PostProductionLufsSettings } from '../../types';
 import React from 'react';
 import { db } from '../../db';
 import { miscRepository } from '../../repositories';
@@ -19,6 +19,13 @@ export interface LufsSettings {
   enabled: boolean;
   target: number;
 }
+
+export const defaultPostProductionLufsSettings: PostProductionLufsSettings = {
+  voice: { enabled: false, target: -18 },
+  ambience: { enabled: false, target: -45 },
+  sfx: { enabled: false, target: -30 },
+  music: { enabled: false, target: -40 },
+};
 
 
 export interface ConfirmModalState {
@@ -69,6 +76,7 @@ export interface UiSlice {
   lufsSettings: LufsSettings;
   soundObservationList: string[];
   isRecordingMode: boolean;
+  postProductionLufsSettings: PostProductionLufsSettings;
 
   // Timeline State
   timelineIsPlaying: boolean;
@@ -110,6 +118,7 @@ export interface UiSlice {
   setActiveRecordingLineId: (id: string | null) => void;
   setWebSocketStatus: (status: WebSocketStatus) => void;
   setLufsSettings: (settings: Partial<LufsSettings>) => Promise<void>;
+  setPostProductionLufsSettings: (settings: Partial<PostProductionLufsSettings>) => Promise<void>;
   setSoundObservationList: (list: string[]) => Promise<void>;
   setRecordingMode: (enabled: boolean) => void;
   goToNextLine: () => Promise<void>;
@@ -149,6 +158,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   lufsSettings: { enabled: false, target: -18 },
   soundObservationList: [],
   isRecordingMode: false,
+  postProductionLufsSettings: defaultPostProductionLufsSettings,
 
   // Timeline State
   timelineIsPlaying: false,
@@ -258,6 +268,15 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
     const newSettings = { ...get().lufsSettings, ...settingsUpdate };
     await db.misc.put({ key: 'lufsSettings', value: newSettings });
     set({ lufsSettings: newSettings });
+  },
+  setPostProductionLufsSettings: async (settingsUpdate) => {
+    const prev = get().postProductionLufsSettings;
+    const newSettings: PostProductionLufsSettings = {
+      ...prev,
+      ...settingsUpdate,
+    };
+    await db.misc.put({ key: 'postProductionLufsSettings', value: newSettings });
+    set({ postProductionLufsSettings: newSettings });
   },
   setRecordingMode: (enabled) => set({ isRecordingMode: enabled }),
   goToNextLine: async () => {

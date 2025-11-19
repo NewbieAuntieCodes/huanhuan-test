@@ -59,7 +59,7 @@ export class WebSocketService {
       this.socket = new WebSocket(this.config.url);
       this.setupEventHandlers();
     } catch (error) {
-      console.warn('WebSocket 连接初始化失败:', error);
+      console.error('WebSocket 连接失败:', error);
       this.updateStatus('disconnected');
       this.scheduleReconnect();
     }
@@ -155,11 +155,8 @@ export class WebSocketService {
     };
 
     this.socket.onerror = (event: Event) => {
-      // 降级为警告，避免在没有运行本地服务时产生恐慌
-      // 只有在首次连接失败时可能会打印，后续重连由 onclose 处理
-      if (!this.hasWarnedConnection) {
-         console.warn('⚠️ WebSocket 连接提示:', `无法连接到 ${this.config.url}。这在未启动本地热键服务时是正常的。`);
-      }
+      // Don't log the raw event object as it's not descriptive. The onclose event provides more info.
+      console.error('❌ WebSocket 错误:', `无法连接到 ${this.config.url}. 请确保热键服务正在运行。`);
       this.callbacks.onError?.(event);
     };
 
@@ -172,7 +169,7 @@ export class WebSocketService {
         // 只在第一次显示警告，避免控制台刷屏
         if (!this.hasWarnedConnection) {
           const delay = this.config.reconnectDelay / 1000;
-          console.warn(`WebSocket 连接断开 (Code: ${event.code})。${this.config.autoReconnect ? `${delay}秒后将尝试重连...` : ''}`);
+          console.warn(`WebSocket 连接断开 (Code: ${event.code}). ${this.config.autoReconnect ? `${delay}秒后将尝试重连...` : ''}`);
           this.hasWarnedConnection = true;
         }
       }
@@ -204,7 +201,7 @@ export class WebSocketService {
     this.reconnectAttempts++;
 
     this.reconnectTimeout = window.setTimeout(() => {
-      // console.log(`🔄 尝试重连 WebSocket (第 ${this.reconnectAttempts} 次)...`); // Reduce noise
+      console.log(`🔄 尝试重连 WebSocket (第 ${this.reconnectAttempts} 次)...`);
       this.connect();
     }, this.config.reconnectDelay);
   }

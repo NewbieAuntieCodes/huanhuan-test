@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useStore } from '../../../store/useStore';
 import { TextMarker, PinnedSound, IgnoredSoundKeyword, Project, Chapter, ScriptLine, SoundLibraryItem } from '../../../types';
+import { ensureSoundLufs } from '../../../services/lufsService';
 
 // Helper to find lineId and offset from a Range endpoint
 const findLineIdAndOffset = (container: Node, offset: number): { lineId: string; offset: number } | null => {
@@ -729,7 +730,17 @@ export const usePostProduction = () => {
             })
         };
         updateProject(updatedProject);
-    }, [currentProject, updateProject]);
+
+        if (soundId !== null) {
+            const sound = soundLibrary.find((s) => s.id === soundId);
+            if (sound) {
+                // Fire-and-forget LUFS analysis and caching for this sound.
+                void ensureSoundLufs(sound).catch((error) => {
+                    console.error('Failed to analyze LUFS for pinned sound', error);
+                });
+            }
+        }
+    }, [currentProject, updateProject, soundLibrary]);
 
     const { updateLineText } = useStore();
 

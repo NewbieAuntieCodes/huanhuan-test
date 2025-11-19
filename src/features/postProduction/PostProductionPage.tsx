@@ -19,12 +19,13 @@ import ResizableVerticalPanels from '../../components/ui/ResizableVerticalPanels
 import { TextMarker } from '../../types';
 
 const PostProductionPage: React.FC = () => {
-    const { navigateTo, soundLibrary, soundObservationList, characters, selectedChapterId: initialChapterId } = useStore(state => ({
+    const { navigateTo, soundLibrary, soundObservationList, characters, selectedChapterId: initialChapterId, postProductionLufsSettings } = useStore(state => ({
         navigateTo: state.navigateTo,
         soundLibrary: state.soundLibrary,
         soundObservationList: state.soundObservationList,
         characters: state.characters,
         selectedChapterId: state.selectedChapterId,
+        postProductionLufsSettings: state.postProductionLufsSettings,
     }));
 
     const {
@@ -167,7 +168,13 @@ const PostProductionPage: React.FC = () => {
         
         setIsExportingToReaper(true);
         try {
-            await exportPostProductionToReaper(currentProject, chaptersToExport, characters, soundLibrary);
+            await exportPostProductionToReaper(
+                currentProject,
+                chaptersToExport,
+                characters,
+                soundLibrary,
+                postProductionLufsSettings,
+            );
         } catch (error) {
             console.error("导出到Reaper时出错:", error);
             alert(`导出到Reaper时出错: ${error instanceof Error ? error.message : '未知错误'}`);
@@ -190,7 +197,7 @@ const PostProductionPage: React.FC = () => {
     
     // FIX: The type checker was inferring `m.name` as potentially `undefined`, causing `new Set` to be of type `Set<unknown>`.
     // Added a type guard `(m): m is TextMarker & { name: string } => ...` to ensure that `m.name` is a `string` before mapping, satisfying the type requirements for creating a `Set<string>`.
-    const existingSceneNames = useMemo(() => Array.from(new Set<string>(textMarkers.filter((m): m is TextMarker & { name: string } => m.type === 'scene' && !!m.name).map(m => m.name))), [textMarkers]);
+    const existingSceneNames = useMemo(() => Array.from(new Set(textMarkers.filter((m): m is TextMarker & { name: string } => m.type === 'scene' && !!m.name).map(m => m.name))), [textMarkers]);
 
     return (
         <div className="h-full flex flex-col bg-slate-900 text-slate-100">

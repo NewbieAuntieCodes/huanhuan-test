@@ -242,12 +242,14 @@ export const useMarkerRendering = (
             // A timeout gives React time to render the newly expanded content
             setTimeout(() => {
                 recalculateBgmHighlights();
-                recomputeBgmLabelOverlays();
+                // 不再绘制左侧彩色 BGM 头部条，只保留文本内部的高亮 <...>//。
+                setBgmLabelOverlays([]);
             }, 50);
         }
         lastMarkersRef.current = textMarkers;
-    }, [textMarkers, suspendLayout, recalculateBgmHighlights, recomputeBgmLabelOverlays, expandedChapterId]);
+    }, [textMarkers, suspendLayout, recalculateBgmHighlights, expandedChapterId]);
     
+    // 仍然保留 contentRef 的滚动监听用于其它用途，但不再更新 bgmLabelOverlays。
     useEffect(() => {
         if (suspendLayout) return;
         
@@ -258,7 +260,7 @@ export const useMarkerRendering = (
         const handle = () => {
           clearTimeout(timeoutId);
           timeoutId = window.setTimeout(() => {
-            recomputeBgmLabelOverlays();
+            // no-op for bgmLabelOverlays
           }, 120);
         };
 
@@ -270,7 +272,7 @@ export const useMarkerRendering = (
           scrollableParent.removeEventListener('scroll', handle);
           clearTimeout(timeoutId);
         };
-    }, [recomputeBgmLabelOverlays, suspendLayout]);
+    }, [suspendLayout]);
 
 
     return {

@@ -55,7 +55,14 @@
 
     /* Sound Assistant Styles */
     .sound-keyword-highlight {
-      color: #ff0000; /* pure red */
+      color: #ff3333; /* bright, pure red */
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .sound-keyword-highlight--pinned {
+      color: #22ff55; /* vivid neon-like green */
+      font-weight: 700;
       cursor: pointer;
     }
 
