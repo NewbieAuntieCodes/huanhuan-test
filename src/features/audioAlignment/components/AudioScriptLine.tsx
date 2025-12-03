@@ -3,6 +3,7 @@ import { ScriptLine, Character, LineType, SilencePairing } from '../../../types'
 import { useStore } from '../../../store/useStore';
 import { db } from '../../../db';
 import { isHexColor, getContrastingTextColor } from '../../../lib/colorUtils';
+import { stripPostProductionMarkers, escapeHtml } from '../../../lib/postProductionTextUtils';
 // FIX: Import `UploadIcon` to resolve the "Cannot find name 'UploadIcon'" error.
 import { TrashIcon, PlayIcon, PauseIcon, CheckCircleIcon, XMarkIcon, ReturnIcon, ArrowPathIcon, AdjustmentsVerticalIcon, UploadIcon } from '../../../components/ui/icons';
 import NumberInput from '../../../components/ui/NumberInput';
@@ -243,6 +244,11 @@ const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, index, nextLine
         return { style, className };
     };
     const rowTextStyle = getRowTextStyle();
+
+    const cleanedLineHtml = useMemo(() => {
+        const stripped = stripPostProductionMarkers(line.text);
+        return escapeHtml(stripped);
+    }, [line.text]);
     
     const getCvChipStyle = () => {
         if (!character?.cvName) {
@@ -318,7 +324,7 @@ const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, index, nextLine
                     <div
                         className={`flex-grow ${rowTextStyle.className}`}
                         style={rowTextStyle.style}
-                        dangerouslySetInnerHTML={{ __html: line.text }}
+                        dangerouslySetInnerHTML={{ __html: cleanedLineHtml }}
                     >
                     </div>
                     <div className="flex-shrink-0 flex items-center space-x-2 z-10">

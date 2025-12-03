@@ -47,6 +47,7 @@ const TRACK_HEADER_WIDTH_PX = 192; // Corresponds to w-48 (12rem)
 const Timeline: React.FC = () => {
     const {
       selectedProjectId,
+      selectedChapterId,
       projects,
       characters,
       soundLibrary,
@@ -166,8 +167,14 @@ const Timeline: React.FC = () => {
             let currentTime = 0;
             const silenceSettings = currentProject.silenceSettings || defaultSilenceSettings;
             currentTime += silenceSettings.startPadding > 0 ? silenceSettings.startPadding : 0;
+
+            const chaptersForTimeline = selectedChapterId
+                ? currentProject.chapters.filter(ch => ch.id === selectedChapterId)
+                : currentProject.chapters;
             
-            const allLinesWithAudio = currentProject.chapters.flatMap(ch => ch.scriptLines).filter(line => line.audioBlobId);
+            const allLinesWithAudio = chaptersForTimeline
+                .flatMap(ch => ch.scriptLines)
+                .filter(line => line.audioBlobId);
             
             const baseItemsUnsorted = (await Promise.all(
                 allLinesWithAudio.map(async (line) => {
@@ -188,7 +195,7 @@ const Timeline: React.FC = () => {
             )).filter((item): item is NonNullable<typeof item> => item !== null);
 
             const lineOrderMap = new Map<string, number>();
-            currentProject.chapters.forEach((ch, chIdx) => {
+            chaptersForTimeline.forEach((ch, chIdx) => {
                 ch.scriptLines.forEach((ln, lnIdx) => {
                     lineOrderMap.set(ln.id, chIdx * 100000 + lnIdx);
                 });
@@ -349,7 +356,7 @@ const Timeline: React.FC = () => {
         };
 
         calculateTimeline();
-    }, [currentProject, characters, characterMap, soundLibrary, soundLibraryMap, setTimelineCurrentTime, setTimelineIsPlaying]);
+    }, [currentProject, selectedChapterId, characters, characterMap, soundLibrary, soundLibraryMap, setTimelineCurrentTime, setTimelineIsPlaying]);
 
     useEffect(() => {
         const audioContext = audioContextRef.current;

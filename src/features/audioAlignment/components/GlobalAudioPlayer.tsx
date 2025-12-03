@@ -4,6 +4,7 @@ import { db } from '../../../db';
 import { PlayIcon, PauseIcon, XMarkIcon, SpeakerWaveIcon, SpeakerXMarkIcon } from '../../../components/ui/icons';
 import { isHexColor, getContrastingTextColor } from '../../../lib/colorUtils';
 import { ScriptLine, Character } from '../../../types';
+import { stripPostProductionMarkers } from '../../../lib/postProductionTextUtils';
 
 
 // --- Constants for Waveform Drawing ---
@@ -289,6 +290,7 @@ const GlobalAudioPlayer: React.FC<GlobalAudioPlayerProps> = () => {
     }
 
     const { line, character } = playingLineInfo;
+    const cleanLineText = stripPostProductionMarkers(line.text);
     const isNarration = !character || character.name.toLowerCase() === 'narrator';
     
     const getPanelStyle = () => {
@@ -337,7 +339,7 @@ const GlobalAudioPlayer: React.FC<GlobalAudioPlayerProps> = () => {
             <div className="flex-grow flex flex-col justify-center space-y-2 overflow-hidden h-full">
                 <div 
                     className="text-sm text-slate-300 truncate"
-                    title={line.text}
+                    title={cleanLineText}
                 >
                     <span 
                         className={`font-bold mr-2 py-0.5 px-2 rounded-md ${panelStyle.className}`} 
@@ -345,7 +347,7 @@ const GlobalAudioPlayer: React.FC<GlobalAudioPlayerProps> = () => {
                     >
                        {character?.name || '旁白'}
                     </span>
-                    {line.text}
+                    {cleanLineText}
                 </div>
 
                 <div className="flex items-center space-x-2 w-full h-12">

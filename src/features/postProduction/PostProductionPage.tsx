@@ -19,13 +19,14 @@ import ResizableVerticalPanels from '../../components/ui/ResizableVerticalPanels
 import { TextMarker } from '../../types';
 
 const PostProductionPage: React.FC = () => {
-    const { navigateTo, soundLibrary, soundObservationList, characters, selectedChapterId: initialChapterId, postProductionLufsSettings } = useStore(state => ({
+    const { navigateTo, soundLibrary, soundObservationList, characters, selectedChapterId: initialChapterId, postProductionLufsSettings, setSelectedChapterId } = useStore(state => ({
         navigateTo: state.navigateTo,
         soundLibrary: state.soundLibrary,
         soundObservationList: state.soundObservationList,
         characters: state.characters,
         selectedChapterId: state.selectedChapterId,
         postProductionLufsSettings: state.postProductionLufsSettings,
+        setSelectedChapterId: state.setSelectedChapterId,
     }));
 
     const {
@@ -130,6 +131,7 @@ const PostProductionPage: React.FC = () => {
       onSelectChapterForViewing: (id) => {
         if (id) {
           setExpandedChapterId(id);
+          void setSelectedChapterId(id);
         }
       },
       multiSelectedChapterIds: [],
@@ -141,8 +143,9 @@ const PostProductionPage: React.FC = () => {
     useEffect(() => {
         if (initialChapterId) {
             setExpandedChapterId(initialChapterId);
+            void setSelectedChapterId(initialChapterId);
         }
-    }, [initialChapterId]);
+    }, [initialChapterId, setSelectedChapterId]);
 
 
     useEffect(() => {
@@ -258,7 +261,12 @@ const PostProductionPage: React.FC = () => {
                                     soundLibrary={soundLibrary}
                                     soundObservationList={soundObservationList}
                                     expandedChapterId={expandedChapterId}
-                                    setExpandedChapterId={setExpandedChapterId}
+                                    setExpandedChapterId={(id) => {
+                                        setExpandedChapterId(id);
+                                        if (id) {
+                                            void setSelectedChapterId(id);
+                                        }
+                                    }}
                                     currentPage={currentPage}
                                     totalPages={totalPages}
                                     onPageChange={handlePageChange}
