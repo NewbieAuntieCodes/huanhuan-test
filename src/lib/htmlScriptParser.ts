@@ -7,6 +7,16 @@ export const parseHtmlWorkbook = (
   const parser = new DOMParser();
   const doc = parser.parseFromString(htmlString, 'text/html');
 
+  const htmlToTextWithNewlines = (html: string): string => {
+    const tempDiv = doc.createElement('div');
+    const normalized = (html || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<\/div>/gi, '\n');
+    tempDiv.innerHTML = normalized;
+    return tempDiv.textContent || '';
+  };
+
   const newChapters: Chapter[] = [];
   let currentChapter: Chapter | null = null;
   const tempCharacterMap = new Map<string, Character>();
@@ -31,13 +41,13 @@ export const parseHtmlWorkbook = (
   const getCharacter = (speakerTag: string): Character => {
     let { charName, cvName } = splitSpeaker(speakerTag);
     // Normalize reserved roles
-    const normalized = charName.replace(/^[\[【]\s*|[\]】]\s*$/g, '').trim();
-    if (/^(静音|silence|mute)$/i.test(normalized)) {
-      charName = '[静音]';
+    const normalized = charName.replace(/^[\[��]\s*|[\]��]\s*$/g, '').trim();
+    if (/^(����|silence|mute)$/i.test(normalized)) {
+      charName = '[����]';
       cvName = undefined;
-    } else if (/^(\[?音效\]?|sfx|fx|音效描述)$/i.test(normalized)) {
-      // 统一标准显示为 [音效]
-      charName = '[音效]';
+    } else if (/^(\[?��Ч\]?|sfx|fx|��Ч����)$/i.test(normalized)) {
+      // ͳһ��׼��ʾΪ [��Ч]
+      charName = '[��Ч]';
       cvName = undefined;
     }
     const lowerName = charName.toLowerCase();
@@ -54,14 +64,14 @@ export const parseHtmlWorkbook = (
     const colorIndex = tempCharacterMap.size % availableColors.length;
 
     const isNarrator = charName.toLowerCase() === 'narrator';
-    const isSilence = charName === '[静音]';
-    const isSfx = (charName === '音效' || charName === '[音效]');
+    const isSilence = charName === '[����]';
+    const isSfx = (charName === '��Ч' || charName === '[��Ч]');
 
     const newChar = onAddCharacter({
       name: charName,
       color: isNarrator ? 'bg-slate-500' : isSilence ? 'bg-slate-700' : isSfx ? 'bg-transparent' : availableColors[colorIndex],
       textColor: isNarrator ? 'text-slate-100' : isSilence ? 'text-slate-400' : isSfx ? 'text-red-500' : availableTextColors[colorIndex],
-      description: isSilence ? '用于标记无需录制的旁白提示' : isSfx ? '用于标记音效的文字描述' : '',
+      description: isSilence ? '���ڱ������¼�Ƶ��԰���ʾ' : isSfx ? '���ڱ����Ч����������' : '',
       cvName: isSilence || isSfx ? '' : cvName,
       isStyleLockedToCv: isSilence || isSfx ? true : false,
       status: 'active'
@@ -84,8 +94,8 @@ export const parseHtmlWorkbook = (
 
   const elements = Array.from(doc.body.children);
 
-  // 角色说明块（可选）
-  const descriptionHeading = elements.find(el => el.tagName === 'H2' && el.textContent?.trim() === '主要角色介绍');
+  // ��ɫ˵���飨��ѡ��
+  const descriptionHeading = elements.find(el => el.tagName === 'H2' && el.textContent?.trim() === '��Ҫ��ɫ����');
   if (descriptionHeading) {
     const descriptionContainer = descriptionHeading.nextElementSibling;
     if (descriptionContainer) {
@@ -93,13 +103,13 @@ export const parseHtmlWorkbook = (
       descriptionParagraphs.forEach(p => {
         const strongTag = p.querySelector('strong');
         if (strongTag) {
-          const nameMatch = strongTag.textContent?.trim().match(/【(.*?)】/);
+          const nameMatch = strongTag.textContent?.trim().match(/��(.*?)��/);
           if (nameMatch && nameMatch[1]) {
             const charName = nameMatch[1];
             const pClone = p.cloneNode(true) as HTMLParagraphElement;
             const strongClone = pClone.querySelector('strong');
             if (strongClone) pClone.removeChild(strongClone);
-            const description = pClone.textContent?.trim().replace(/^：/, '').trim();
+            const description = pClone.textContent?.trim().replace(/^��/, '').trim();
             if (charName && description) {
               characterDescriptions.set(charName, description);
             }
@@ -112,8 +122,8 @@ export const parseHtmlWorkbook = (
   const isNoise = (t: string) => {
     const s = (t || '').trim();
     if (!s) return true;
-    if (/^【?待识别角色】?$/.test(s)) return true;
-    if (/^[\u2026\.。·！？!?,，、;；：:…\s]+$/.test(s)) return true;
+    if (/^��?��ʶ���ɫ��?$/.test(s)) return true;
+    if (/^[\u2026\.��������!?,����;����:��\s]+$/.test(s)) return true;
     return false;
   };
 
@@ -131,20 +141,21 @@ export const parseHtmlWorkbook = (
         scriptLines: [],
       };
     } else if (el.tagName === 'DIV' && currentChapter) {
-      // 章节内容容器
+      // �½���������
       const lineElements = el.querySelectorAll('.line');
       const rawContentParts: string[] = [];
 
       for (const lineEl of lineElements) {
         const dialogueSpan = lineEl.querySelector('.dialogue-line');
-        const fullRaw = (dialogueSpan || lineEl).textContent || '';
+        const sourceEl = (dialogueSpan || lineEl) as HTMLElement;
+        const fullRaw = htmlToTextWithNewlines(sourceEl.innerHTML);
         const fullText = fullRaw.replace(/\uFEFF/g, '').replace(/\u00A0/g, ' ').replace(/\u200B/g, '').trim();
         rawContentParts.push(fullText);
 
         let text: string;
         let characterId: string;
         let soundType: string | undefined = undefined;
-        const soundTypeRegex = /^\s*[\(（]([^）\)]+)[\)）]\s*/;
+        const soundTypeRegex = /^\s*[\(��]([^��\)]+)[\)��]\s*/;
 
         const bracketMatch = fullText.match(/^\s*[\u3010\[](.+?)[\u3011\]]\s*([\s\S]*)/);
         

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useStore } from '../../../store/useStore';
 import { exportMarkedWav, exportCharacterClips } from '../services/voiceLibraryExporter';
 import { useTtsApi } from './useTtsApi';
@@ -34,6 +34,7 @@ export const useVoiceLibrary = () => {
     const [selectedCharacterId, setSelectedCharacterId] = useState<string>('');
     const [chapterFilter, setChapterFilter] = useState('');
     const [trimmingRowId, setTrimmingRowId] = useState<string | null>(null);
+    const lastSyncedChapterIdRef = useRef<string | null>(null);
 
     // Using hooks for different responsibilities
     const { isGenerating, serverHealth, checkServerHealth, uploadTtsPrompt, generateTtsBatch } = useTtsApi();
@@ -61,15 +62,19 @@ export const useVoiceLibrary = () => {
         return { ...row, urlToTrim: url };
     }, [rows, trimmingRowId, persistedPromptUrls]);
 
-    // Sync chapter selection from other pages
+    // Sync chapter selection from other pages (only when selectedChapterId actually changes)
     useEffect(() => {
-        if (currentProject && selectedChapterId) {
-            const chapterIndex = currentProject.chapters.findIndex(c => c.id === selectedChapterId);
-            if (chapterIndex !== -1) {
-                const chapterNum = chapterIndex + 1;
-                setChapterFilter(prev => prev === String(chapterNum) ? prev : String(chapterNum));
-            }
-        }
+        if (!currentProject || !selectedChapterId) return;
+
+        // Avoid overwriting user's manual chapterFilter input when only project content changes
+        if (lastSyncedChapterIdRef.current === selectedChapterId) return;
+
+        const chapterIndex = currentProject.chapters.findIndex(c => c.id === selectedChapterId);
+        if (chapterIndex === -1) return;
+
+        const chapterNum = String(chapterIndex + 1);
+        setChapterFilter(chapterNum);
+        lastSyncedChapterIdRef.current = selectedChapterId;
     }, [selectedChapterId, currentProject]);
 
     const updateRow = useCallback((id: string, updates: Partial<VoiceLibraryRowState>) => {
