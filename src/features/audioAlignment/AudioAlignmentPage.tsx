@@ -7,6 +7,7 @@ import { exportAudioWithMarkers } from '../../lib/wavExporter';
 import { db } from '../../db';
 import { ScriptLine, Chapter, Character } from '../../types';
 import { useAudioFileMatcher } from './hooks/useAudioFileMatcher';
+import { useAsrAutoAligner } from './hooks/useAsrAutoAligner';
 import ResizablePanels from '../../components/ui/ResizablePanels';
 import { usePaginatedChapters } from '../scriptEditor/hooks/usePaginatedChapters';
 import SilenceSettingsModal from './components/SilenceSettingsModal';
@@ -40,6 +41,7 @@ const AudioAlignmentPage: React.FC = () => {
     activeRecordingLineId: state.activeRecordingLineId,
     setActiveRecordingLineId: state.setActiveRecordingLineId,
     webSocketStatus: state.webSocketStatus,
+    webSocketConnect: state.webSocketConnect,
     multiSelectedChapterIds: state.audioAlignmentMultiSelectedChapterIds,
     setMultiSelectedChapterIds: state.setAudioAlignmentMultiSelectedChapterIds,
     lufsSettings: state.lufsSettings,
@@ -53,7 +55,7 @@ const AudioAlignmentPage: React.FC = () => {
     assignAudioToLine, resegmentAndRealignAudio, navigateTo,
     openConfirmModal, clearAudioFromChapters, waveformEditorState, openWaveformEditor,
     closeWaveformEditor, cvFilter, setCvFilter, characterFilter, setCharacterFilter,
-    activeRecordingLineId, setActiveRecordingLineId, webSocketStatus,
+    activeRecordingLineId, setActiveRecordingLineId, webSocketStatus, webSocketConnect,
     multiSelectedChapterIds, setMultiSelectedChapterIds, lufsSettings, setLufsSettings,
     isRecordingMode, setRecordingMode
   } = store;
@@ -88,6 +90,17 @@ const AudioAlignmentPage: React.FC = () => {
     characters,
     assignAudioToLine,
     multiSelectedChapterIds,
+  });
+
+  const {
+    isAsrSupported,
+    isAsrAlignLoading,
+    handleFileSelectionForAsrAlign,
+  } = useAsrAutoAligner({
+    currentProject,
+    selectedChapterId,
+    characters,
+    assignAudioToLine,
   });
 
   const { projectCharacters, projectCvNames } = useMemo<{ projectCharacters: Character[], projectCvNames: string[] }>(() => {
@@ -230,6 +243,11 @@ const AudioAlignmentPage: React.FC = () => {
   };
 
   const multiSelectCount = multiSelectedChapterIds.length;
+  const handleReconnect = useCallback(() => {
+    if (webSocketConnect) {
+      webSocketConnect();
+    }
+  }, [webSocketConnect]);
   
   const hasAudioInSelection = useMemo(() => {
       if (!currentProject) return false;
@@ -343,6 +361,10 @@ const AudioAlignmentPage: React.FC = () => {
             onFileSelectionForChapterMatch={handleFileSelectionForChapterMatch}
             isReturnMatchLoading={isReturnMatchLoading}
             onFileSelectionForReturnMatch={handleFileSelectionForReturnMatch}
+            isAsrAlignSupported={isAsrSupported}
+            isAsrAlignLoading={isAsrAlignLoading}
+            onFileSelectionForAsrAlign={handleFileSelectionForAsrAlign}
+            onReconnect={handleReconnect}
         />
         <div className="flex flex-grow overflow-hidden">
             <ResizablePanels

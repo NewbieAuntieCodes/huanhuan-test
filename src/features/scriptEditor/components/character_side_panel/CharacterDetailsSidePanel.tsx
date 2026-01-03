@@ -1,9 +1,12 @@
-import React, { useMemo } from 'react';
-import { Character, Project, Chapter } from '../../../../types';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Character, Project } from '../../../../types';
 import { PencilIcon, UserCircleIcon, BookOpenIcon, XMarkIcon } from '../../../../components/ui/icons';
 import { isHexColor, getContrastingTextColor } from '../../../../lib/colorUtils';
 // Fix: Import from types.ts to break circular dependency
 import { CVStylesMap } from '../../../../types';
+import BatchReassignCharacterModal from './BatchReassignCharacterModal';
+import FixUnassignedToUnknownModal from './FixUnassignedToUnknownModal';
+import { useEditorContext } from '../../contexts/EditorContext';
 
 interface CharacterAppearance {
   chapterId: string;
@@ -30,6 +33,10 @@ const CharacterDetailsSidePanel: React.FC<CharacterDetailsSidePanelProps> = ({
   onSelectChapter,
   cvStyles,
 }) => {
+  const { undoableProjectUpdate, characters: contextCharacters } = useEditorContext();
+  const [isBatchReassignOpen, setIsBatchReassignOpen] = useState(false);
+  const [isFixUnassignedOpen, setIsFixUnassignedOpen] = useState(false);
+
   const characterAppearances = useMemo((): CharacterAppearance[] => {
     if (!character || !project || !project.chapters) return [];
     
@@ -41,6 +48,30 @@ const CharacterDetailsSidePanel: React.FC<CharacterDetailsSidePanelProps> = ({
       return acc;
     }, [] as CharacterAppearance[]);
   }, [character, project]);
+
+  // Hooks must always be called, even when `character` is null (side panel closed).
+  const validCharacterIds = useMemo(() => {
+    if (!project) return new Set<string>();
+    const ids = new Set<string>();
+    contextCharacters.forEach((c) => {
+      if (c.status === 'merged') return;
+      if (!c.projectId || c.projectId === project.id) ids.add(c.id);
+    });
+    return ids;
+  }, [contextCharacters, project]);
+
+  const isLineUnassignedOrInvalid = useCallback(
+    (chapterIndex: number, lineId: string): boolean => {
+      if (!project) return false;
+      const chapter = project.chapters[chapterIndex];
+      const line = chapter?.scriptLines.find((l) => l.id === lineId);
+      if (!line) return false;
+      const cid = line.characterId || '';
+      if (!cid) return true;
+      return !validCharacterIds.has(cid);
+    },
+    [project, validCharacterIds],
+  );
 
   if (!character) {
     return null; 
@@ -90,6 +121,81 @@ const CharacterDetailsSidePanel: React.FC<CharacterDetailsSidePanelProps> = ({
      finalCvTextClass = defaultCvButtonTextColorClass;
   }
   const cvButtonText = cvName ? cvName : '未分配CV';
+
+  const canBatchReassign = !!project && !!character && character.projectId === project.id;
+  const isUnknownRole = character.name === '待识别角色';
+
+  const handleBatchReassign = (args: {
+    targetCharacterId: string;
+    rangeStartChapterNumber: number;
+    rangeEndChapterNumber: number;
+    includeUnassigned: boolean;
+  }) => {
+    if (!project || !character) return;
+    const { targetCharacterId, rangeStartChapterNumber, rangeEndChapterNumber, includeUnassigned } = args;
+
+    undoableProjectUpdate((prev) => {
+      const startIdx = Math.max(0, rangeStartChapterNumber - 1);
+      const endIdx = Math.min(prev.chapters.length - 1, rangeEndChapterNumber - 1);
+
+      let changed = 0;
+      const nextChapters = prev.chapters.map((ch, idx) => {
+        if (idx < startIdx || idx > endIdx) return ch;
+        const nextLines = ch.scriptLines.map((line) => {
+          const shouldReplace =
+            line.characterId === character.id || (includeUnassigned && !line.characterId);
+          if (!shouldReplace) return line;
+          if (line.characterId === targetCharacterId) return line;
+          changed++;
+          return { ...line, characterId: targetCharacterId };
+        });
+        return { ...ch, scriptLines: nextLines };
+      });
+
+      if (changed === 0) return prev;
+      return { ...prev, chapters: nextChapters, lastModified: Date.now() };
+    });
+
+    setIsBatchReassignOpen(false);
+  };
+
+  const handleFixUnassigned = (args: { rangeStartChapterNumber: number; rangeEndChapterNumber: number }) => {
+    if (!project || !character) return;
+
+    const { rangeStartChapterNumber, rangeEndChapterNumber } = args;
+    const unknownId = character.id;
+
+    undoableProjectUpdate((prev) => {
+      const startIdx = Math.max(0, rangeStartChapterNumber - 1);
+      const endIdx = Math.min(prev.chapters.length - 1, rangeEndChapterNumber - 1);
+
+      const validIds = new Set<string>();
+      contextCharacters.forEach((c) => {
+        if (c.status === 'merged') return;
+        if (!c.projectId || c.projectId === prev.id) validIds.add(c.id);
+      });
+      validIds.add(unknownId);
+
+      let changed = 0;
+      const nextChapters = prev.chapters.map((ch, idx) => {
+        if (idx < startIdx || idx > endIdx) return ch;
+        const nextLines = ch.scriptLines.map((line) => {
+          const cid = line.characterId || '';
+          const isBad = !cid || !validIds.has(cid);
+          if (!isBad) return line;
+          if (cid === unknownId) return line;
+          changed++;
+          return { ...line, characterId: unknownId };
+        });
+        return { ...ch, scriptLines: nextLines };
+      });
+
+      if (changed === 0) return prev;
+      return { ...prev, chapters: nextChapters, lastModified: Date.now() };
+    });
+
+    setIsFixUnassignedOpen(false);
+  };
 
 
   return (
@@ -170,6 +276,29 @@ const CharacterDetailsSidePanel: React.FC<CharacterDetailsSidePanelProps> = ({
 
         <section>
           <h3 className="text-lg font-medium text-slate-300 mb-2.5">章节出场</h3>
+          <div className="flex gap-2 mb-2">
+            <button
+              onClick={() => setIsBatchReassignOpen(true)}
+              disabled={!canBatchReassign}
+              className="px-3 py-2 text-sm bg-sky-700 hover:bg-sky-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-md"
+              title={
+                canBatchReassign
+                  ? '按章节范围批量把该角色替换为其他角色'
+                  : '仅支持对“项目内角色”批量替换（不是全局模板角色）'
+              }
+            >
+              批量替换角色…
+            </button>
+            {isUnknownRole && (
+              <button
+                onClick={() => setIsFixUnassignedOpen(true)}
+                className="px-3 py-2 text-sm bg-teal-700 hover:bg-teal-800 text-white rounded-md"
+                title="将未分配/无效角色的行统一修复为“待识别角色”"
+              >
+                修复未分配…
+              </button>
+            )}
+          </div>
           <div className="max-h-72 overflow-y-auto">
             {characterAppearances.length > 0 ? (
               <ul className="space-y-1.5">
@@ -198,6 +327,28 @@ const CharacterDetailsSidePanel: React.FC<CharacterDetailsSidePanelProps> = ({
           </div>
         </section>
       </div>
+
+      {project && isBatchReassignOpen && (
+        <BatchReassignCharacterModal
+          isOpen={isBatchReassignOpen}
+          onClose={() => setIsBatchReassignOpen(false)}
+          project={project}
+          sourceCharacter={character}
+          characters={contextCharacters}
+          onConfirm={handleBatchReassign}
+        />
+      )}
+
+      {project && isUnknownRole && isFixUnassignedOpen && (
+        <FixUnassignedToUnknownModal
+          isOpen={isFixUnassignedOpen}
+          onClose={() => setIsFixUnassignedOpen(false)}
+          project={project}
+          unknownRoleName={character.name}
+          isLineUnassignedOrInvalid={isLineUnassignedOrInvalid}
+          onConfirm={handleFixUnassigned}
+        />
+      )}
     </div>
   );
 };

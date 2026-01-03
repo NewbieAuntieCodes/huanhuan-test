@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } from 'react';
 import { ScriptLine, Character } from '../../../../types';
 import { UserCircleIcon, ChevronDownIcon, XMarkIcon, ArrowUpIcon, ArrowDownIcon } from '../../../../components/ui/icons';
 import { isHexColor, getContrastingTextColor } from '../../../../lib/colorUtils';
@@ -34,12 +34,49 @@ interface ScriptLineItemProps {
 // Helper to convert innerHTML from contentEditable to plain text with newlines
 const htmlToTextWithNewlines = (html: string): string => {
   const tempDiv = document.createElement('div');
-  const normalized = (html || '')
-    .replace(new RegExp('<br\\s*/?>', 'gi'), '\n')
-    .replace(new RegExp('</p>', 'gi'), '\n')
-    .replace(new RegExp('</div>', 'gi'), '\n');
-  tempDiv.innerHTML = normalized;
-  return tempDiv.textContent || tempDiv.innerText || '';
+  tempDiv.innerHTML = html || '';
+
+  // Important: `innerText` on a detached element does NOT preserve the visual line breaks
+  // (e.g. <div> blocks from contentEditable), so we manually translate common break/block tags.
+  const isBlockTag = (tagName: string) => tagName === 'DIV' || tagName === 'P' || tagName === 'LI';
+
+  let out = '';
+
+  const ensureLeadingBreak = () => {
+    if (out !== '' && !out.endsWith('\n')) out += '\n';
+  };
+
+  const ensureTrailingBreak = () => {
+    if (!out.endsWith('\n')) out += '\n';
+  };
+
+  const walk = (node: Node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      out += node.textContent || '';
+      return;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    const el = node as HTMLElement;
+    const tag = el.tagName;
+
+    if (tag === 'BR') {
+      out += '\n';
+      return;
+    }
+
+    const isBlock = isBlockTag(tag);
+    if (isBlock) ensureLeadingBreak();
+
+    el.childNodes.forEach(walk);
+
+    if (isBlock) ensureTrailingBreak();
+  };
+
+  tempDiv.childNodes.forEach(walk);
+
+  return out.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n+$/, '');
 };
 
 
@@ -49,7 +86,7 @@ const htmlToTextWithNewlines = (html: string): string => {
 type Token = { kind: 'plain' | 'marker'; text: string };
 
 function buildMarkerTokens(raw: string): Token[] {
-  const sfxLoose = /[\[\uFF3B\u3010\u3014][^\]\uFF3D\u3011\u3015]+[\]\uFF3D\u3011\u3015]/g; // [..] 及全角括号
+  const sfxLoose = /\[[^\]]+\]/g; // 仅匹配半角 [..]
   const bgmLoose = /<\s*(?:(?:\?-|[\u266A\u266B])\s*-\s*)?[^<>]*?\s*>/g; // <...> 或 <?-...>
   const endLoose = /\/\/+\s*/g; // // 或 ///
 
@@ -125,13 +162,7 @@ function escapeAttr(s: string): string {
 
 function isSfxBracketMarker(text: string): boolean {
   if (!text || text.length < 2) return false;
-  const first = text[0];
-  const last = text[text.length - 1];
-  const fc = first.codePointAt(0) ?? 0;
-  const lc = last.codePointAt(0) ?? 0;
-  const openCodes = new Set<number>([['['.codePointAt(0)], 0xFF3B, 0x3010, 0x3014].filter(Boolean) as number[]);
-  const closeCodes = new Set<number>([[']'.codePointAt(0)], 0xFF3D, 0x3011, 0x3015].filter(Boolean) as number[]);
-  return openCodes.has(fc) && closeCodes.has(lc);
+  return text.startsWith('[') && text.endsWith(']');
 }
 
 function extractSfxLabel(text: string): string {
@@ -139,19 +170,7 @@ function extractSfxLabel(text: string): string {
 }
 
 function tokensToDisplayHtml(original: string): string {
-  const tokens = buildMarkerTokens(original || '');
-  const parts: string[] = [];
-  for (const t of tokens) {
-    if (t.kind === 'plain') {
-      parts.push(escapeHtml(t.text).replace(/\r?\n/g, '<br>'));
-    } else {
-      if (isSfxBracketMarker(t.text)) {
-        const label = extractSfxLabel(t.text);
-        parts.push(`<span class="sfx-orig" contenteditable="false" data-label="${escapeAttr(label)}"></span>`);
-      }
-    }
-  }
-  return parts.join('');
+  return escapeHtml(original || '').replace(/\r?\n/g, '<br>');
 }
 
 function ensureSfxDisplayStyle() {
@@ -258,45 +277,21 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
     setIsEditing(true);
     onFocusChange(line.id);
   };
+
+  const updateTextFromHtml = useCallback((html: string) => {
+    const newDisplayPlain = htmlToTextWithNewlines(html).replace(/\u200B/g, '');
+    if (newDisplayPlain !== line.text) onUpdateText(line.id, newDisplayPlain);
+  }, [line.id, line.text, onUpdateText]);
+
   const handleDivBlur = (e: React.FocusEvent<HTMLDivElement>) => {
     setIsEditing(false);
     onFocusChange(null);
-    const newDisplayPlain = htmlToTextWithNewlines(e.currentTarget.innerHTML).replace(/\u200B/g, ''); // Remove zero-width spaces
-    if (newDisplayPlain.trim() === '') onDelete(line.id);
-    else {
-      const merged = mergeEditedWithMarkers(line.text || '', newDisplayPlain);
-      if (merged !== line.text) onUpdateText(line.id, merged);
-    }
+
+    updateTextFromHtml(e.currentTarget.innerHTML);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    // 在同一文本框内分段：用 <br> 软换行，不拆分为两条记录
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) return;
-
-      const range = sel.getRangeAt(0);
-      range.deleteContents();
-
-      const br = document.createElement('br');
-      range.insertNode(br);
-
-      // Add a zero-width space to give the cursor a concrete position
-      // and prevent the view from jumping.
-      const zeroWidthSpace = document.createTextNode('\u200B');
-      range.setStartAfter(br);
-      range.collapse(true);
-      range.insertNode(zeroWidthSpace);
-      
-      // Position the selection after the zero-width space
-      range.setStartAfter(zeroWidthSpace);
-      range.collapse(true);
-
-      sel.removeAllRanges();
-      sel.addRange(range);
-    }
+  const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
+    updateTextFromHtml((e.target as HTMLDivElement).innerHTML);
   };
 
   // Prevent re-renders from wiping user-typed text while editing
@@ -386,7 +381,7 @@ const ScriptLineItem: React.FC<ScriptLineItemProps> = ({
             suppressContentEditableWarning
             onFocus={handleDivFocus}
             onBlur={handleDivBlur}
-            onKeyDown={handleKeyDown}
+            onInput={handleInput}
             className={contentEditableClasses}
             style={contentEditableStyle}
             aria-label={`脚本行文本: ${line.text.substring(0,50)}... ${character ? `角色: ${character.name}` : '未分配角色'}`}

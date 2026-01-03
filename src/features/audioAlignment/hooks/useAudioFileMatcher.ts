@@ -16,22 +16,29 @@ interface UseAudioFileMatcherProps {
 }
 
 const parseChapterIdentifier = (identifier: string): number[] => {
-    if (identifier.includes('-')) {
-        const parts = identifier.split('-').map(p => parseInt(p, 10));
-        if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-            const [start, end] = parts;
-            const range = [];
-            for (let i = start; i <= end; i++) {
-                range.push(i);
-            }
-            return range;
+    // 只看章节数字，忽略“章/集/回/话”等单位和分段后缀 (1)(2)/（上）（下）
+    // 兼容示例：
+    // - "3"、"第3章 标题"、"第003集 标题 (1)" → 3
+    // - "3-5"、"第003-005集 批量" → [3,4,5]
+    const trimmed = identifier.trim();
+
+    // 先识别范围
+    const rangeMatch = trimmed.match(/(\d+)\s*[-~]\s*(\d+)/);
+    if (rangeMatch) {
+        const start = parseInt(rangeMatch[1], 10);
+        const end = parseInt(rangeMatch[2], 10);
+        if (!isNaN(start) && !isNaN(end) && start <= end) {
+            const out: number[] = [];
+            for (let i = start; i <= end; i++) out.push(i);
+            return out;
         }
     }
-    const num = parseInt(identifier, 10);
-    if (!isNaN(num)) {
-        return [num];
-    }
-    return [];
+
+    // 取第一个数字块作为章节号，忽略后续分段数字
+    const firstNum = trimmed.match(/\d+/);
+    if (!firstNum) return [];
+    const num = parseInt(firstNum[0], 10);
+    return isNaN(num) ? [] : [num];
 };
 
 // 解析Adobe Audition XMP格式的CuePoint标记

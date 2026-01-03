@@ -3,7 +3,7 @@
 // This was likely due to a module resolution or type inference issue with class extension.
 // Switched to the direct instantiation pattern with casting, which is a robust alternative.
 import Dexie, { type Table } from 'dexie';
-import { Project, Character, MergeHistoryEntry, AudioBlob, AudioAssistantState, DirectoryHandleEntry, MasterAudio, AudioMarkerSet, VoiceLibraryPrompt, SoundLibraryItem, PostProductionTimeline } from './types';
+import { Project, Character, MergeHistoryEntry, AudioBlob, AudioAssistantState, DirectoryHandleEntry, MasterAudio, AudioMarkerSet, VoiceLibraryPrompt, SoundLibraryItem, PostProductionTimeline, RoleLibraryRole, RoleLibrarySample } from './types';
 // Fix: Import from types.ts to break circular dependency with App.tsx -> useStore.ts -> db.ts cycle
 import { CVStylesMap } from './types';
 
@@ -26,6 +26,8 @@ interface IAudioCreatorDB {
   voiceLibraryPrompts: Table<VoiceLibraryPrompt, string>;
   soundLibrary: Table<SoundLibraryItem, number>;
   postProductionTimelines: Table<PostProductionTimeline, string>;
+  roleLibraryRoles: Table<RoleLibraryRole, string>;
+  roleLibrarySamples: Table<RoleLibrarySample, number>;
 }
 
 // 2. Create and cast an instance of Dexie. This ensures the `db` object
@@ -107,6 +109,23 @@ db.version(8).stores({
   voiceLibraryPrompts: 'id, projectId, originalLineId',
   soundLibrary: '++id, name, category, *tags', // id auto-increment, name, category and tags can be indexed
   postProductionTimelines: 'projectId', // projectId as primary key
+});
+
+// v9: role library for Voice Library auto prompt matching
+db.version(9).stores({
+  projects: 'id, lastModified',
+  characters: 'id, projectId',
+  misc: 'key',
+  audioBlobs: 'id, lineId, sourceAudioId',
+  masterAudios: 'id',
+  audioMarkers: 'sourceAudioId',
+  assistantState: 'projectId',
+  directoryHandles: 'projectId',
+  voiceLibraryPrompts: 'id, projectId, originalLineId',
+  soundLibrary: '++id, name, category, *tags',
+  postProductionTimelines: 'projectId',
+  roleLibraryRoles: 'name', // role folder name
+  roleLibrarySamples: '++id, roleName, relativePath, fileName',
 });
 
 

@@ -5,6 +5,7 @@ import CharacterListHeaderControls from './CharacterListHeaderControls';
 import CharacterListItemView from './CharacterListItemView'; 
 import { useStore } from '../../../../store/useStore'; 
 import MergeCharactersModal from '../editor_page_modal/MergeCharactersModal';
+import { normalizeCharacterNameKey } from '../../../../lib/characterName';
 
 interface ControlsAndCharactersPanelProps {
   onDeleteCharacter: (characterId: string) => void; 
@@ -30,22 +31,16 @@ export const ControlsAndCharactersPanel: React.FC<ControlsAndCharactersPanelProp
   const mergeCharactersAction = useStore(state => state.mergeCharacters);
   const undoLastMergeAction = useStore(state => state.undoLastMerge);
   const deleteCharactersAction = useStore(state => state.deleteCharacters);
+  const cleanupDuplicateCharactersInProject = useStore(state => state.cleanupDuplicateCharactersInProject);
   const openConfirmModal = useStore(state => state.openConfirmModal);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCharacterIdsForMerge, setSelectedCharacterIdsForMerge] = useState<string[]>([]);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
 
   const charactersToDisplay = useMemo(() => {
-    let relevantChars = storeCharacters.filter(c => (!c.projectId || c.projectId === currentProject?.id) && c.status !== 'merged');
-    const uniqueCharsMap = new Map<string, Character>();
-    relevantChars.forEach(char => {
-        const lowerCaseName = char.name.toLowerCase();
-        const existingChar = uniqueCharsMap.get(lowerCaseName);
-        if (!existingChar || (char.projectId && !existingChar.projectId)) {
-            uniqueCharsMap.set(lowerCaseName, char);
-        }
-    });
-    let uniqueChars = Array.from(uniqueCharsMap.values());
+    // Important: do NOT dedupe by name here.
+    // Duplicates (same name but different ids) must remain visible so users can merge/fix them.
+    let uniqueChars = storeCharacters.filter(c => (!c.projectId || c.projectId === currentProject?.id) && c.status !== 'merged');
     
     if (characterFilterMode === 'currentChapter' && currentProject && selectedChapterId) {
       const chapter = currentProject.chapters.find(ch => ch.id === selectedChapterId);
@@ -60,6 +55,16 @@ export const ControlsAndCharactersPanel: React.FC<ControlsAndCharactersPanelProp
             (char.cvName && char.cvName.toLowerCase().includes(lowercasedSearchTerm))
         );
     }
+
+    // Sort: keep project-scoped roles before global templates for the same name
+    uniqueChars = uniqueChars.sort((a, b) => {
+      const nameCmp = a.name.localeCompare(b.name, 'zh-Hans-CN');
+      if (nameCmp !== 0) return nameCmp;
+      const aIsProject = !!a.projectId;
+      const bIsProject = !!b.projectId;
+      if (aIsProject !== bIsProject) return aIsProject ? -1 : 1;
+      return a.id.localeCompare(b.id);
+    });
     return uniqueChars;
   }, [storeCharacters, characterFilterMode, currentProject, selectedChapterId, searchTerm]);
 
@@ -109,13 +114,52 @@ export const ControlsAndCharactersPanel: React.FC<ControlsAndCharactersPanelProp
     }
     openConfirmModal(
         `批量删除角色确认`,
-        `您确定要删除选中的 ${selectedCharacterIdsForMerge.length} 个角色吗？\n所有项目中引用这些角色的台词行，其角色将被重置为“未分配”。此操作无法撤销。`,
+        `您确定要删除选中的 ${selectedCharacterIdsForMerge.length} 个角色吗？\n所有项目中引用这些角色的台词行，其角色将被重置为“待识别角色”。此操作无法撤销。`,
         () => {
             deleteCharactersAction(selectedCharacterIdsForMerge);
             setSelectedCharacterIdsForMerge([]);
         },
         "确认删除",
         "取消"
+    );
+  };
+
+  const handleCleanupDuplicateCharacters = () => {
+    if (!currentProject) return;
+
+    const projectChars = storeCharacters.filter(
+      c => c.projectId === currentProject.id && c.status !== 'merged'
+    );
+
+    const groups = new Map<string, Character[]>();
+    for (const c of projectChars) {
+      const key = normalizeCharacterNameKey(c.name);
+      const arr = groups.get(key);
+      if (arr) arr.push(c);
+      else groups.set(key, [c]);
+    }
+
+    const duplicateGroups = Array.from(groups.values()).filter(arr => arr.length > 1);
+    const extraCount = duplicateGroups.reduce((sum, arr) => sum + (arr.length - 1), 0);
+    if (extraCount === 0) {
+      alert('当前项目没有重复角色。');
+      return;
+    }
+
+    openConfirmModal(
+      '清理重复角色（不可撤销）',
+      `将在“${currentProject.name}”中删除 ${extraCount} 个重复角色（共 ${duplicateGroups.length} 组同名）。\n` +
+        `所有引用这些重复角色的台词将自动改为保留的那一个角色。\n` +
+        `此操作不可撤销，建议先导出同步文件做备份。`,
+      () => {
+        void (async () => {
+          const res = await cleanupDuplicateCharactersInProject(currentProject.id);
+          setSelectedCharacterIdsForMerge([]);
+          alert(`清理完成：删除 ${res.deletedCharacters} 个重复角色，修正 ${res.updatedLines} 行台词（${res.groups} 组）。`);
+        })();
+      },
+      '确认清理',
+      '取消',
     );
   };
 
@@ -127,6 +171,7 @@ export const ControlsAndCharactersPanel: React.FC<ControlsAndCharactersPanelProp
         onAddNewCharacter={handleAddNewCharacterClick} 
         selectedCharacterIdsForMerge={selectedCharacterIdsForMerge}
         onMergeSelectedCharacters={handleOpenMergeModal}
+        onCleanupDuplicateCharacters={handleCleanupDuplicateCharacters}
         canUndoMerge={mergeHistory.length > 0}
         onUndoLastMerge={handleUndoLastMerge}
         onBatchDeleteCharacters={handleBatchDeleteCharacters}

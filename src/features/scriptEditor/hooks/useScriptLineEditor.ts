@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { Project, Character, ScriptLine } from '../../../types';
+import { normalizeCharacterNameKey } from '../../../lib/characterName';
 
 export const useScriptLineEditor = (
   currentProject: Project | null,
@@ -24,13 +25,31 @@ export const useScriptLineEditor = (
   }, [applyUndoableProjectUpdate]);
 
   const handleUpdateScriptLineText = useCallback((chapterId: string, lineId: string, newText: string) => {
+    // 清空后自动删除整行，避免留下空白台词框
+    const sanitized = (newText || '').replace(/\u200B/g, '');
+    if (sanitized.trim() === '') {
+      applyUndoableProjectUpdate(prevProject => ({
+        ...prevProject,
+        chapters: prevProject.chapters.map(ch => {
+          if (ch.id === chapterId) {
+            return {
+              ...ch,
+              scriptLines: ch.scriptLines.filter(l => l.id !== lineId)
+            };
+          }
+          return ch;
+        })
+      }));
+      return;
+    }
+
     updateLineInProject(chapterId, lineId, line => ({
       ...line,
-      text: newText,
+      text: sanitized,
       isTextModifiedManual: true,
-      isAiAudioSynced: line.text === newText,
+      isAiAudioSynced: line.text === sanitized,
     }));
-  }, [updateLineInProject]);
+  }, [applyUndoableProjectUpdate, updateLineInProject]);
 
   const handleUpdateSoundType = useCallback((chapterId: string, lineId: string, newSoundType: string) => {
     updateLineInProject(chapterId, lineId, line => ({
@@ -40,9 +59,23 @@ export const useScriptLineEditor = (
   }, [updateLineInProject]);
 
   const handleAssignCharacterToLine = useCallback((chapterId: string, lineId: string, newCharacterId: string) => {
-    const narratorCharacter = characters.find(c => c.name === 'Narrator');
-    const sfxCharIds = characters.filter(c => c.name === '音效' || c.name === '[音效]' || (c.name || '').toLowerCase() === 'sfx').map(c => c.id);
-    const newCharacter = characters.find(c => c.id === newCharacterId);
+    const narratorCharacter = characters.find(c => normalizeCharacterNameKey(c.name) === normalizeCharacterNameKey('Narrator'));
+    const unknownCharacter = characters.find(
+      c =>
+        normalizeCharacterNameKey(c.name) === normalizeCharacterNameKey('待识别角色') &&
+        !!c.projectId &&
+        c.projectId === currentProject?.id
+    );
+    const sfxCharIds = characters
+      .filter(c => {
+        const k = normalizeCharacterNameKey(c.name);
+        return k === '音效' || k === '[音效]' || k === 'sfx';
+      })
+      .map(c => c.id);
+    // 保证永远不会写入“未分配”：空字符串视为“待识别角色”
+    const normalizedCharacterId =
+      newCharacterId === '' ? (unknownCharacter?.id || narratorCharacter?.id || '') : newCharacterId;
+    const newCharacter = characters.find(c => c.id === normalizedCharacterId);
 
     if (!currentProject) return;
 
@@ -58,14 +91,14 @@ export const useScriptLineEditor = (
         const currentLine = chapter.scriptLines[lineIndex];
         const originalCharacter = characters.find(c => c.id === currentLine.characterId);
         // [音效]/[静音]：保留原文引号形态（不自动添加/不移除）。
-        const isChangingToNarrator = newCharacterId === '' || newCharacterId === narratorCharacter?.id;
+        const isChangingToNarrator = normalizedCharacterId === narratorCharacter?.id;
 
         if (isChangingToNarrator) {
             const isOriginallyCharacter = originalCharacter && originalCharacter.name !== 'Narrator';
             // Only apply special logic if changing from a character TO a narrator
             if (!isOriginallyCharacter) {
                 const newScriptLines = [...chapter.scriptLines];
-                newScriptLines[lineIndex] = { ...currentLine, characterId: newCharacterId };
+                newScriptLines[lineIndex] = { ...currentLine, characterId: normalizedCharacterId };
                 chapter.scriptLines = newScriptLines;
                 project.chapters[chapterIndex] = chapter;
                 return project;
@@ -115,7 +148,7 @@ export const useScriptLineEditor = (
                 const mergedLine: ScriptLine = {
                     ...chapter.scriptLines[firstIndex],
                     text: combinedText,
-                    characterId: newCharacterId,
+                    characterId: normalizedCharacterId,
                 };
 
                 const lineIdsToRemove = new Set(linesToProcess.map(l => l.id));
@@ -128,7 +161,7 @@ export const useScriptLineEditor = (
             } else {
                 // No merge, just update the single line's text and character
                 const newScriptLines = [...chapter.scriptLines];
-                newScriptLines[lineIndex] = { ...currentLine, text: textToMerge, characterId: newCharacterId };
+                newScriptLines[lineIndex] = { ...currentLine, text: textToMerge, characterId: normalizedCharacterId };
                 chapter.scriptLines = newScriptLines;
                 project.chapters[chapterIndex] = chapter;
                 return project;
@@ -141,7 +174,7 @@ export const useScriptLineEditor = (
             const isOriginallyNarrator = !originalCharacter || originalCharacter.id === narratorCharacter?.id;
             const __nameCheck = (newCharacter?.name || '').replace(/[\[\]()]/g, '').trim().toLowerCase();
             const __isSfx = __nameCheck === '音效' || __nameCheck === 'sfx';
-            const isNewCharSfx = __isSfx || sfxCharIds.includes(newCharacterId);
+            const isNewCharSfx = __isSfx || sfxCharIds.includes(normalizedCharacterId);
             
             if (isOriginallyNarrator && !isNewCharSfx) {
                 const trimmedText = newText.trim();
@@ -160,7 +193,7 @@ export const useScriptLineEditor = (
             }
             
             const newScriptLines = [...chapter.scriptLines];
-            newScriptLines[lineIndex] = { ...currentLine, text: newText, characterId: newCharacterId };
+            newScriptLines[lineIndex] = { ...currentLine, text: newText, characterId: normalizedCharacterId };
             chapter.scriptLines = newScriptLines;
             project.chapters[chapterIndex] = chapter;
             return project;
@@ -261,6 +294,50 @@ export const useScriptLineEditor = (
     });
   }, [applyUndoableProjectUpdate]);
 
+  const handleMergeAllAdjacentSameCharacterLines = useCallback((chapterId: string) => {
+    if (!currentProject) return;
+    const chapter = currentProject.chapters.find(ch => ch.id === chapterId);
+    const lines = chapter?.scriptLines || [];
+    if (lines.length < 2) return;
+
+    let hasAnyAdjacentSameCharacter = false;
+    for (let i = 1; i < lines.length; i++) {
+      const prev = lines[i - 1]?.characterId;
+      const cur = lines[i]?.characterId;
+      if (cur && prev && cur === prev) {
+        hasAnyAdjacentSameCharacter = true;
+        break;
+      }
+    }
+    if (!hasAnyAdjacentSameCharacter) return;
+
+    applyUndoableProjectUpdate(prevProject => {
+      const chapterIndex = prevProject.chapters.findIndex(ch => ch.id === chapterId);
+      if (chapterIndex === -1) return prevProject;
+
+      const targetChapter = prevProject.chapters[chapterIndex];
+      if (!targetChapter.scriptLines || targetChapter.scriptLines.length < 2) return prevProject;
+
+      const mergedLines: ScriptLine[] = [];
+      for (const line of targetChapter.scriptLines) {
+        const prevLine = mergedLines[mergedLines.length - 1];
+        if (line.characterId && prevLine?.characterId && line.characterId === prevLine.characterId) {
+          mergedLines[mergedLines.length - 1] = {
+            ...prevLine,
+            text: `${prevLine.text}\n${line.text}`,
+          };
+        } else {
+          mergedLines.push(line);
+        }
+      }
+
+      const updatedChapter = { ...targetChapter, scriptLines: mergedLines };
+      const newChapters = [...prevProject.chapters];
+      newChapters[chapterIndex] = updatedChapter;
+      return { ...prevProject, chapters: newChapters };
+    });
+  }, [applyUndoableProjectUpdate, currentProject]);
+
   const handleDeleteScriptLine = useCallback((chapterId: string, lineId: string) => {
     applyUndoableProjectUpdate(prevProject => ({
       ...prevProject,
@@ -310,6 +387,7 @@ export const useScriptLineEditor = (
     handleAssignCharacterToLine,
     handleSplitScriptLine,
     handleMergeAdjacentLines,
+    handleMergeAllAdjacentSameCharacterLines,
     handleDeleteScriptLine,
     handleUpdateSoundType,
     handleMoveScriptLine,

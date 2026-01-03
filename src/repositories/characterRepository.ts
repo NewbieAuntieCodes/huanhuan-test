@@ -9,11 +9,13 @@
 
 import { db } from '../db';
 import { Character } from '../types';
+import { normalizeCharacterNameKey, sanitizeCharacterDisplayName } from '../lib/characterName';
 
 /**
  * 创建角色的输入类型
  */
 export interface CreateCharacterInput {
+  id?: string;
   name: string;
   projectId: string;
   color: string;
@@ -78,13 +80,14 @@ export class CharacterRepository {
    */
   async findByNameAndProject(name: string, projectId: string): Promise<Character | undefined> {
     try {
+      const key = normalizeCharacterNameKey(name);
       const characters = await db.characters
         .where('projectId')
         .equals(projectId)
         .toArray();
 
       return characters.find(
-        c => c.name.toLowerCase() === name.toLowerCase() && c.status !== 'merged'
+        c => normalizeCharacterNameKey(c.name) === key && c.status !== 'merged'
       );
     } catch (error) {
       console.error(`❌ [CharacterRepository] 查找角色失败:`, error);
@@ -104,9 +107,10 @@ export class CharacterRepository {
         return existing;
       }
 
+      const displayName = sanitizeCharacterDisplayName(input.name);
       const character: Character = {
-        id: `${Date.now()}_char_${Math.random().toString(36).substr(2, 9)}`,
-        name: input.name,
+        id: input.id || `${Date.now()}_char_${Math.random().toString(36).substr(2, 9)}`,
+        name: displayName,
         projectId: input.projectId,
         color: input.color,
         textColor: input.textColor || '',

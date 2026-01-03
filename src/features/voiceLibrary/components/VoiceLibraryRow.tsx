@@ -13,10 +13,15 @@ import GeneratedAudioPlayer from './GeneratedAudioPlayer';
 import { VoiceLibraryRowState } from '../hooks/useVoiceLibraryData';
 import { Character } from '../../../types';
 import { isHexColor, getContrastingTextColor } from '../../../lib/colorUtils';
+import ReferenceRoleCell from './ReferenceRoleCell';
 
 interface VoiceLibraryRowProps {
   row: VoiceLibraryRowState;
   character: Character | null;
+  referenceRoleNames: string[];
+  selectedReferenceRole: string;
+  isReferenceRoleDisabled: boolean;
+  onReferenceRoleChange: (roleName: string) => void;
   isBatchGenerating: boolean;
   onTextChange: (text: string) => void;
   onFileUpload: (file: File) => void;
@@ -34,6 +39,10 @@ interface VoiceLibraryRowProps {
 const VoiceLibraryRow: React.FC<VoiceLibraryRowProps> = ({
   row,
   character,
+  referenceRoleNames,
+  selectedReferenceRole,
+  isReferenceRoleDisabled,
+  onReferenceRoleChange,
   isBatchGenerating,
   onTextChange,
   onFileUpload,
@@ -242,8 +251,16 @@ const VoiceLibraryRow: React.FC<VoiceLibraryRowProps> = ({
             <span className="font-semibold">参考音频:</span> {row.promptFileName}
           </p>
         )}
-        <div className="grid grid-cols-[1fr_120px_1fr_1fr_auto] items-start gap-x-4">
-          {/* Column 1: Reference Audio */}
+        <div className="grid grid-cols-[160px_1fr_120px_1fr_1fr_auto] items-start gap-x-4">
+          {/* Column 1: Reference Role */}
+          <ReferenceRoleCell
+            roleNames={referenceRoleNames}
+            value={selectedReferenceRole}
+            disabled={isReferenceRoleDisabled}
+            onChange={onReferenceRoleChange}
+          />
+
+          {/* Column 2: Reference Audio */}
           <div
             className={dropzoneClasses}
             onDragEnter={handleDragEnter}
@@ -295,7 +312,7 @@ const VoiceLibraryRow: React.FC<VoiceLibraryRowProps> = ({
             )}
           </div>
 
-          {/* Column 2: Emotion（只显示输入框，标题在表头） */}
+          {/* Column 3: Emotion（只显示输入框，标题在表头） */}
           <div className="flex items-start justify-start px-1 pt-1">
             <input
               value={emotionText}
@@ -307,7 +324,7 @@ const VoiceLibraryRow: React.FC<VoiceLibraryRowProps> = ({
             />
           </div>
 
-          {/* Column 3: Text */}
+          {/* Column 4: Text */}
           <div className="h-full flex items-stretch">
             <textarea
               ref={textAreaRef}
@@ -327,7 +344,7 @@ const VoiceLibraryRow: React.FC<VoiceLibraryRowProps> = ({
             />
           </div>
 
-          {/* Column 4: Generated Result + Generate Button */}
+          {/* Column 5: Generated Result + Generate Button */}
           <div className="flex items-center gap-3">
             <button
               onClick={onGenerateSingle}
@@ -356,7 +373,7 @@ const VoiceLibraryRow: React.FC<VoiceLibraryRowProps> = ({
             </div>
           </div>
 
-          {/* Column 5: Remove Button */}
+          {/* Column 6: Remove Button */}
           <div className="flex items-center h-full">
             <button
               onClick={onRemove}

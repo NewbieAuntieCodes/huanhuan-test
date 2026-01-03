@@ -103,6 +103,8 @@ export interface Project {
   silenceSettings?: SilenceSettings;
   postProductionTimeline?: PostProductionTimeline;
   textMarkers?: TextMarker[];
+  // Voice Library: default reference role mapping per Character
+  referenceRoleByCharacterId?: Record<string, string>;
 }
 
 // For Gemini service response parsing
@@ -142,6 +144,23 @@ export interface VoiceLibraryPrompt {
   createdAt: number;
 }
 
+// Voice Role Library: local reference roles + samples for Voice Library auto-matching
+export interface RoleLibraryRole {
+  name: string; // role folder name
+  handle: FileSystemDirectoryHandle;
+  updatedAt: number;
+}
+
+export interface RoleLibrarySample {
+  id?: number;
+  roleName: string;
+  relativePath: string; // path within role folder, includes filename
+  fileName: string;
+  handle: FileSystemFileHandle;
+  duration: number;
+  tags?: string[];
+}
+
 
 // For Editor Page UI State
 export type CharacterFilterMode = 'currentChapter' | 'all';
@@ -160,7 +179,7 @@ export interface MergeHistoryEntry {
 }
 
 // Fix: Moved from App.tsx to break circular dependencies
-export type AppView = "upload" | "dashboard" | "editor" | "audioAlignment" | "cvManagement" | "voiceLibrary" | "audioAlignmentAssistant" | "postProduction";
+export type AppView = "upload" | "dashboard" | "editor" | "audioAlignment" | "cvManagement" | "voiceLibrary" | "audioAlignmentAssistant" | "postProduction" | "tools";
 
 export interface CVStyle {
   bgColor: string;

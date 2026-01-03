@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Project, PresetColor } from '../../types';
 import BookCard from './components/BookCard';
 import { BookOpenIcon, UploadIcon, PaletteIcon, XMarkIcon, SaveIcon, ArrowPathIcon } from '../../components/ui/icons';
@@ -7,6 +7,11 @@ import CollaboratorModal from './components/CollaboratorModal';
 import { isHexColor, getContrastingTextColor } from '../../lib/colorUtils';
 import { tailwindToHex } from '../../lib/tailwindColorMap';
 import { internalParseScriptToChapters } from '../../lib/scriptParser';
+import { parseChaptersPatchJson } from '../scriptEditor/services/chaptersPatch';
+import type { ChaptersPatchV1 } from '../scriptEditor/services/chaptersPatch';
+import type { Character, ScriptLine } from '../../types';
+import { characterRepository } from '../../repositories';
+import { normalizeCharacterNameKey } from '../../lib/characterName';
 
 // --- In-file Component: Editable Preset Color Item --- //
 const EditablePresetColor: React.FC<{
@@ -189,6 +194,9 @@ const DashboardPage: React.FC = () => {
   
   const [projectToManage, setProjectToManage] = useState<Project | null>(null);
   const [isColorPresetModalOpen, setIsColorPresetModalOpen] = useState(false);
+  const importProjectInputRef = useRef<HTMLInputElement>(null);
+
+  const addCharacter = useStore(state => state.addCharacter);
 
   const handleOpenCollaboratorsModal = (projectId: string) => {
     const project = projects.find(p => p.id === projectId);
@@ -255,11 +263,253 @@ const DashboardPage: React.FC = () => {
     }
   }, [projects, appendChaptersToProject]);
 
+  const ensureLineBooleans = (line: Partial<ScriptLine>): ScriptLine => {
+    return {
+      id: String(line.id || `line_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`),
+      text: String(line.text || ''),
+      originalText: line.originalText,
+      characterId: line.characterId,
+      audioBlobId: undefined,
+      isAiAudioLoading: false,
+      isAiAudioSynced: false,
+      isTextModifiedManual: Boolean(line.isTextModifiedManual),
+      soundType: line.soundType,
+      emotion: line.emotion,
+      isMarkedForReturn: line.isMarkedForReturn,
+      feedback: line.feedback,
+      postSilence: line.postSilence,
+      ignoredSoundKeywords: line.ignoredSoundKeywords,
+      pinnedSounds: line.pinnedSounds,
+    };
+  };
+
+  const upsertCharactersFromPatch = async (projectId: string, patch: ChaptersPatchV1) => {
+    const state = useStore.getState();
+    const normalizeName = (name: string) => normalizeCharacterNameKey(name);
+
+    const projectChars = state.characters.filter((c) => c.projectId === projectId && c.status !== 'merged');
+    const byName = new Map<string, Character>();
+    projectChars.forEach((c) => byName.set(normalizeName(c.name), c));
+
+    const updatedExisting: Character[] = [];
+
+    // 1) Upsert characters included in patch metadata (preserve colors/description)
+    for (const meta of patch.characters) {
+      const key = normalizeName(meta.name);
+      const existing = byName.get(key);
+      if (existing) {
+        const next: Character = {
+          ...existing,
+          color: meta.color,
+          textColor: meta.textColor,
+          cvName: meta.cvName,
+          description: meta.description,
+          isStyleLockedToCv: meta.isStyleLockedToCv ?? existing.isStyleLockedToCv,
+        };
+        updatedExisting.push(next);
+        byName.set(key, next);
+      } else {
+        const created = addCharacter(
+          {
+            name: meta.name,
+            color: meta.color,
+            textColor: meta.textColor,
+            cvName: meta.cvName,
+            description: meta.description,
+            isStyleLockedToCv: meta.isStyleLockedToCv,
+          },
+          projectId,
+        );
+        byName.set(key, created);
+      }
+    }
+
+    // 2) Ensure any characterName referenced by lines exists (fallback)
+    const neededNames = new Set<string>();
+    patch.chapters.forEach((ch) =>
+      ch.scriptLines.forEach((l) => {
+        const name = (l.characterName || '').trim();
+        if (name) neededNames.add(name);
+      }),
+    );
+
+    for (const name of neededNames) {
+      const key = normalizeName(name);
+      if (byName.has(key)) continue;
+      const created = addCharacter(
+        {
+          name,
+          color: 'bg-slate-600',
+          textColor: 'text-slate-100',
+          cvName: '',
+          description: '',
+          isStyleLockedToCv: false,
+        },
+        projectId,
+      );
+      byName.set(key, created);
+    }
+
+    if (updatedExisting.length > 0) {
+      await characterRepository.bulkUpdate(updatedExisting);
+      // Update Zustand state for existing character updates
+      const updatedIds = new Set(updatedExisting.map((c) => c.id));
+      useStore.setState((prev) => ({
+        characters: prev.characters.map((c) => (updatedIds.has(c.id) ? updatedExisting.find((u) => u.id === c.id)! : c)),
+      }));
+    }
+
+    return byName;
+  };
+
+  const applyPatchToProject = async (targetProjectId: string, patch: ChaptersPatchV1) => {
+    const state = useStore.getState();
+    const existing = state.projects.find((p) => p.id === targetProjectId);
+
+    // Ensure project exists (create with same projectId so "同一个项目"成立)
+    if (!existing) {
+      const newProject: Project = {
+        id: targetProjectId,
+        name: patch.source.projectName || '导入项目',
+        chapters: [],
+        status: 'in-progress',
+        mainCategory: '',
+        subCategory: '',
+        lastModified: Date.now(),
+        cvStyles: patch.projectMeta?.cvStyles || {},
+        customSoundTypes: patch.projectMeta?.customSoundTypes || [],
+      };
+      await useStore.getState().addProject(newProject);
+    }
+
+    const afterCreateState = useStore.getState();
+    const project = afterCreateState.projects.find((p) => p.id === targetProjectId);
+    if (!project) throw new Error('创建/定位项目失败');
+
+    // Ensure/Upsert characters first, then map lines to characterId
+    const charByName = await upsertCharactersFromPatch(targetProjectId, patch);
+    const normalizeName = (name: string) => normalizeCharacterNameKey(name);
+    const unknownId =
+      charByName.get(normalizeName('待识别角色'))?.id ||
+      charByName.get(normalizeName('narrator'))?.id ||
+      '';
+
+    const incomingChapters = patch.chapters.map((incoming) => {
+      const mappedLines: ScriptLine[] = (incoming.scriptLines || []).map((ls) => {
+        const name = (ls.characterName || '').trim();
+        const mappedCharId = name ? charByName.get(normalizeName(name))?.id : unknownId;
+        const base: Partial<ScriptLine> = {
+          id: ls.id,
+          text: ls.text,
+          originalText: ls.originalText,
+          characterId: mappedCharId,
+          soundType: ls.soundType,
+          emotion: ls.emotion,
+          isTextModifiedManual: ls.isTextModifiedManual,
+          isMarkedForReturn: ls.isMarkedForReturn,
+          feedback: ls.feedback,
+          postSilence: ls.postSilence,
+          ignoredSoundKeywords: ls.ignoredSoundKeywords,
+          pinnedSounds: ls.pinnedSounds,
+        };
+        return ensureLineBooleans(base);
+      });
+
+      return {
+        id: incoming.id,
+        title: incoming.title,
+        rawContent: (incoming.rawContent || '').trim() ? incoming.rawContent : mappedLines.map((l) => l.text).join('\n'),
+        scriptLines: mappedLines,
+      };
+    });
+
+    const existingChapterIds = new Set(project.chapters.map((c) => c.id));
+    const duplicates = incomingChapters.filter((ch) => existingChapterIds.has(ch.id));
+
+    const doMerge = async (replaceDuplicates: boolean) => {
+      const chaptersToReplace = new Map<string, typeof incomingChapters[number]>();
+      const chaptersToAppend: typeof incomingChapters = [];
+
+      for (const ch of incomingChapters) {
+        if (existingChapterIds.has(ch.id)) {
+          if (replaceDuplicates) chaptersToReplace.set(ch.id, ch);
+        } else {
+          chaptersToAppend.push(ch);
+        }
+      }
+
+      const nextProject: Project = {
+        ...project,
+        // Only set meta if current project is missing them; avoid surprising overwrites
+        cvStyles: Object.keys(project.cvStyles || {}).length > 0 ? project.cvStyles : patch.projectMeta?.cvStyles || project.cvStyles,
+        customSoundTypes:
+          (project.customSoundTypes && project.customSoundTypes.length > 0)
+            ? project.customSoundTypes
+            : patch.projectMeta?.customSoundTypes || project.customSoundTypes,
+        chapters: [...project.chapters.map((c) => chaptersToReplace.get(c.id) || c), ...chaptersToAppend],
+        lastModified: Date.now(),
+      };
+
+      await useStore.getState().updateProject(nextProject);
+      useStore.getState().setSelectedProjectId(targetProjectId);
+      alert(`导入完成：新增 ${chaptersToAppend.length} 章，替换 ${chaptersToReplace.size} 章。`);
+    };
+
+    if (duplicates.length > 0) {
+      openConfirmModal(
+        '发现重复章节',
+        `有 ${duplicates.length} 个章节ID已存在。选择“覆盖”会用导入内容替换这些章节；选择“跳过”则仅追加新章节。`,
+        () => void doMerge(true),
+        '覆盖重复',
+        '跳过重复',
+        () => void doMerge(false),
+      );
+      return;
+    }
+
+    await doMerge(false);
+  };
+
+  const handleImportSyncFile = async (file: File) => {
+    let patch: ChaptersPatchV1;
+    try {
+      patch = parseChaptersPatchJson(await file.text());
+    } catch (e) {
+      alert(`导入失败：${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+
+    const targetProjectId = patch.source.projectId;
+    const state = useStore.getState();
+    const existing = state.projects.find((p) => p.id === targetProjectId);
+
+    if (existing) {
+      openConfirmModal(
+        '导入到现有项目',
+        `检测到本机已有同ID项目：“${existing.name}”。确认后将把补丁章节合并进去。`,
+        () => void applyPatchToProject(targetProjectId, patch),
+        '继续导入',
+        '取消',
+      );
+      return;
+    }
+
+    await applyPatchToProject(targetProjectId, patch);
+  };
+
   return (
     <div className="p-4 md:p-6 bg-slate-900 h-full overflow-y-auto">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl md:text-3xl font-bold text-sky-400">我的项目</h1>
         <div className="flex items-center space-x-3">
+            <button
+              onClick={() => importProjectInputRef.current?.click()}
+              className="flex items-center px-4 py-2 bg-sky-700 hover:bg-sky-800 text-white font-semibold rounded-md text-sm transition-colors"
+              aria-label="导入同步文件"
+              title="导入章节补丁 JSON；若本机没有该项目，会自动创建同 projectId 的项目"
+            >
+              <ArrowPathIcon className="w-4 h-4 mr-2" /> 导入同步
+            </button>
             <button
               onClick={() => setIsColorPresetModalOpen(true)}
               className="flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-md text-sm transition-colors"
@@ -274,6 +524,17 @@ const DashboardPage: React.FC = () => {
             >
               <UploadIcon className="w-4 h-4 mr-2" /> 上传新书
             </button>
+            <input
+              ref={importProjectInputRef}
+              type="file"
+              accept="application/json"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void handleImportSyncFile(f);
+                e.currentTarget.value = '';
+              }}
+            />
         </div>
       </div>
 

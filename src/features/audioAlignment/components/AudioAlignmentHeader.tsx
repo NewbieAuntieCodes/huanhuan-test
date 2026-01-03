@@ -8,6 +8,7 @@ import {
   SpeakerXMarkIcon,
   CogIcon,
   MicrophoneIcon,
+  SparklesIcon,
   CheckCircleIcon,
   XMarkIcon,
   ArrowDownOnSquareIcon,
@@ -47,9 +48,13 @@ interface AudioAlignmentHeaderProps {
   onFileSelectionForChapterMatch: (e: React.ChangeEvent<HTMLInputElement>) => void;
   isReturnMatchLoading: boolean;
   onFileSelectionForReturnMatch: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  isAsrAlignSupported: boolean;
+  isAsrAlignLoading: boolean;
+  onFileSelectionForAsrAlign: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onReconnect: () => void;
 }
 
-const StatusIndicator: React.FC<{ status: WebSocketStatus }> = ({ status }) => {
+const StatusIndicator: React.FC<{ status: WebSocketStatus; onReconnect: () => void }> = ({ status, onReconnect }) => {
   switch (status) {
     case 'connected':
       return <span className="flex items-center text-xs text-green-400"><CheckCircleIcon className="w-4 h-4 mr-1"/>热键服务已连接</span>;
@@ -57,7 +62,19 @@ const StatusIndicator: React.FC<{ status: WebSocketStatus }> = ({ status }) => {
       return <span className="flex items-center text-xs text-yellow-400"><LoadingSpinner/>连接中...</span>;
     case 'disconnected':
     default:
-      return <span className="flex items-center text-xs text-red-400"><XMarkIcon className="w-4 h-4 mr-1"/>热键服务未连接</span>;
+      return (
+        <span className="flex items-center text-xs text-red-400 gap-2">
+          <span className="flex items-center"><XMarkIcon className="w-4 h-4 mr-1"/>热键服务未连接</span>
+          <button
+            onClick={onReconnect}
+            disabled={status === 'connecting'}
+            className="text-[11px] px-2 py-1 rounded bg-slate-800 text-sky-300 hover:text-sky-100 hover:bg-slate-700 border border-slate-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            aria-label="尝试连接热键服务"
+          >
+            尝试连接
+          </button>
+        </span>
+      );
   }
 };
 
@@ -89,14 +106,20 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
   onFileSelectionForChapterMatch,
   isReturnMatchLoading,
   onFileSelectionForReturnMatch,
+  isAsrAlignSupported,
+  isAsrAlignLoading,
+  onFileSelectionForAsrAlign,
+  onReconnect,
 }) => {
     const chapterMatchFileInputRef = useRef<HTMLInputElement>(null);
     const smartMatchFileInputRef = useRef<HTMLInputElement>(null);
     const returnMatchFileInputRef = useRef<HTMLInputElement>(null);
+    const asrAlignFileInputRef = useRef<HTMLInputElement>(null);
 
     const handleChapterMatchClick = () => chapterMatchFileInputRef.current?.click();
     const handleSmartMatchClick = () => smartMatchFileInputRef.current?.click();
     const handleReturnMatchClick = () => returnMatchFileInputRef.current?.click();
+    const handleAsrAlignClick = () => asrAlignFileInputRef.current?.click();
 
   return (
     <header className="flex items-center justify-between p-4 border-b border-slate-800 flex-shrink-0 flex-wrap gap-2">
@@ -104,7 +127,7 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
         <h1 className="text-2xl font-bold text-sky-400 truncate pr-4">
           音频对轨: <span className="text-slate-200">{currentProjectName}</span>
         </h1>
-        <StatusIndicator status={webSocketStatus} />
+        <StatusIndicator status={webSocketStatus} onReconnect={onReconnect} />
       </div>
       <div className="flex items-center space-x-2 flex-wrap justify-end gap-2">
           <input
@@ -128,6 +151,13 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
               accept="audio/*"
               ref={returnMatchFileInputRef}
               onChange={onFileSelectionForReturnMatch}
+              className="hidden"
+          />
+          <input
+              type="file"
+              accept="audio/*"
+              ref={asrAlignFileInputRef}
+              onChange={onFileSelectionForAsrAlign}
               className="hidden"
           />
           <button
@@ -226,6 +256,20 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
           >
               {isReturnMatchLoading ? <LoadingSpinner /> : <ReturnIcon className="w-4 h-4 mr-1" />}
               {isReturnMatchLoading ? '匹配中...' : '按返音匹配'}
+          </button>
+          <button
+              onClick={handleAsrAlignClick}
+              disabled={!isAsrAlignSupported || isAsrAlignLoading}
+              className="flex items-center text-sm text-fuchsia-300 hover:text-fuchsia-100 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-50"
+              aria-label="ASR 自动对齐（OpenAI Whisper）"
+              title={
+                isAsrAlignSupported
+                  ? 'ASR 自动对齐（OpenAI Whisper/Python）：允许漏句/重读/加词；需在 Electron 助手中使用'
+                  : 'ASR 自动对齐需要 Electron 助手（未检测到 window.electronAPI）'
+              }
+          >
+              {isAsrAlignLoading ? <LoadingSpinner /> : <SparklesIcon className="w-4 h-4 mr-1" />}
+              {isAsrAlignLoading ? '对齐中...' : 'ASR自动对齐'}
           </button>
           <button
               onClick={onOpenExportModal}

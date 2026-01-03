@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Project, ScriptLine, CharacterFilterMode, Chapter } from '../../../types';
 import { internalParseScriptToChapters } from '../../../lib/scriptParser';
 import { useStore } from '../../../store/useStore';
@@ -26,6 +26,7 @@ export const useEnhancedEditorCoreLogic = ({
   const [cvFilter, setCvFilter] = useState<string | null>(null);
   const [history, setHistory] = useState<Project[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const pendingNewChapterIdRef = useRef<string | null>(null);
 
   const currentProject = useMemo(() => projects.find(p => p.id === projectId), [projects, projectId]);
 
@@ -46,9 +47,23 @@ export const useEnhancedEditorCoreLogic = ({
       }
       
       // If the selected chapter ID is no longer valid (e.g., deleted), clear it.
-      // This prevents the app from being in a broken state and fixes the page jump bug.
+      // 防抖：如果是刚拆章产生的新 ID，等待下一次项目刷新再决定，避免误清空。
       if (selectedChapterId && !currentProject.chapters.some(ch => ch.id === selectedChapterId)) {
-        setSelectedChapterId(null);
+        const latest = history.length > 0 ? history[history.length - 1] : null;
+        const existsInLatest = latest?.chapters?.some(ch => ch.id === selectedChapterId);
+        const isPendingNewChapter = pendingNewChapterIdRef.current === selectedChapterId;
+        if (!existsInLatest && !isPendingNewChapter) {
+          console.info('[Editor] clearing selectedChapterId because not found in currentProject', {
+            selectedChapterId,
+            chapters: currentProject.chapters.length,
+            projectHasPending: currentProject.chapters.some(ch => ch.id === pendingNewChapterIdRef.current),
+          });
+          setSelectedChapterId(null);
+        }
+      } else if (pendingNewChapterIdRef.current && currentProject.chapters.some(ch => ch.id === pendingNewChapterIdRef.current)) {
+        // 新章节已反映到 props，清理 pending 状态
+        console.info('[Editor] pending new chapter now present, clearing pending flag', { pendingId: pendingNewChapterIdRef.current });
+        pendingNewChapterIdRef.current = null;
       }
     }
   }, [currentProject, selectedChapterId, history, setSelectedChapterId]);
@@ -175,13 +190,29 @@ export const useEnhancedEditorCoreLogic = ({
 
   const splitChapterAtLine = useCallback((chapterId: string, lineId: string) => {
     const newChapterId = `ch_${Date.now()}_${Math.random()}`;
+    let didSplit = false;
+
+    console.info('[splitChapterAtLine] start', { chapterId, lineId, newChapterId });
+
     applyUndoableProjectUpdate(prevProject => {
-      const chapterIndex = prevProject.chapters.findIndex(ch => ch.id === chapterId);
-      if (chapterIndex === -1) return prevProject;
+      // 优先使用当前选中章节；如果不包含该行，再全局查找一次，避免因状态不同步导致拆分失败。
+      let chapterIndex = prevProject.chapters.findIndex(ch => ch.id === chapterId && ch.scriptLines.some(l => l.id === lineId));
+      if (chapterIndex === -1) {
+        chapterIndex = prevProject.chapters.findIndex(ch => ch.scriptLines.some(l => l.id === lineId));
+      }
+      if (chapterIndex === -1) {
+        console.warn('[splitChapterAtLine] abort: no chapter contains lineId', { chapterId, lineId });
+        return prevProject;
+      }
+
       const chapter = prevProject.chapters[chapterIndex];
       const lineIndex = chapter.scriptLines.findIndex(l => l.id === lineId);
-      if (lineIndex === -1) return prevProject;
+      if (lineIndex === -1) {
+        console.warn('[splitChapterAtLine] abort: lineId not found in chapter', { chapterId: chapter.id, lineId });
+        return prevProject;
+      }
 
+      // 如果拆分点在第一条或最后一条，仍允许拆分：前半/后半允许为空。
       const beforeLines = chapter.scriptLines.slice(0, lineIndex);
       const afterLines = chapter.scriptLines.slice(lineIndex);
       const beforeRaw = beforeLines.map(l => l.text).join('\n');
@@ -204,11 +235,25 @@ export const useEnhancedEditorCoreLogic = ({
       newChapters[chapterIndex] = updatedCurrent;
       newChapters.splice(chapterIndex + 1, 0, newChapter);
 
+      didSplit = true;
+      console.info('[splitChapterAtLine] split done', {
+        chapterId: chapter.id,
+        lineId,
+        newChapterId,
+        beforeCount: beforeLines.length,
+        afterCount: afterLines.length,
+        chapterIndex,
+      });
       return { ...prevProject, chapters: newChapters };
     });
 
-    setTimeout(() => setSelectedChapterId(newChapterId), 50);
-    setMultiSelectedChapterIds([]);
+    // 只有真正拆分成功才切换选中章节
+    if (didSplit) {
+      pendingNewChapterIdRef.current = newChapterId;
+      console.info('[splitChapterAtLine] selecting new chapter', { newChapterId });
+      setTimeout(() => setSelectedChapterId(newChapterId), 50);
+      setMultiSelectedChapterIds([]);
+    }
   }, [applyUndoableProjectUpdate, setSelectedChapterId, setMultiSelectedChapterIds]);
 
   return {

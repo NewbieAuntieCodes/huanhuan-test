@@ -20,6 +20,13 @@ const VoiceLibraryPage: React.FC = () => {
     rows,
     currentProject,
     charactersInProject,
+    referenceRoleNames,
+    referenceRoleRootHandleName,
+    referenceRoleScanStatus,
+    referenceRoleScanMessage,
+    linkReferenceRoleLibrary,
+    rescanReferenceRoleLibrary,
+    setReferenceRoleForCharacter,
     allCharacters, // Get all characters including Narrator
     selectedCharacter,
     isGenerating,
@@ -219,10 +226,34 @@ const VoiceLibraryPage: React.FC = () => {
           {isExporting ? <LoadingSpinner /> : <ArrowDownTrayIcon className="w-4 h-4 mr-1" />}
           {isExporting ? '导出中...' : '导出角色片段'}
         </button>
+        <div className="flex items-center gap-2 ml-2">
+          <span
+            className="text-sm text-slate-400 whitespace-nowrap"
+            title={referenceRoleRootHandleName ? `已关联: ${referenceRoleRootHandleName}` : '未关联角色库根目录'}
+          >
+            角色库: <span className="text-slate-200">{referenceRoleRootHandleName || '未关联'}</span>
+          </span>
+          <button
+            onClick={linkReferenceRoleLibrary}
+            className="flex items-center text-sm text-sky-300 hover:text-sky-100 px-3 py-1.5 bg-slate-800/50 hover:bg-slate-700/50 rounded-md"
+            title="关联角色库根目录（结构: 根目录/角色名/若干音频）"
+          >
+            关联角色库
+          </button>
+          <button
+            onClick={rescanReferenceRoleLibrary}
+            disabled={!referenceRoleRootHandleName || referenceRoleScanStatus === 'scanning'}
+            className="flex items-center text-sm text-sky-300 hover:text-sky-100 px-3 py-1.5 bg-slate-800/50 hover:bg-slate-700/50 rounded-md disabled:opacity-50"
+            title={referenceRoleScanMessage || '扫描并更新角色库索引'}
+          >
+            {referenceRoleScanStatus === 'scanning' ? '扫描中...' : '扫描角色库'}
+          </button>
+        </div>
       </div>
 
       <main className="flex-grow overflow-y-auto">
-        <div className="grid grid-cols-[1fr_120px_1fr_1fr_auto] items-center gap-x-4 px-4 py-2 text-sm font-semibold text-slate-400 border-b border-slate-800 sticky top-0 bg-slate-900 z-10">
+        <div className="grid grid-cols-[160px_1fr_120px_1fr_1fr_auto] items-center gap-x-4 px-4 py-2 text-sm font-semibold text-slate-400 border-b border-slate-800 sticky top-0 bg-slate-900 z-10">
+          <div>参考角色</div>
           <div>参考音频</div>
           <div>情绪</div>
           <div>台词文本 {selectedCharacter && <span className="text-sky-400 font-semibold ml-2">【{selectedCharacter.name}】</span>}</div>
@@ -241,11 +272,21 @@ const VoiceLibraryPage: React.FC = () => {
               // FIX: The type `unknown` was being inferred for `characterForRow`, causing an error when accessing its `id` property.
               // Adding an explicit type annotation of `Character | null` and changed the fallback from `{}` to `null` to resolve this type inference issue.
               const characterForRow: Character | null = line?.characterId ? (characterMap.get(line.characterId) || null) : null;
+              const selectedRefRole = (currentProject?.referenceRoleByCharacterId && characterForRow?.id)
+                ? (currentProject.referenceRoleByCharacterId[characterForRow.id] || '')
+                : '';
               return (
               <VoiceLibraryRow
                 key={row.id}
                 row={{ ...row, audioUrl: generatedAudioUrls[row.id] || null, promptAudioUrl: row.promptAudioUrl || (persistedPromptUrls ? persistedPromptUrls[row.id] : null), characterId: characterForRow?.id }}
                 character={characterForRow}
+                referenceRoleNames={referenceRoleNames}
+                selectedReferenceRole={selectedRefRole}
+                isReferenceRoleDisabled={!characterForRow?.id}
+                onReferenceRoleChange={(roleName) => {
+                  if (!characterForRow?.id) return;
+                  setReferenceRoleForCharacter(characterForRow.id, roleName);
+                }}
                 isBatchGenerating={isGenerating}
                 onTextChange={(text) => handleTextChange(row.id, text)}
                 onFileUpload={(file) => handleUpload(row.id, file)}

@@ -15,6 +15,7 @@ import {
   SaveIcon,
   ScissorsIcon,
   KeyboardIcon,
+  ArrowsRightLeftIcon,
 } from '../../../../components/ui/icons';
 import { useEditorContext } from '../../contexts/EditorContext';
 import { useScriptLineEditor } from '../../hooks/useScriptLineEditor';
@@ -57,6 +58,7 @@ const ScriptEditorPanel: React.FC = () => {
   const [editableRawContent, setEditableRawContent] = useState('');
   const [isRawContentDirty, setIsRawContentDirty] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const lastFocusedLineIdRef = useRef<string | null>(null);
 
   const selectedChapter =
     currentProject?.chapters.find((ch) => ch.id === selectedChapterId) || null;
@@ -64,6 +66,18 @@ const ScriptEditorPanel: React.FC = () => {
     selectedChapter && currentProject
       ? currentProject.chapters.findIndex((ch) => ch.id === selectedChapter.id)
       : -1;
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.info('[ScriptEditorPanel] selection check', {
+        selectedChapterId,
+        selectedChapterIndex,
+        hasSelected: !!selectedChapter,
+        chapterCount: currentProject?.chapters.length || 0,
+        chaptersSample: currentProject?.chapters.slice(0, 3).map((ch) => ch.id) || [],
+      });
+    }
+  }, [selectedChapterId, selectedChapterIndex, selectedChapter, currentProject]);
 
   useEffect(() => {
     if (selectedChapter) {
@@ -87,6 +101,12 @@ const ScriptEditorPanel: React.FC = () => {
   }, [isEditingHeaderTitle]);
 
   useEffect(() => {
+    if (focusedScriptLineId) {
+      lastFocusedLineIdRef.current = focusedScriptLineId;
+    }
+  }, [focusedScriptLineId]);
+
+  useEffect(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
     }
@@ -97,6 +117,7 @@ const ScriptEditorPanel: React.FC = () => {
     handleAssignCharacterToLine,
     handleSplitScriptLine,
     handleMergeAdjacentLines,
+    handleMergeAllAdjacentSameCharacterLines,
     handleDeleteScriptLine,
     handleUpdateSoundType,
     handleMoveScriptLine,
@@ -108,7 +129,16 @@ const ScriptEditorPanel: React.FC = () => {
     selectedChapterId,
   );
 
+  const activeLineIdForChapterSplit = useMemo(() => {
+    const candidate = focusedScriptLineId || lastFocusedLineIdRef.current;
+    if (!candidate || !selectedChapter) return null;
+    return selectedChapter.scriptLines.some((l) => l.id === candidate)
+      ? candidate
+      : null;
+  }, [focusedScriptLineId, selectedChapter]);
+
   const canSplitFocusedLine = !!focusedScriptLineId;
+  const canSplitChapter = !!activeLineIdForChapterSplit;
 
   const handleMoveLineUp = useCallback(
     (lineId: string) => {
@@ -154,10 +184,31 @@ const ScriptEditorPanel: React.FC = () => {
       }
       if (contentEditableEl) {
         const currentText = contentEditableEl.innerText;
-        const preCaretRange = document.createRange();
-        preCaretRange.selectNodeContents(contentEditableEl);
-        preCaretRange.setEnd(range.startContainer, range.startOffset);
-        const splitIndex = preCaretRange.toString().length;
+
+        // 计算光标在 contentEditable 内的文本索引，<br> 视为换行
+        const getTextLengthWithBreaks = (node: Node, stopAt?: { node: Node; offset: number }): number => {
+          let len = 0;
+          const walker = document.createTreeWalker(node, NodeFilter.SHOW_ALL, null);
+          let current: Node | null = walker.currentNode;
+          while (current) {
+            if (stopAt && current === stopAt.node) {
+              if (current.nodeType === Node.TEXT_NODE) {
+                len += (current.textContent || '').slice(0, stopAt.offset).replace(/\u200B/g, '').length;
+              }
+              break;
+            }
+            if (current.nodeType === Node.TEXT_NODE) {
+              len += (current.textContent || '').replace(/\u200B/g, '').length;
+            } else if ((current as HTMLElement).tagName === 'BR') {
+              len += 1; // 视为一个换行
+            }
+            current = walker.nextNode();
+          }
+          return len;
+        };
+
+        const splitIndex = getTextLengthWithBreaks(contentEditableEl, { node: range.startContainer, offset: range.startOffset });
+
         handleSplitScriptLine(
           selectedChapter.id,
           focusedScriptLineId,
@@ -174,8 +225,8 @@ const ScriptEditorPanel: React.FC = () => {
   };
 
   const handleSplitChapterClick = () => {
-    if (selectedChapter && focusedScriptLineId) {
-      splitChapterAtLine(selectedChapter.id, focusedScriptLineId);
+    if (selectedChapter && activeLineIdForChapterSplit) {
+      splitChapterAtLine(selectedChapter.id, activeLineIdForChapterSplit);
     }
   };
 
@@ -237,6 +288,16 @@ const ScriptEditorPanel: React.FC = () => {
 
   const hasScriptLines =
     !!selectedChapter && selectedChapter.scriptLines.length > 0;
+  const canMergeAdjacentSameCharacterInChapter = useMemo(() => {
+    if (!selectedChapter || selectedChapter.scriptLines.length < 2) return false;
+    const lines = selectedChapter.scriptLines;
+    for (let i = 1; i < lines.length; i++) {
+      const prev = lines[i - 1]?.characterId;
+      const cur = lines[i]?.characterId;
+      if (cur && prev && cur === prev) return true;
+    }
+    return false;
+  }, [selectedChapter]);
   const displayTitle =
     selectedChapter && selectedChapterIndex >= 0
       ? `${formatChapterNumber(selectedChapterIndex)} ${selectedChapter.title}`
@@ -281,6 +342,24 @@ const ScriptEditorPanel: React.FC = () => {
         )}
         <div className="flex items-center space-x-2 flex-shrink-0">
           <button
+            onClick={() => handleMergeAllAdjacentSameCharacterLines(selectedChapter.id)}
+            disabled={
+              isEditingHeaderTitle ||
+              isCurrentlyLoadingLines ||
+              !hasScriptLines ||
+              !canMergeAdjacentSameCharacterInChapter
+            }
+            title={
+              canMergeAdjacentSameCharacterInChapter
+                ? '合并本章相邻同角色行'
+                : '本章没有可合并的相邻同角色行'
+            }
+            className="flex items-center px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <ArrowsRightLeftIcon className="w-4 h-4 mr-1.5" />
+            合并相邻
+          </button>
+          <button
             onClick={openShortcutSettingsModal}
             disabled={isEditingHeaderTitle}
             title="快捷键设置"
@@ -322,9 +401,9 @@ const ScriptEditorPanel: React.FC = () => {
           </button>
           <button
             onMouseDown={handleSplitChapterMouseDown}
-            disabled={!canSplitFocusedLine || isEditingHeaderTitle}
+            disabled={!canSplitChapter || isEditingHeaderTitle}
             title={
-              canSplitFocusedLine
+              canSplitChapter
                 ? '从当前句开始拆成新章节'
                 : '先选择要作为新章节开头的句子'
             }

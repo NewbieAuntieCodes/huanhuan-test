@@ -247,7 +247,7 @@ const AudioScriptLine: React.FC<AudioScriptLineProps> = ({ line, index, nextLine
 
     const cleanedLineHtml = useMemo(() => {
         const stripped = stripPostProductionMarkers(line.text);
-        return escapeHtml(stripped);
+        return escapeHtml(stripped).replace(/\r?\n/g, '<br>');
     }, [line.text]);
     
     const getCvChipStyle = () => {

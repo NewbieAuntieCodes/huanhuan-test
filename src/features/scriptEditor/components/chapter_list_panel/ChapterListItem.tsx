@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Chapter } from '../../../../types';
 import { PencilIcon, EllipsisVerticalIcon, PlusIcon } from '../../../../components/ui/icons';
 import { useStore } from '../../../../store/useStore';
@@ -25,6 +25,23 @@ const formatChapterNumber = (index: number) => {
     if (index < 0) return '';
     const number = index + 1;
     return number < 1000 ? String(number).padStart(3, '0') : String(number);
+};
+
+const countChapterWords = (chapter: Chapter): number => {
+  const baseText =
+    (chapter.rawContent || '').trim().length > 0
+      ? chapter.rawContent
+      : (chapter.scriptLines || []).map((l) => l.text).join('\n');
+
+  const withoutSpeakerTags = baseText.replace(
+    /^[\s\u3000\uFEFF\u200B\u200C\u200D]*[【\[][^】\]\r\n]+[】\]]\s*[:：]?\s*/gm,
+    '',
+  );
+  const withoutWhitespace = withoutSpeakerTags.replace(
+    /[\s\u3000\uFEFF\u200B\u200C\u200D]+/g,
+    '',
+  );
+  return Array.from(withoutWhitespace).length;
 };
 
 const ChapterListItem: React.FC<ChapterListItemProps> = ({
@@ -89,6 +106,11 @@ const ChapterListItem: React.FC<ChapterListItemProps> = ({
 
   const itemDisabled = isAnyOperationLoading || isProcessingThisChapter || isEditingThisItem;
   const displayTitle = `${formatChapterNumber(chapterIndex)} ${chapter.title}`;
+  const wordCount = useMemo(
+    () => countChapterWords(chapter),
+    [chapter.rawContent, chapter.scriptLines],
+  );
+  const wordCountText = `${wordCount}字`;
 
   return (
     <div className={`flex items-center space-x-2 group ${isProcessingThisChapter ? 'opacity-60 cursor-not-allowed' : ''}`}>
@@ -127,10 +149,22 @@ const ChapterListItem: React.FC<ChapterListItemProps> = ({
                       }`}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectForViewing(); } }}
         >
-          <span className="truncate block" title={displayTitle}>
-            {displayTitle}
-            {isProcessingThisChapter && <span className="ml-1 text-xs text-sky-200">(处理中...)</span>}
-          </span>
+          <div className="min-w-0 flex-1 flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate block" title={displayTitle}>
+              {displayTitle}
+              {isProcessingThisChapter && <span className="ml-1 text-xs text-sky-200">(处理中...)</span>}
+            </span>
+            <span
+              className={`flex-shrink-0 text-xs ${
+                isSelectedForViewing && !isProcessingThisChapter
+                  ? 'text-white/80'
+                  : 'text-slate-400 group-hover:text-slate-200'
+              }`}
+              title={wordCountText}
+            >
+              {wordCountText}
+            </span>
+          </div>
           {!isProcessingThisChapter && (
             <div className="relative flex-shrink-0" ref={menuRef}>
               <button

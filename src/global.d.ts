@@ -9,6 +9,87 @@ declare global {
     getHotkeyStatus: () => Promise<{ enabled: boolean }>;
     getHotkeyOptions: () => Promise<{ options: HotkeyOptionsMap; current: string }>;
     changeHotkey: (newHotkey: string) => Promise<{ success: boolean; hotkey: string; error?: string }>;
+    transferMarkers?: (payload: {
+      sources: string[];
+      targets: string[];
+      outputDir?: string | null;
+      overwrite?: boolean;
+    }) => Promise<{
+      success: boolean;
+      results: Array<{
+        source: string;
+        target: string;
+        output: string | null;
+        ok: boolean;
+        error?: string;
+        chapterNumber?: number | null;
+      }>;
+      error?: string;
+    }>;
+
+    convertM4aToMp3?: (payload: {
+      files: string[];
+      bitrateKbps?: number;
+      overwrite?: boolean;
+    }) => Promise<{
+      success: boolean;
+      results: Array<{
+        input: string;
+        output: string | null;
+        ok: boolean;
+        error?: string;
+      }>;
+      error?: string;
+    }>;
+
+    asrTranscribeWhisperCpp?: (payload: {
+      audioPath: string;
+      modelPath?: string;
+      language?: string; // e.g. "zh"
+      threads?: number;
+      extraArgs?: string[];
+    }) => Promise<{
+      success: boolean;
+      segments: Array<{
+        start: number; // seconds
+        end: number; // seconds
+        text: string;
+      }>;
+      meta?: {
+        engine: 'whisper.cpp';
+        binaryPath?: string;
+        modelPath?: string;
+        jsonPath?: string;
+        stderr?: string;
+      };
+      error?: string;
+    }>;
+
+    asrTranscribeOpenAIWhisper?: (payload: {
+      audioPath: string;
+      pythonPath?: string; // default: "python"
+      model?: string; // e.g. "small" | "medium" | "large-v3"
+      language?: string; // e.g. "zh"
+      modelDir?: string; // where .pt models live / are downloaded
+      device?: string; // "cuda" | "cpu"
+      extraArgs?: string[];
+    }) => Promise<{
+      success: boolean;
+      segments: Array<{
+        start: number; // seconds
+        end: number; // seconds
+        text: string;
+      }>;
+      meta?: {
+        engine: 'openai-whisper';
+        pythonPath?: string;
+        model?: string;
+        modelDir?: string;
+        jsonPath?: string;
+        stderr?: string;
+      };
+      error?: string;
+    }>;
   }
 
   interface Window {

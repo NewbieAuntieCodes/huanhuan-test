@@ -366,3 +366,22 @@ export const ClearFormattingIcon: React.FC<IconProps> = ({ className = "w-5 h-5"
         <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
     </svg>
 );
+
+export const ArrowLeftIcon: React.FC<IconProps> = ({ className = "w-5 h-5" }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+  </svg>
+);
+
+export const WrenchIcon: React.FC<IconProps> = ({ className = "w-5 h-5" }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232a3 3 0 004.243 4.243l-6.364 6.364a3 3 0 11-4.243-4.243l6.364-6.364z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 11l-3 3" />
+  </svg>
+);
+
+export const CloudArrowDownIcon: React.FC<IconProps> = ({ className = "w-5 h-5" }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5v-9m0 9l-3-3m3 3l3-3M6.75 19.5A4.5 4.5 0 016 10.5a6 6 0 1111.826 1.177A4.5 4.5 0 0117.25 19.5H6.75z" />
+  </svg>
+);

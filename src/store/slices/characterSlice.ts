@@ -3,6 +3,7 @@ import { AppState } from '../useStore';
 import { Character, Project } from '../../types';
 import { db } from '../../db';
 import { characterRepository, projectRepository } from '../../repositories';
+import { normalizeCharacterNameKey, sanitizeCharacterDisplayName } from '../../lib/characterName';
 
 export interface CharacterSlice {
   characters: Character[];
@@ -10,25 +11,29 @@ export interface CharacterSlice {
   editCharacter: (characterBeingEdited: Character, updatedCvName?: string, updatedCvBgColor?: string, updatedCvTextColor?: string) => Promise<void>;
   deleteCharacter: (characterId: string) => Promise<void>;
   deleteCharacters: (characterIds: string[]) => Promise<void>;
+  cleanupDuplicateCharactersInProject: (projectId: string) => Promise<{ deletedCharacters: number; groups: number; updatedLines: number }>;
   toggleCharacterStyleLock: (characterId: string) => Promise<void>;
   bulkUpdateCharacterStylesForCV: (cvName: string, newBgColor: string, newTextColor: string) => Promise<void>;
 }
+
+const UNKNOWN_ROLE_NAME = '待识别角色';
 
 export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice> = (set, get, _api) => ({
   characters: [],
   addCharacter: (characterToAdd, projectId) => {
     const state = get();
-    const nameLc = characterToAdd.name.toLowerCase();
+    const displayName = sanitizeCharacterDisplayName(characterToAdd.name);
+    const nameKey = normalizeCharacterNameKey(displayName);
 
     // 1) 优先复用同项目下已存在的同名角色（避免重复并保留样式/描述）
     const existingInProject = state.characters.find(c =>
-      c.name.toLowerCase() === nameLc && c.projectId === projectId && c.status !== 'merged'
+      normalizeCharacterNameKey(c.name) === nameKey && c.projectId === projectId && c.status !== 'merged'
     );
     if (existingInProject) return existingInProject;
 
     // 2) 若只存在“全局角色”（projectId 为空），复制其样式/描述作为本项目的默认值
     const globalTemplate = state.characters.find(c =>
-      c.name.toLowerCase() === nameLc && !c.projectId && c.status !== 'merged'
+      normalizeCharacterNameKey(c.name) === nameKey && !c.projectId && c.status !== 'merged'
     );
 
     // 3) 根据项目的 CV 样式进行覆盖（若提供了 cvName 且角色未锁定样式）
@@ -43,7 +48,7 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
 
     const finalCharacter: Character = {
       id: `${Date.now()}_char_${Math.random().toString(36).substr(2, 9)}`,
-      name: characterToAdd.name,
+      name: displayName,
       projectId: projectId,
       color: colorFromCv || characterToAdd.color || globalTemplate?.color || 'bg-slate-600',
       textColor: textFromCv || characterToAdd.textColor || globalTemplate?.textColor || 'text-slate-100',
@@ -55,6 +60,7 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
 
     // Save to database asynchronously
     characterRepository.create({
+      id: finalCharacter.id,
       name: finalCharacter.name,
       projectId: finalCharacter.projectId!,
       color: finalCharacter.color,
@@ -139,10 +145,41 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
     let needsProjectUpdate = false;
 
     // Prevent deleting certain default characters even if project-scoped
-    const PROTECTED_NAMES = ['[静音]', '[音效]', '音效', '待识别角色'];
-    if (charToDelete && PROTECTED_NAMES.includes(charToDelete.name)) {
+    const PROTECTED_NAME_KEYS = new Set(['[静音]', '[音效]', '音效', '待识别角色'].map(normalizeCharacterNameKey));
+    if (charToDelete && PROTECTED_NAME_KEYS.has(normalizeCharacterNameKey(charToDelete.name))) {
        alert(`无法删除默认的功能性角色: ${charToDelete.name}`);
        return;
+    }
+
+    let unknownCharacterIdForProject: string | null = null;
+    if (charToDelete?.projectId) {
+      // Ensure we never leave lines "unassigned": reassign to the project-scoped Unknown role.
+      const existingUnknown = state.characters.find(
+        (c) =>
+          c.projectId === charToDelete.projectId &&
+          normalizeCharacterNameKey(c.name) === normalizeCharacterNameKey(UNKNOWN_ROLE_NAME) &&
+          c.status !== 'merged',
+      );
+
+      if (existingUnknown) {
+        unknownCharacterIdForProject = existingUnknown.id;
+      } else {
+        const created = await characterRepository.create({
+          name: UNKNOWN_ROLE_NAME,
+          projectId: charToDelete.projectId,
+          color: 'bg-orange-400',
+          textColor: 'text-black',
+          cvName: '',
+          description: '由系统自动识别但尚未分配的角色',
+          isStyleLockedToCv: false,
+        });
+        unknownCharacterIdForProject = created.id;
+        set((s) =>
+          s.characters.some((c) => c.id === created.id)
+            ? {}
+            : { characters: [...s.characters, created] },
+        );
+      }
     }
 
     if (charToDelete && charToDelete.status === 'merged') {
@@ -158,7 +195,9 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
                     chapters: proj.chapters.map(ch => ({
                         ...ch,
                         scriptLines: ch.scriptLines.map(line =>
-                            line.characterId === characterId ? { ...line, characterId: undefined } : line
+                            line.characterId === characterId
+                              ? { ...line, characterId: unknownCharacterIdForProject || line.characterId }
+                              : line
                         )
                     }))
                 };
@@ -186,8 +225,8 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
     const charsToDelete = state.characters.filter(c => characterIds.includes(c.id));
     
     // Prevent deleting certain default characters even if project-scoped
-    const PROTECTED_NAMES = ['[静音]', '[音效]', '音效', '待识别角色'];
-    const protectedCharsFound = charsToDelete.filter(c => PROTECTED_NAMES.includes(c.name));
+    const PROTECTED_NAME_KEYS = new Set(['[静音]', '[音效]', '音效', '待识别角色'].map(normalizeCharacterNameKey));
+    const protectedCharsFound = charsToDelete.filter(c => PROTECTED_NAME_KEYS.has(normalizeCharacterNameKey(c.name)));
 
     if (protectedCharsFound.length > 0) {
         alert(`无法批量删除默认的功能性角色: ${protectedCharsFound.map(c => c.name).join(', ')}`);
@@ -199,15 +238,47 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
     let projectsHadChanges = false;
     const projectIdsAffected = new Set(charsToDelete.map(c => c.projectId));
 
+    const unknownIdByProject = new Map<string, string>();
+    const projectsNeedingUnknown = Array.from(projectIdsAffected).filter((id): id is string => !!id);
+    for (const pid of projectsNeedingUnknown) {
+      let existingUnknown = state.characters.find(
+        (c) =>
+          c.projectId === pid &&
+          normalizeCharacterNameKey(c.name) === normalizeCharacterNameKey(UNKNOWN_ROLE_NAME) &&
+          c.status !== 'merged',
+      );
+      if (!existingUnknown) {
+        const created = await characterRepository.create({
+          name: UNKNOWN_ROLE_NAME,
+          projectId: pid,
+          color: 'bg-orange-400',
+          textColor: 'text-black',
+          cvName: '',
+          description: '由系统自动识别但尚未分配的角色',
+          isStyleLockedToCv: false,
+        });
+        existingUnknown = created;
+        set((s) =>
+          s.characters.some((c) => c.id === created.id)
+            ? {}
+            : { characters: [...s.characters, created] },
+        );
+      }
+      unknownIdByProject.set(pid, existingUnknown.id);
+    }
+
     const updatedProjects = state.projects.map(proj => {
         if (projectIdsAffected.has(proj.id)) {
             projectsHadChanges = true;
+            const unknownId = unknownIdByProject.get(proj.id);
             return {
                 ...proj,
                 chapters: proj.chapters.map(ch => ({
                     ...ch,
                     scriptLines: ch.scriptLines.map(line => 
-                        line.characterId && characterIds.includes(line.characterId) ? { ...line, characterId: undefined } : line
+                        line.characterId && characterIds.includes(line.characterId)
+                          ? { ...line, characterId: unknownId || line.characterId }
+                          : line
                     )
                 })),
                 lastModified: Date.now()
@@ -225,6 +296,114 @@ export const createCharacterSlice: StateCreator<AppState, [], [], CharacterSlice
     });
 
     set({ characters: updatedCharacters, projects: updatedProjects });
+  },
+  cleanupDuplicateCharactersInProject: async (projectId) => {
+    const state = get();
+    const project = state.projects.find((p) => p.id === projectId);
+    if (!project) return { deletedCharacters: 0, groups: 0, updatedLines: 0 };
+
+    const activeProjectCharacters = state.characters.filter(
+      (c) => c.projectId === projectId && c.status !== 'merged',
+    );
+
+    const groupsByKey = new Map<string, Character[]>();
+    for (const c of activeProjectCharacters) {
+      const key = normalizeCharacterNameKey(c.name);
+      const arr = groupsByKey.get(key);
+      if (arr) arr.push(c);
+      else groupsByKey.set(key, [c]);
+    }
+
+    const duplicateGroups = Array.from(groupsByKey.values()).filter((arr) => arr.length > 1);
+    if (duplicateGroups.length === 0) return { deletedCharacters: 0, groups: 0, updatedLines: 0 };
+
+    // Count usage of each characterId in this project to decide which one to keep.
+    const usageCountById = new Map<string, number>();
+    for (const ch of project.chapters) {
+      for (const line of ch.scriptLines) {
+        if (!line.characterId) continue;
+        usageCountById.set(line.characterId, (usageCountById.get(line.characterId) || 0) + 1);
+      }
+    }
+
+    const remap = new Map<string, string>(); // sourceId -> targetId
+    const deleteIds: string[] = [];
+
+    const score = (c: Character) => {
+      const used = usageCountById.get(c.id) || 0;
+      const hasCv = (c.cvName || '').trim() ? 1 : 0;
+      const descLen = (c.description || '').trim().length;
+      return { used, hasCv, descLen };
+    };
+
+    for (const arr of duplicateGroups) {
+      const sorted = [...arr].sort((a, b) => {
+        const sa = score(a);
+        const sb = score(b);
+        if (sa.used !== sb.used) return sb.used - sa.used;
+        if (sa.hasCv !== sb.hasCv) return sb.hasCv - sa.hasCv;
+        if (sa.descLen !== sb.descLen) return sb.descLen - sa.descLen;
+        return a.id.localeCompare(b.id);
+      });
+
+      const keep = sorted[0];
+      for (const src of sorted.slice(1)) {
+        remap.set(src.id, keep.id);
+        deleteIds.push(src.id);
+      }
+    }
+
+    let updatedLines = 0;
+    const nextChapters = project.chapters.map((ch) => {
+      let chapterChanged = false;
+      const nextLines = ch.scriptLines.map((line) => {
+        const targetId = line.characterId ? remap.get(line.characterId) : undefined;
+        if (!targetId) return line;
+        chapterChanged = true;
+        updatedLines += 1;
+        return { ...line, characterId: targetId };
+      });
+      return chapterChanged ? { ...ch, scriptLines: nextLines } : ch;
+    });
+
+    // Also migrate VoiceLibrary reference-role mapping if present.
+    const prevRef = project.referenceRoleByCharacterId || {};
+    let nextRef = prevRef;
+    let refChanged = false;
+    for (const [srcId, targetId] of remap) {
+      const srcRole = prevRef[srcId];
+      if (srcRole && !prevRef[targetId]) {
+        if (!refChanged) nextRef = { ...prevRef };
+        nextRef[targetId] = srcRole;
+        refChanged = true;
+      }
+      if (srcId in nextRef) {
+        if (!refChanged) nextRef = { ...prevRef };
+        delete nextRef[srcId];
+        refChanged = true;
+      }
+    }
+
+    const nextProject: Project = {
+      ...project,
+      chapters: nextChapters,
+      referenceRoleByCharacterId: refChanged ? nextRef : project.referenceRoleByCharacterId,
+      lastModified: Date.now(),
+    };
+
+    await db.transaction('rw', db.characters, db.projects, async () => {
+      await db.projects.put(nextProject);
+      await characterRepository.bulkDelete(deleteIds);
+    });
+
+    set((s) => ({
+      projects: s.projects
+        .map((p) => (p.id === projectId ? nextProject : p))
+        .sort((a, b) => b.lastModified - a.lastModified),
+      characters: s.characters.filter((c) => !deleteIds.includes(c.id)),
+    }));
+
+    return { deletedCharacters: deleteIds.length, groups: duplicateGroups.length, updatedLines };
   },
   toggleCharacterStyleLock: async (characterId) => {
     const { characters, projects } = get();

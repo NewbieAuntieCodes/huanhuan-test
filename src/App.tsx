@@ -8,6 +8,7 @@ import { CogIcon, FilmIcon } from './components/ui/icons';
 import SettingsModal from './components/modal/SettingsModal';
 import { useWebSocket } from './hooks/useWebSocket';
 import HotkeyControlPanel from './components/HotkeyControlPanel';
+import { findSafeMergeTargetForRename } from './features/scriptEditor/utils/characterMergeOnRename';
 
 const App: React.FC = () => {
   const {
@@ -24,11 +25,14 @@ const App: React.FC = () => {
     addCharacter,
     editCharacter,
     bulkUpdateCharacterStylesForCV,
+    mergeCharacters,
+    openConfirmModal,
     closeConfirmModal,
     closeCharacterAndCvStyleModal,
     openSettingsModal,
     closeSettingsModal,
     setWebSocketStatus,
+    setWebSocketConnect,
   } = useStore();
 
   useEffect(() => {
@@ -36,11 +40,11 @@ const App: React.FC = () => {
   }, [loadInitialData]);
 
   // WebSocket 联动（全局控制器）
-  const { status: wsStatus } = useWebSocket({
+  const { status: wsStatus, connect: connectWebSocket } = useWebSocket({
     url: 'ws://127.0.0.1:9002',
     autoConnect: true,
     reconnectDelay: 5000,
-    autoReconnect: true,
+    autoReconnect: false,
     onMessage: (data) => {
       if (data.action === 'nextLine' && document.visibilityState === 'visible') {
         useStore.getState().goToNextLine();
@@ -51,6 +55,11 @@ const App: React.FC = () => {
   useEffect(() => {
     setWebSocketStatus(wsStatus);
   }, [wsStatus, setWebSocketStatus]);
+
+  useEffect(() => {
+    setWebSocketConnect(connectWebSocket);
+    return () => setWebSocketConnect(null);
+  }, [connectWebSocket, setWebSocketConnect]);
 
   // 项目级 CV 名与样式
   const { projectCvStyles, projectCvNames } = useMemo<{
@@ -79,30 +88,101 @@ const App: React.FC = () => {
       cvBgColor: string,
       cvTextColor: string
     ) => {
+      const currentEditing = characterAndCvStyleModal.characterToEdit;
       const isNewCharacter =
-        !characterAndCvStyleModal.characterToEdit || !characterData.projectId;
-      if (isNewCharacter) {
-        if (!selectedProjectId) {
-          alert('当前无法在未选择项目的情况下创建角色');
-          return;
+        !currentEditing || !characterData.projectId;
+
+      const proceedNormalSave = async () => {
+        if (isNewCharacter) {
+          if (!selectedProjectId) {
+            alert('当前无法在未选择项目的情况下创建角色');
+            return;
+          }
+          const newChar = addCharacter(characterData, selectedProjectId);
+          await editCharacter(newChar, cvName, cvBgColor, cvTextColor);
+        } else {
+          await editCharacter(characterData, cvName, cvBgColor, cvTextColor);
         }
-        const newChar = addCharacter(characterData, selectedProjectId);
-        await editCharacter(newChar, cvName, cvBgColor, cvTextColor);
-      } else {
-        await editCharacter(characterData, cvName, cvBgColor, cvTextColor);
+        if (cvName && cvBgColor && cvTextColor) {
+          await bulkUpdateCharacterStylesForCV(cvName, cvBgColor, cvTextColor);
+        }
+        closeCharacterAndCvStyleModal();
+      };
+
+      // When editing: if user renames to an existing role name, offer one-click merge.
+      if (!isNewCharacter && currentEditing) {
+        const desiredName = characterData.name?.trim() || '';
+        const originalName = currentEditing.name?.trim() || '';
+        const nameChanged =
+          desiredName.toLowerCase() !== originalName.toLowerCase() && desiredName !== '';
+
+        if (nameChanged) {
+          const { target, reason, matches } = findSafeMergeTargetForRename(
+            characters,
+            currentEditing,
+            desiredName,
+          );
+
+          if (reason === 'multiple_matches') {
+            alert(
+              `检测到多个同名角色“${desiredName}”，无法自动合并。\n请使用右侧角色面板的“合并”按钮手动选择目标角色。`,
+            );
+            return;
+          }
+
+          if (reason === 'unsafe_scope' && matches && matches.length > 0) {
+            // Don't offer merging into another scope automatically; it's easy to break cross-project visibility.
+            // Continue with normal rename (may create duplicate names) only if user explicitly wants it.
+            openConfirmModal(
+              '同名角色在不同项目',
+              `检测到已有角色名“${desiredName}”，但它不在当前项目作用域内。\n自动合并可能导致其它项目的台词引用到一个“只属于某个项目”的角色，从而出现显示/筛选异常。\n\n建议：先在当前项目内选择正确目标角色再合并。\n\n是否仍要继续“仅改名”（不合并）？`,
+              () => {
+                void proceedNormalSave().catch((e) => console.error('Save failed', e));
+              },
+              '继续改名',
+              '取消',
+            );
+            return;
+          }
+
+          if (target) {
+            openConfirmModal(
+              '发现同名角色',
+              `检测到已有角色名“${desiredName}”。\n\n推荐操作：把当前角色“${originalName}”合并到“${target.name}”，系统会迁移所有台词行并隐藏当前角色（可撤销合并）。\n\n注意：选择“合并”后，本次在弹窗里对名称/CV/样式的修改不会应用到目标角色。`,
+              () => {
+                void (async () => {
+                  try {
+                    await mergeCharacters([currentEditing.id], target.id);
+                    closeCharacterAndCvStyleModal();
+                  } catch (e) {
+                    console.error('Merge failed', e);
+                    alert(e instanceof Error ? e.message : '合并失败');
+                  }
+                })();
+              },
+              '合并到同名角色',
+              '继续改名',
+              () => {
+                void proceedNormalSave().catch((e) => console.error('Save failed', e));
+              },
+            );
+            return;
+          }
+        }
       }
-      if (cvName && cvBgColor && cvTextColor) {
-        await bulkUpdateCharacterStylesForCV(cvName, cvBgColor, cvTextColor);
-      }
-      closeCharacterAndCvStyleModal();
+
+      await proceedNormalSave();
     },
     [
       characterAndCvStyleModal.characterToEdit,
       addCharacter,
       editCharacter,
       bulkUpdateCharacterStylesForCV,
+      mergeCharacters,
+      openConfirmModal,
       closeCharacterAndCvStyleModal,
       selectedProjectId,
+      characters,
     ]
   );
 
@@ -173,6 +253,14 @@ const App: React.FC = () => {
               className="text-sm text-sky-300 hover:text-sky-100"
             >
               CV 管理
+            </button>
+          )}
+          {currentView !== 'tools' && projects.length > 0 && (
+            <button
+              onClick={() => navigateTo('tools')}
+              className="text-sm text-sky-300 hover:text-sky-100"
+            >
+              辅助工具
             </button>
           )}
           <button

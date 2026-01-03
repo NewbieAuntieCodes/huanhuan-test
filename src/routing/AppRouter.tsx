@@ -8,6 +8,7 @@ import CvManagementPage from '../features/cvManagement/CvManagementPage';
 import VoiceLibraryPage from '../features/voiceLibrary/VoiceLibraryPage';
 import AudioAlignmentAssistantPage from '../features/audioAlignmentAssistant/AudioAlignmentAssistantPage';
 import PostProductionPage from '../features/postProduction/PostProductionPage';
+import ToolsPage from '../features/tools/ToolsPage';
 import { Character } from '../types';
 
 const AppRouter: React.FC = () => {
@@ -82,6 +83,9 @@ const AppRouter: React.FC = () => {
     
     case 'postProduction':
         return <PostProductionPage />;
+
+    case 'tools':
+        return <ToolsPage />;
 
     default:
         if (projects.length === 0) {

@@ -13,6 +13,7 @@ import { db } from '../db'; // Import the Dexie database instance
 import { defaultCvPresetColors, defaultCharacterPresetColors } from '../lib/colorPresets';
 import { soundLibraryRepository } from '../repositories/soundLibraryRepository';
 import { miscRepository } from '../repositories';
+import { normalizeCharacterNameKey } from '../lib/characterName';
 
 // Define the combined state shape by extending all slice types
 export interface AppState extends UiSlice, ProjectSlice, ProjectAudioSlice, CharacterSlice, MergeSlice {
@@ -111,7 +112,7 @@ export const useStore = create<AppState>((set, get, api) => ({
       // One-time fix: ensure the special SFX role has transparent bg + red text and is locked
       const isSfxName = (name?: string) => {
         if (!name) return false;
-        const n = name.trim().toLowerCase();
+        const n = normalizeCharacterNameKey(name);
         // 兼容旧数据与新显示格式
         return n === '音效' || n === '[音效]' || n === 'sfx';
       };
@@ -141,6 +142,82 @@ export const useStore = create<AppState>((set, get, api) => ({
         await db.characters.bulkPut(sfxUpdates);
       }
 
+      // Invariant: script lines should never be "unassigned".
+      // Any missing/invalid characterId is normalized to the project-scoped "待识别角色".
+      const UNKNOWN_ROLE_NAME = '待识别角色';
+      const normalizedCharacters: Character[] = [...fixedCharacters];
+      const unknownsToCreate: Character[] = [];
+      const unknownIdByProject = new Map<string, string>();
+
+      for (const project of projects) {
+        const existingUnknown = normalizedCharacters.find(
+          (c) =>
+            c.projectId === project.id &&
+            normalizeCharacterNameKey(c.name) === normalizeCharacterNameKey(UNKNOWN_ROLE_NAME) &&
+            c.status !== 'merged',
+        );
+        if (existingUnknown) {
+          unknownIdByProject.set(project.id, existingUnknown.id);
+          continue;
+        }
+
+        const created: Character = {
+          id: `${Date.now()}_char_unknown_${project.id}_${Math.random().toString(36).slice(2, 8)}`,
+          name: UNKNOWN_ROLE_NAME,
+          projectId: project.id,
+          color: 'bg-orange-400',
+          textColor: 'text-black',
+          cvName: '',
+          description: '由系统自动识别但尚未分配的角色',
+          isStyleLockedToCv: false,
+          status: 'active',
+        };
+        normalizedCharacters.push(created);
+        unknownsToCreate.push(created);
+        unknownIdByProject.set(project.id, created.id);
+      }
+
+      const fixedProjects: Project[] = projects.map((project) => {
+        const unknownId = unknownIdByProject.get(project.id);
+        if (!unknownId) return project;
+
+        const validIds = new Set(
+          normalizedCharacters
+            .filter((c) => c.status !== 'merged')
+            .filter((c) => !c.projectId || c.projectId === project.id)
+            .map((c) => c.id),
+        );
+
+        let changed = false;
+        const nextChapters = project.chapters.map((ch) => {
+          let chapterChanged = false;
+          const nextLines = ch.scriptLines.map((line) => {
+            const cid = line.characterId || '';
+            if (!cid || !validIds.has(cid)) {
+              chapterChanged = true;
+              changed = true;
+              return { ...line, characterId: unknownId };
+            }
+            return line;
+          });
+          return chapterChanged ? { ...ch, scriptLines: nextLines } : ch;
+        });
+
+        return changed ? { ...project, chapters: nextChapters } : project;
+      });
+
+      const projectsToFixInDb = fixedProjects.filter((p, idx) => p !== projects[idx]);
+      if (unknownsToCreate.length > 0 || projectsToFixInDb.length > 0) {
+        await db.transaction('rw', db.characters, db.projects, async () => {
+          if (unknownsToCreate.length > 0) {
+            await db.characters.bulkPut(unknownsToCreate);
+          }
+          if (projectsToFixInDb.length > 0) {
+            await db.projects.bulkPut(projectsToFixInDb);
+          }
+        });
+      }
+
       let initialView: AppView = "dashboard";
       if (projects.length === 0) {
         initialView = "upload";
@@ -149,8 +226,8 @@ export const useStore = create<AppState>((set, get, api) => ({
       const soundsFromDb = await soundLibraryRepository.getSounds();
 
       set({
-        projects,
-        characters: fixedCharacters,
+        projects: fixedProjects,
+        characters: normalizedCharacters,
         mergeHistory,
         cvColorPresets,
         characterColorPresets,

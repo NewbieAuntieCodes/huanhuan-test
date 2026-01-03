@@ -18,6 +18,11 @@ import { ensureSoundLufsFromBuffer, computeGainDbFromLufs } from './lufsService'
 
 // --- Helper Functions ---
 
+// NOTE: 以下常量目前按用户本地环境配置。
+// 如需更改音效组（场景子工程）的根目录，请修改此路径为目标机器上的绝对路径。
+// 示例: 'D:\\WDG\\SfxGroups'
+const SCENE_SUBPROJECT_BASE_PATH = 'D:\\WDG\\SfxGroups';
+
 const sanitizeForRpp = (str: string): string => {
   return str.replace(/"/g, "'").replace(/[\r\n]/g, ' ');
 };
@@ -68,6 +73,13 @@ interface FxClip {
 
 interface BgmClip extends FxClip {
   sourceDuration: number;
+}
+
+interface SubprojectClip {
+  startTime: number;
+  duration: number;
+  name: string;
+  filePath: string;
 }
 
 const dialogueItemToRpp = (item: TimelineItem, sourceFileName: string): string => {
@@ -149,6 +161,22 @@ ${volLine}      <SOURCE WAVE
     })
     .join('');
 
+const subprojectClipToRpp = (clip: SubprojectClip): string => {
+  return `
+    <ITEM
+      POSITION ${clip.startTime.toFixed(6)}
+      LENGTH ${clip.duration.toFixed(6)}
+      NAME "${sanitizeForRpp(clip.name)}"
+      <SOURCE RPP_PROJECT
+        FILE "${sanitizeForRpp(clip.filePath)}"
+      >
+    >
+  `;
+};
+
+const generateSubprojectRppTrackItems = (clips: SubprojectClip[]): string =>
+  clips.map((clip) => subprojectClipToRpp(clip)).join('');
+
 // Track names for sound library categories (fallback to category key if missing)
 const SOUND_CATEGORY_DISPLAY_NAMES: Record<string, string> = {
   music1: '音乐1',
@@ -181,6 +209,7 @@ const generateRppContent = (
   dialogueTrackItemsByName: Record<string, string>,
   sfxTrackItemsByName: Record<string, string>,
   bgmTrackItemsByName: Record<string, string>,
+  subprojectTrackItemsByName: Record<string, string>,
 ): string => {
   const getDialogueOrder = (trackName: string): number => {
     if (trackName === '旁白 PB') return 0;
@@ -222,6 +251,7 @@ const generateRppContent = (
 
   const sfxTracksRpp = buildFxTracks(sfxTrackItemsByName);
   const bgmTracksRpp = buildFxTracks(bgmTrackItemsByName);
+  const subprojectTracksRpp = buildFxTracks(subprojectTrackItemsByName);
 
   return `
 <REAPER_PROJECT 0.1 "7.0/js-web-exporter" 1700000000
@@ -229,6 +259,7 @@ const generateRppContent = (
 ${dialogueTracksRpp}
 ${sfxTracksRpp}
 ${bgmTracksRpp}
+${subprojectTracksRpp}
 >
   `.trim();
 };
@@ -459,6 +490,7 @@ export const exportPostProductionToReaper = async (
     // Step 2: SFX and BGM Processing
     const sfxClipsByTrack = new Map<string, FxClip[]>();
     const bgmClipsByTrack = new Map<string, BgmClip[]>();
+    const subprojectClipsByTrack = new Map<string, SubprojectClip[]>();
     const usedSoundFiles = new Map<number, { blob: Blob; path: string }>();
 
     const lineStartTimes = new Map<string, number>(
@@ -676,6 +708,61 @@ export const exportPostProductionToReaper = async (
       bgmClipsByTrack.set(trackName, existing);
     }
 
+    // 2c. 从场景标记生成子工程占位片段（RPP_PROJECT 引用）
+    const sceneMarkers = (project.textMarkers || []).filter(
+      (m) => m.type === 'scene' && m.startLineId && m.endLineId,
+    );
+
+    const subprojectTrackName = 'Scene Subprojects';
+
+    for (const marker of sceneMarkers) {
+      const sceneNameRaw = (marker.name || '').trim();
+      if (!sceneNameRaw) continue;
+
+      const startLine = lineById.get(marker.startLineId);
+      const endLine = lineById.get(marker.endLineId);
+      if (!startLine || !endLine) continue;
+
+      const startLineTime = lineStartTimes.get(marker.startLineId);
+      const endLineTime = lineStartTimes.get(marker.endLineId);
+      const startLineDur = lineDurations.get(marker.startLineId) || 0;
+      const endLineDur = lineDurations.get(marker.endLineId) || 0;
+
+      if (startLineTime === undefined || endLineTime === undefined) continue;
+
+      const startText = startLine.text || '';
+      const endText = endLine.text || '';
+      const startTextLen = startText.length || 1;
+      const endTextLen = endText.length || 1;
+
+      const startOffset = marker.startOffset ?? 0;
+      const endOffset = marker.endOffset ?? 0;
+
+      const startRel = Math.max(0, Math.min(1, startOffset / startTextLen));
+      const endRel = Math.max(0, Math.min(1, endOffset / endTextLen));
+
+      const startTime = startLineTime + startRel * startLineDur;
+      const endTime = endLineTime + endRel * endLineDur;
+
+      if (!isFinite(startTime) || !isFinite(endTime)) continue;
+      const rangeDuration = endTime - startTime;
+      if (rangeDuration <= 0.05) continue;
+
+      const sceneDisplayName = sceneNameRaw;
+      const sceneFileBase = sanitizeFilename(sceneNameRaw).replace(/\.[^.]+$/, '') || 'scene';
+      // 约定: 子工程路径 = 基础库目录 \ 场景文件夹名 \ 同名 .rpp
+      const sceneFilePath = `${SCENE_SUBPROJECT_BASE_PATH}\\${sceneFileBase}\\${sceneFileBase}.rpp`;
+
+      const existing = subprojectClipsByTrack.get(subprojectTrackName) || [];
+      existing.push({
+        startTime,
+        duration: rangeDuration,
+        name: `Scene: ${sceneDisplayName}`,
+        filePath: sceneFilePath,
+      });
+      subprojectClipsByTrack.set(subprojectTrackName, existing);
+    }
+
     // Step 3: Generate RPP content with all tracks
     const sfxTrackItemsByName: Record<string, string> = {};
     sfxClipsByTrack.forEach((clips, trackName) => {
@@ -689,6 +776,12 @@ export const exportPostProductionToReaper = async (
       bgmTrackItemsByName[trackName] = generateBgmRppTrackItems(clips);
     });
 
+    const subprojectTrackItemsByName: Record<string, string> = {};
+    subprojectClipsByTrack.forEach((clips, trackName) => {
+      if (!clips || clips.length === 0) return;
+      subprojectTrackItemsByName[trackName] = generateSubprojectRppTrackItems(clips);
+    });
+
     // Add all converted SFX/BGM WAV files into the ZIP
     usedSoundFiles.forEach(({ blob, path }) => {
       zip.file(path, blob);
@@ -700,6 +793,7 @@ export const exportPostProductionToReaper = async (
       dialogueTrackItemsStrings,
       sfxTrackItemsByName,
       bgmTrackItemsByName,
+      subprojectTrackItemsByName,
     );
 
     // Step 4: Create ZIP
@@ -707,12 +801,14 @@ export const exportPostProductionToReaper = async (
 
 包含内容:
 - *.wav: 所有对白、环境音、音效、音乐素材
-- *.rpp: Reaper 工程文件
+- project.rpp: 主 Reaper 工程文件
+- （可选）D:\\WDG\\SfxGroups\\场景名\\场景名.rpp: 场景音效组子工程（需由您在本机音效组库中维护）
 
 使用建议:
 1. 将整个 .zip 解压到一个独立文件夹
-2. 使用 Reaper 打开 project.rpp
-3. 如果素材路径发生变化，可在 Reaper 中批量重定位媒体文件`;
+2. 在本机创建或维护音效组库目录 D:\\WDG\\SfxGroups，并为每个场景创建对应文件夹和同名 .rpp，例如 场景“雨夜街道” 对应 D:\\WDG\\SfxGroups\\雨夜街道\\雨夜街道.rpp
+3. 使用 Reaper 打开 project.rpp
+4. 如 Reaper 提示找不到子工程或素材，可在 Reaper 中批量重定位媒体文件`;
 
     zip.file('project.rpp', rppContent);
     zip.file('README.txt', readme);
@@ -729,4 +825,3 @@ export const exportPostProductionToReaper = async (
     audioContext.close().catch(() => {});
   }
 };
-

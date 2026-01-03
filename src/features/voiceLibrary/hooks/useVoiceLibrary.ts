@@ -7,6 +7,7 @@ import { useAudioUrlManager } from './useAudioUrlManager';
 import { voiceLibraryPromptRepository } from '../../../repositories/voiceLibraryPromptRepository';
 import { processAndAssignAudio, deleteGeneratedAudio } from '../utils/audioAssignment';
 import { Project } from '../../../types';
+import { useRoleLibrary } from './useRoleLibrary';
 
 export type { VoiceLibraryRowState }; // Re-export for other components
 
@@ -47,6 +48,16 @@ export const useVoiceLibrary = () => {
         currentProject
     );
 
+    const {
+        roleNames: referenceRoleNames,
+        rootHandleName: referenceRoleRootHandleName,
+        scanStatus: referenceRoleScanStatus,
+        scanMessage: referenceRoleScanMessage,
+        linkRootFolder: linkReferenceRoleLibrary,
+        rescan: rescanReferenceRoleLibrary,
+        pickSampleForRole,
+    } = useRoleLibrary();
+
     const selectedCharacter = useMemo(
         () => charactersInProject.find(c => c.id === selectedCharacterId),
         [charactersInProject, selectedCharacterId]
@@ -80,6 +91,66 @@ export const useVoiceLibrary = () => {
     const updateRow = useCallback((id: string, updates: Partial<VoiceLibraryRowState>) => {
         setRows(prevRows => prevRows.map(row => row.id === id ? { ...row, ...updates } : row));
     }, [setRows]);
+
+    const overwritePromptRecord = useCallback(async (row: VoiceLibraryRowState, fileName: string, blob: Blob) => {
+        if (!currentProject || !row.originalLineId) return;
+        await voiceLibraryPromptRepository.save({
+            id: `${currentProject.id}::${row.originalLineId}`,
+            projectId: currentProject.id,
+            originalLineId: row.originalLineId,
+            fileName: fileName || null,
+            serverPath: null,
+            data: blob,
+        });
+    }, [currentProject]);
+
+    const setPromptFromFile = useCallback(async (rowId: string, file: File, rowOverride?: VoiceLibraryRowState) => {
+        const promptUrl = createPromptUrl(rowId, file);
+
+        updateRow(rowId, {
+            status: 'idle',
+            error: null,
+            promptAudioUrl: promptUrl,
+            promptFileName: file.name,
+            promptFilePath: null, // reference audio changed; force re-upload on generate
+        });
+
+        const targetRow = rowOverride || rows.find(r => r.id === rowId);
+        if (targetRow) {
+            await overwritePromptRecord(targetRow, file.name, file);
+        }
+    }, [createPromptUrl, overwritePromptRecord, rows, updateRow]);
+
+    const ensurePromptFilePath = useCallback(async (row: VoiceLibraryRowState): Promise<string | null> => {
+        if (row.promptFilePath) return row.promptFilePath;
+        if (!currentProject || !row.originalLineId) return null;
+
+        const rec = await voiceLibraryPromptRepository.get(currentProject.id, row.originalLineId);
+        if (rec?.serverPath) {
+            updateRow(row.id, { promptFilePath: rec.serverPath, promptFileName: row.promptFileName || rec.fileName });
+            return rec.serverPath;
+        }
+
+        // Prefer the current in-memory prompt (user just uploaded / auto-filled) over persisted data.
+        const blob = row.promptAudioUrl ? await fetch(row.promptAudioUrl).then(r => r.blob()) : (rec?.data || null);
+        const fileName = row.promptFileName || rec?.fileName || `prompt_${row.originalLineId}.wav`;
+        if (!blob) return null;
+
+        const file = new File([blob], fileName, { type: blob.type || 'audio/wav' });
+        const uploadedPath = await uploadTtsPrompt(file);
+
+        updateRow(row.id, { promptFilePath: uploadedPath, promptFileName: fileName });
+        await voiceLibraryPromptRepository.save({
+            id: `${currentProject.id}::${row.originalLineId}`,
+            projectId: currentProject.id,
+            originalLineId: row.originalLineId,
+            fileName: fileName || null,
+            serverPath: uploadedPath,
+            data: blob,
+        });
+
+        return uploadedPath;
+    }, [currentProject, updateRow, uploadTtsPrompt]);
 
     // Check server health on mount
     useEffect(() => {
@@ -156,36 +227,81 @@ export const useVoiceLibrary = () => {
         try {
             const filePath = await uploadTtsPrompt(file);
             updateRow(rowId, { promptFilePath: filePath, status: 'idle' });
+
+            // Persist prompt data + serverPath for next sessions (only for linked script lines)
+            if (currentProject) {
+                const row = rows.find(r => r.id === rowId);
+                if (row?.originalLineId) {
+                    await voiceLibraryPromptRepository.save({
+                        id: `${currentProject.id}::${row.originalLineId}`,
+                        projectId: currentProject.id,
+                        originalLineId: row.originalLineId,
+                        fileName: file.name,
+                        serverPath: filePath,
+                        data: file,
+                    });
+                }
+            }
         } catch (err) {
             updateRow(rowId, {
                 status: 'error',
                 error: err instanceof Error ? err.message : '未知上传错误',
                 promptFilePath: null
             });
+
+            if (currentProject) {
+                const row = rows.find(r => r.id === rowId);
+                if (row?.originalLineId) {
+                    await voiceLibraryPromptRepository.save({
+                        id: `${currentProject.id}::${row.originalLineId}`,
+                        projectId: currentProject.id,
+                        originalLineId: row.originalLineId,
+                        fileName: file.name,
+                        serverPath: null,
+                        data: file,
+                    });
+                }
+            }
         }
-    }, [updateRow, uploadTtsPrompt, createPromptUrl]);
+    }, [createPromptUrl, currentProject, rows, updateRow, uploadTtsPrompt]);
 
     const handleBatchGenerate = useCallback(async () => {
-        const rowsToProcess = rows.filter(r => r.text.trim() && r.promptFilePath && r.originalLineId);
-        if (rowsToProcess.length === 0) {
-            alert('没有可生成的行 (确保已上传参考音频并填写了台词)。');
+        if (!selectedProjectId || !currentProject) return;
+
+        const candidates = rows.filter(r => r.text.trim() && r.originalLineId);
+        if (candidates.length === 0) {
+            alert('没有可生成的行（请先筛选章节并填写台词）。');
             return;
         }
 
-        if (!selectedProjectId || !currentProject) return;
+        const rowsToProcess: { row: VoiceLibraryRowState; promptPath: string }[] = [];
+        for (const r of candidates) {
+            try {
+                const promptPath = await ensurePromptFilePath(r);
+                if (promptPath) rowsToProcess.push({ row: r, promptPath });
+            } catch (e) {
+                console.error('[VoiceLibrary] ensurePromptFilePath failed', e);
+                updateRow(r.id, { status: 'error', error: e instanceof Error ? e.message : '参考音频上传失败' });
+            }
+        }
 
-        rowsToProcess.forEach(r => updateRow(r.id, { status: 'generating', error: null }));
+        if (rowsToProcess.length === 0) {
+            alert('没有可生成的行（确保每行都有参考音频或已选择参考角色）。');
+            return;
+        }
+
+        rowsToProcess.forEach(({ row }) => updateRow(row.id, { status: 'generating', error: null }));
 
         try {
-            const ttsItems = rowsToProcess.map(r => ({
-                promptAudio: r.promptFilePath!,
-                text: `(${r.emotion || 'normal'}) ${r.text}`
+            const ttsItems = rowsToProcess.map(({ row, promptPath }) => ({
+                promptAudio: promptPath,
+                text: `(${row.emotion || 'normal'}) ${row.text}`,
             }));
             const results = await generateTtsBatch(ttsItems);
 
             for (let i = 0; i < results.length; i++) {
                 const item = results[i];
-                const row = rowsToProcess[i];
+                const row = rowsToProcess[i].row;
 
                 if (item.ok && item.audioUrl) {
                     const result = await processAndAssignAudio(
@@ -207,14 +323,14 @@ export const useVoiceLibrary = () => {
             }
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : '未知错误';
-            rowsToProcess.forEach(r => updateRow(r.id, { status: 'error', error: errorMsg }));
+            rowsToProcess.forEach(({ row }) => updateRow(row.id, { status: 'error', error: errorMsg }));
         }
-    }, [rows, updateRow, generateTtsBatch, selectedProjectId, currentProject, assignAudioToLine]);
+    }, [rows, updateRow, generateTtsBatch, selectedProjectId, currentProject, assignAudioToLine, ensurePromptFilePath]);
     
     const handleGenerateSingle = useCallback(async (rowId: string) => {
         const row = rows.find(r => r.id === rowId);
-        if (!row?.text.trim() || !row.promptFilePath) {
-            alert('请确保已上传参考音频并填写了台词。');
+        if (!row?.text.trim()) {
+            alert('请填写台词。');
             return;
         }
         if (!row.originalLineId) {
@@ -227,8 +343,13 @@ export const useVoiceLibrary = () => {
         updateRow(rowId, { status: 'generating', error: null });
 
         try {
+            const promptPath = await ensurePromptFilePath(row);
+            if (!promptPath) {
+                updateRow(rowId, { status: 'error', error: '缺少参考音频（请上传或选择参考角色）' });
+                return;
+            }
             const ttsItem = {
-                promptAudio: row.promptFilePath,
+                promptAudio: promptPath,
                 text: `(${row.emotion || 'normal'}) ${row.text}`,
             };
             const results = await generateTtsBatch([ttsItem]);
@@ -258,7 +379,7 @@ export const useVoiceLibrary = () => {
         } catch (err) {
             updateRow(rowId, { status: 'error', error: err instanceof Error ? err.message : '未知错误' });
         }
-    }, [rows, updateRow, generateTtsBatch, selectedProjectId, currentProject, assignAudioToLine]);
+    }, [rows, updateRow, generateTtsBatch, selectedProjectId, currentProject, assignAudioToLine, ensurePromptFilePath]);
     
     const handleDeleteGeneratedAudio = useCallback(async (rowId: string) => {
         const row = rows.find(r => r.id === rowId);
@@ -286,6 +407,72 @@ export const useVoiceLibrary = () => {
             error: null
         });
     }, [rows, currentProject, updateRow, revokePromptUrl]);
+
+    const setReferenceRoleForCharacter = useCallback(async (characterId: string, roleName: string) => {
+        if (!currentProject) return;
+
+        const nextProject: Project = {
+            ...currentProject,
+            referenceRoleByCharacterId: {
+                ...(currentProject.referenceRoleByCharacterId || {}),
+                [characterId]: roleName,
+            },
+        };
+
+        await updateProject(nextProject);
+
+        // Best-effort: fill prompts for visible rows of this character (only when missing)
+        const targetRows = rows.filter(r =>
+            r.originalLineId &&
+            r.characterId === characterId &&
+            !r.promptAudioUrl &&
+            !r.promptFilePath &&
+            !persistedPromptUrls[r.id]
+        );
+
+        for (const r of targetRows) {
+            const sample = await pickSampleForRole(roleName, r.emotion);
+            if (!sample) continue;
+            try {
+                const file = await sample.handle.getFile();
+                await setPromptFromFile(r.id, file, r);
+            } catch (e) {
+                console.warn('[RoleLibrary] failed to apply sample to row', e);
+            }
+        }
+    }, [currentProject, persistedPromptUrls, pickSampleForRole, rows, setPromptFromFile, updateProject]);
+
+    // Auto-fill missing prompts from mapped reference roles (never overrides user uploads)
+    const autoFilledRef = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        const run = async () => {
+            if (!currentProject) return;
+            const mapping = currentProject.referenceRoleByCharacterId || {};
+            if (Object.keys(mapping).length === 0) return;
+            if (referenceRoleNames.length === 0) return;
+
+            for (const r of rows) {
+                if (!r.originalLineId || !r.characterId) continue;
+                if (r.promptAudioUrl || r.promptFilePath || persistedPromptUrls[r.id]) continue;
+                if (autoFilledRef.current.has(r.id)) continue;
+
+                const roleName = mapping[r.characterId];
+                if (!roleName) continue;
+
+                autoFilledRef.current.add(r.id);
+                const sample = await pickSampleForRole(roleName, r.emotion);
+                if (!sample) continue;
+                try {
+                    const file = await sample.handle.getFile();
+                    await setPromptFromFile(r.id, file, r);
+                } catch (e) {
+                    console.warn('[RoleLibrary] autofill failed', e);
+                }
+            }
+        };
+
+        void run();
+    }, [currentProject, persistedPromptUrls, pickSampleForRole, referenceRoleNames.length, rows, setPromptFromFile]);
 
     const addEmptyRow = useCallback(() => {
         setRows(prev => [...prev, {
@@ -418,6 +605,13 @@ export const useVoiceLibrary = () => {
         rows,
         currentProject,
         charactersInProject,
+        referenceRoleNames,
+        referenceRoleRootHandleName,
+        referenceRoleScanStatus,
+        referenceRoleScanMessage,
+        linkReferenceRoleLibrary,
+        rescanReferenceRoleLibrary,
+        setReferenceRoleForCharacter,
         allCharacters: characters,
         selectedCharacter,
         isGenerating,

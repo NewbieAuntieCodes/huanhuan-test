@@ -73,6 +73,7 @@ export interface UiSlice {
   audioAlignmentMultiSelectedChapterIds: string[];
   activeRecordingLineId: string | null;
   webSocketStatus: WebSocketStatus;
+  webSocketConnect: (() => void) | null;
   lufsSettings: LufsSettings;
   soundObservationList: string[];
   isRecordingMode: boolean;
@@ -117,6 +118,7 @@ export interface UiSlice {
   setAudioAlignmentMultiSelectedChapterIds: (ids: string[]) => void;
   setActiveRecordingLineId: (id: string | null) => void;
   setWebSocketStatus: (status: WebSocketStatus) => void;
+  setWebSocketConnect: (connector: (() => void) | null) => void;
   setLufsSettings: (settings: Partial<LufsSettings>) => Promise<void>;
   setPostProductionLufsSettings: (settings: Partial<PostProductionLufsSettings>) => Promise<void>;
   setSoundObservationList: (list: string[]) => Promise<void>;
@@ -155,6 +157,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   audioAlignmentMultiSelectedChapterIds: [],
   activeRecordingLineId: null,
   webSocketStatus: 'disconnected',
+  webSocketConnect: null,
   lufsSettings: { enabled: false, target: -18 },
   soundObservationList: [],
   isRecordingMode: false,
@@ -179,24 +182,16 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
     }
   },
   setSelectedChapterId: async (id) => {
-    const { selectedProjectId, projects } = get();
+    const { selectedProjectId } = get();
     // Update UI state immediately for responsiveness
     set({ selectedChapterId: id });
 
     if (selectedProjectId && id) {
-        const projectToUpdate = projects.find(p => p.id === selectedProjectId);
-        // Only update if the chapter has changed and project exists
-        if (projectToUpdate && projectToUpdate.lastViewedChapterId !== id) {
-            const updatedProject = { ...projectToUpdate, lastViewedChapterId: id };
-            
-            // Persist change to the database in the background
-            await db.projects.put(updatedProject);
-            
-            // Update the project in the global state
-            set(state => ({
-                projects: state.projects.map(p => p.id === selectedProjectId ? updatedProject : p),
-            }));
-        }
+        // 只更新 lastViewedChapterId，避免用旧快照覆盖最新章节列表
+        await db.projects.update(selectedProjectId, { lastViewedChapterId: id });
+        set(state => ({
+            projects: state.projects.map(p => p.id === selectedProjectId ? { ...p, lastViewedChapterId: id } : p),
+        }));
     }
   },
   addAiProcessingChapterId: (id) =>
@@ -264,6 +259,7 @@ export const createUiSlice: StateCreator<AppState, [], [], UiSlice> = (set, get)
   setAudioAlignmentMultiSelectedChapterIds: (ids) => set({ audioAlignmentMultiSelectedChapterIds: ids }),
   setActiveRecordingLineId: (id) => set({ activeRecordingLineId: id }),
   setWebSocketStatus: (status) => set({ webSocketStatus: status }),
+  setWebSocketConnect: (connector) => set({ webSocketConnect: connector }),
   setLufsSettings: async (settingsUpdate) => {
     const newSettings = { ...get().lufsSettings, ...settingsUpdate };
     await db.misc.put({ key: 'lufsSettings', value: newSettings });

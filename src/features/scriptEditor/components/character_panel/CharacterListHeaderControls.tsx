@@ -8,6 +8,7 @@ interface CharacterListHeaderControlsProps {
   onAddNewCharacter: () => void;
   selectedCharacterIdsForMerge: string[];
   onMergeSelectedCharacters: () => void;
+  onCleanupDuplicateCharacters: () => void;
   canUndoMerge: boolean;
   onUndoLastMerge: () => void;
   onBatchDeleteCharacters: () => void;
@@ -21,6 +22,7 @@ const CharacterListHeaderControls: React.FC<CharacterListHeaderControlsProps> = 
   onAddNewCharacter,
   selectedCharacterIdsForMerge,
   onMergeSelectedCharacters,
+  onCleanupDuplicateCharacters,
   canUndoMerge,
   onUndoLastMerge,
   onBatchDeleteCharacters,
@@ -41,8 +43,6 @@ const CharacterListHeaderControls: React.FC<CharacterListHeaderControlsProps> = 
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
-
-  const showNoMoreOperations = !canUndoMerge && selectedCharacterIdsForMerge.length === 0;
 
   return (
     <div className="mb-3 flex-shrink-0 space-y-3">
@@ -115,6 +115,15 @@ const CharacterListHeaderControls: React.FC<CharacterListHeaderControlsProps> = 
             {isMoreMenuOpen && (
                  <div className="absolute right-0 mt-2 w-48 bg-slate-700 rounded-md shadow-lg z-20 border border-slate-600 text-sm">
                     <ul className="p-1 space-y-1">
+                        <li>
+                          <button
+                            onClick={() => { onCleanupDuplicateCharacters(); setIsMoreMenuOpen(false); }}
+                            className="w-full flex items-center px-3 py-1.5 text-left text-amber-200 hover:bg-amber-800/40 rounded-md"
+                            title="当前项目内：同名角色一键合并（会删除重复角色，不可撤销）"
+                          >
+                            <TrashIcon className="w-4 h-4 mr-2" /> 清理重复角色
+                          </button>
+                        </li>
                         {canUndoMerge && (
                             <li>
                                 <button
@@ -135,11 +144,6 @@ const CharacterListHeaderControls: React.FC<CharacterListHeaderControlsProps> = 
                                 <TrashIcon className="w-4 h-4 mr-2" /> 批量删除
                             </button>
                         </li>
-                         {showNoMoreOperations && (
-                             <li>
-                                <span className="px-3 py-1.5 text-xs text-slate-500 block">无更多操作</span>
-                             </li>
-                        )}
                     </ul>
                  </div>
             )}
