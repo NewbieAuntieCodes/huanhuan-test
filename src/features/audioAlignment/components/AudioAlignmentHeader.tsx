@@ -155,7 +155,8 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
           />
           <input
               type="file"
-              accept="audio/*"
+              multiple
+              accept="audio/*,.docx,.txt"
               ref={asrAlignFileInputRef}
               onChange={onFileSelectionForAsrAlign}
               className="hidden"
@@ -261,15 +262,15 @@ const AudioAlignmentHeader: React.FC<AudioAlignmentHeaderProps> = ({
               onClick={handleAsrAlignClick}
               disabled={!isAsrAlignSupported || isAsrAlignLoading}
               className="flex items-center text-sm text-fuchsia-300 hover:text-fuchsia-100 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-md disabled:opacity-50"
-              aria-label="ASR 自动对齐（OpenAI Whisper）"
+              aria-label="自动对齐（转写文档/Whisper）"
               title={
                 isAsrAlignSupported
-                  ? 'ASR 自动对齐（OpenAI Whisper/Python）：允许漏句/重读/加词；需在 Electron 助手中使用'
-                  : 'ASR 自动对齐需要 Electron 助手（未检测到 window.electronAPI）'
+                  ? '自动对齐：建议一次性选择“音频 + 带时间戳转写文档(.docx/.txt)”（网页也可用）；只选音频则会调用 Whisper（需 Electron 助手）'
+                  : '自动对齐暂不可用'
               }
           >
               {isAsrAlignLoading ? <LoadingSpinner /> : <SparklesIcon className="w-4 h-4 mr-1" />}
-              {isAsrAlignLoading ? '对齐中...' : 'ASR自动对齐'}
+              {isAsrAlignLoading ? '对齐中...' : '自动对齐'}
           </button>
           <button
               onClick={onOpenExportModal}

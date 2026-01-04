@@ -2,8 +2,11 @@ import React from 'react';
 import { db } from '../../../db';
 import { bufferToWav } from '../../../lib/wavEncoder';
 import { Character, Chapter, MasterAudio, Project } from '../../../types';
+import mammoth from 'mammoth';
 
 type AsrSegment = { start: number; end: number; text: string };
+
+type TimestampCue = { start: number; text: string };
 
 type NormalizedText = {
   raw: string;
@@ -218,6 +221,84 @@ const alignLinesToUnits = (
   return { ops, unitToLine };
 };
 
+const parseHmsToSeconds = (value: string): number | null => {
+  const s = (value || '').trim();
+  const m = s.match(/^(\d{1,2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?$/);
+  if (!m) return null;
+  const hh = parseInt(m[1], 10);
+  const mm = parseInt(m[2], 10);
+  const ss = parseInt(m[3], 10);
+  const ms = m[4] ? parseInt(m[4].padEnd(3, '0'), 10) : 0;
+  if (![hh, mm, ss, ms].every(Number.isFinite)) return null;
+  return hh * 3600 + mm * 60 + ss + ms / 1000;
+};
+
+const normalizeCuesMonotonic = (cues: TimestampCue[]): TimestampCue[] => {
+  const EPS = 0.01; // 10ms，避免同秒时间戳导致 start 不递增
+  const out = cues
+    .map((c) => ({ start: c.start, text: c.text }))
+    .filter((c) => Number.isFinite(c.start) && c.text.trim().length > 0)
+    .sort((a, b) => a.start - b.start || 0);
+
+  // 保持单调递增，避免后续 end<=start 被过滤
+  for (let i = 1; i < out.length; i++) {
+    if (out[i].start <= out[i - 1].start) {
+      out[i].start = out[i - 1].start + EPS;
+    }
+  }
+  return out;
+};
+
+const parseTimestampedLines = (rawText: string): TimestampCue[] => {
+  const lines = (rawText || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const cues: TimestampCue[] = [];
+  for (const line of lines) {
+    // 常见格式：
+    // 1号讲话人  00:00:01欢迎收听...
+    // 00:00:01 欢迎收听...
+    const mSpeaker = line.match(/^(.+?)\s+(\d{1,2}:\d{2}:\d{2}(?:\.\d{1,3})?)\s*(.*)$/);
+    const mBare = line.match(/^(\d{1,2}:\d{2}:\d{2}(?:\.\d{1,3})?)\s*(.*)$/);
+    const ts = mSpeaker?.[2] || mBare?.[1];
+    const text = (mSpeaker?.[3] || mBare?.[2] || '').trim();
+    if (!ts || !text) continue;
+    const start = parseHmsToSeconds(ts);
+    if (start === null) continue;
+    cues.push({ start, text });
+  }
+
+  return normalizeCuesMonotonic(cues);
+};
+
+const parseTimestampedDocx = async (file: File): Promise<TimestampCue[]> => {
+  const arrayBuffer = await file.arrayBuffer();
+  const result = await mammoth.extractRawText({ arrayBuffer });
+  return parseTimestampedLines(result.value || '');
+};
+
+const parseTimestampedTxt = async (file: File): Promise<TimestampCue[]> => {
+  const text = await file.text();
+  return parseTimestampedLines(text);
+};
+
+const cuesToSegments = (cues: TimestampCue[], fullDuration: number): AsrSegment[] => {
+  const out: AsrSegment[] = [];
+  if (!cues || cues.length === 0) return out;
+
+  for (let i = 0; i < cues.length; i++) {
+    const start = Math.max(0, Math.min(fullDuration, cues[i].start));
+    const nextStart = i < cues.length - 1 ? cues[i + 1].start : fullDuration;
+    const end = Math.max(start, Math.min(fullDuration, nextStart));
+    if (end <= start) continue;
+    out.push({ start, end, text: cues[i].text });
+  }
+
+  return out;
+};
+
 const extractChapterNumberFromFilename = (fileName: string): number | null => {
   const base = fileName.includes('.') ? fileName.slice(0, fileName.lastIndexOf('.')) : fileName;
   const firstPart = base.split('_')[0] || base;
@@ -258,8 +339,10 @@ export const useAsrAutoAligner = (args: {
   const { currentProject, selectedChapterId, characters, assignAudioToLine } = args;
   const [isAsrAlignLoading, setIsAsrAlignLoading] = React.useState(false);
 
-  const isAsrSupported =
-    !!window.electronAPI?.asrTranscribeOpenAIWhisper || !!window.electronAPI?.asrTranscribeWhisperCpp;
+  // 支持两种方式：
+  // 1) 选择“音频 + 带时间戳转写文档(.docx/.txt)”（网页也可用）
+  // 2) 只选音频则会调用 Electron 的 Whisper 转写
+  const isAsrSupported = true;
 
   const nonAudioCharacterIds = React.useMemo(() => {
     return characters
@@ -268,27 +351,23 @@ export const useAsrAutoAligner = (args: {
   }, [characters]);
 
   const handleFileSelectionForAsrAlign = React.useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
+    const files = Array.from(event.target.files || []);
     if (!files || files.length === 0) return;
     if (!currentProject) return;
 
-    if (!window.electronAPI?.asrTranscribeOpenAIWhisper && !window.electronAPI?.asrTranscribeWhisperCpp) {
-      alert('ASR 自动对齐需要在 Electron 助手中使用（未检测到 window.electronAPI）。');
-      if (event.target) event.target.value = '';
-      return;
-    }
-
     setIsAsrAlignLoading(true);
     try {
-      const file = files[0];
-      if (!file) throw new Error('未选择音频文件');
+      const isAudioFile = (f: File) => f.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|flac|ogg|opus)$/i.test(f.name);
+      const isTranscriptFile = (f: File) => /\.(docx|txt)$/i.test(f.name);
 
-      const filePath = (file as any).path as string | undefined;
-      if (!filePath) {
-        throw new Error('未获取到文件本地路径。请使用 Electron 打开本页面后再选择音频。');
+      const audioFile = files.find(isAudioFile);
+      const transcriptFile = files.find(isTranscriptFile);
+
+      if (!audioFile) {
+        throw new Error('请先选择音频文件（可同时选择带时间戳的转写文档 .docx/.txt）。');
       }
 
-      const chapter = getChapterBySelectionOrFilename(currentProject, selectedChapterId, file.name);
+      const chapter = getChapterBySelectionOrFilename(currentProject, selectedChapterId, audioFile.name);
       if (!chapter) {
         throw new Error('无法确定目标章节：请先在左侧选择章节，或使用包含章节号的文件名（如 001_*.mp3）。');
       }
@@ -301,27 +380,49 @@ export const useAsrAutoAligner = (args: {
         throw new Error('该章节没有可对轨的台词行（可能都是[静音]/[音效]）。');
       }
 
-      const asrRes = window.electronAPI.asrTranscribeOpenAIWhisper
-        ? await window.electronAPI.asrTranscribeOpenAIWhisper({
-            audioPath: filePath,
-            language: 'zh',
-            model: 'medium',
-          })
-        : await window.electronAPI.asrTranscribeWhisperCpp!({
-            audioPath: filePath,
-            language: 'zh',
-          });
+      const alignMode = transcriptFile ? '转写文档' : 'ASR（Whisper）';
 
-      if (!asrRes?.success) {
-        throw new Error(asrRes?.error || 'ASR 转写失败');
+      let parsedCues: TimestampCue[] = [];
+      let asrSegments: AsrSegment[] = [];
+
+      if (transcriptFile) {
+        const lower = transcriptFile.name.toLowerCase();
+        parsedCues = lower.endsWith('.docx') ? await parseTimestampedDocx(transcriptFile) : await parseTimestampedTxt(transcriptFile);
+        if (parsedCues.length === 0) {
+          throw new Error('转写文档中未解析到任何时间戳（需类似 00:00:01 开头的时间信息）。');
+        }
+      } else {
+        if (!window.electronAPI?.asrTranscribeOpenAIWhisper && !window.electronAPI?.asrTranscribeWhisperCpp) {
+          throw new Error('未检测到 Electron 助手：请同时选择“音频 + 带时间戳转写文档(.docx/.txt)”来对齐。');
+        }
+
+        const filePath = (audioFile as any).path as string | undefined;
+        if (!filePath) {
+          throw new Error('未获取到音频文件本地路径。若在网页中使用，请同时选择转写文档(.docx/.txt)。');
+        }
+
+        const asrRes = window.electronAPI.asrTranscribeOpenAIWhisper
+          ? await window.electronAPI.asrTranscribeOpenAIWhisper({
+              audioPath: filePath,
+              language: 'zh',
+              model: 'medium',
+            })
+          : await window.electronAPI.asrTranscribeWhisperCpp!({
+              audioPath: filePath,
+              language: 'zh',
+            });
+
+        if (!asrRes?.success) {
+          throw new Error(asrRes?.error || 'ASR 转写失败');
+        }
+
+        asrSegments = asrRes.segments || [];
+        if (asrSegments.length === 0) {
+          throw new Error('ASR 未返回任何可用片段');
+        }
       }
 
-      const asrSegments: AsrSegment[] = asrRes.segments || [];
-      if (asrSegments.length === 0) {
-        throw new Error('ASR 未返回任何可用片段');
-      }
-
-      const sourceAudioId = `${currentProject.id}_${file.name}`;
+      const sourceAudioId = `${currentProject.id}_${audioFile.name}`;
 
       // Clean up previous audio segments from the same source file.
       const oldBlobs = await db.audioBlobs.where('sourceAudioId').equals(sourceAudioId).toArray();
@@ -330,15 +431,22 @@ export const useAsrAutoAligner = (args: {
       }
 
       // Store master audio
-      const masterAudioEntry: MasterAudio = { id: sourceAudioId, projectId: currentProject.id, data: file };
+      const masterAudioEntry: MasterAudio = { id: sourceAudioId, projectId: currentProject.id, data: audioFile };
       await db.masterAudios.put(masterAudioEntry);
 
       // Decode audio (for duration + slicing)
       let audioContext: AudioContext | null = null;
       try {
         audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const mainAudioBuffer = await audioContext.decodeAudioData(await file.arrayBuffer());
+        const mainAudioBuffer = await audioContext.decodeAudioData(await audioFile.arrayBuffer());
         const fullDuration = mainAudioBuffer.duration;
+
+        if (transcriptFile) {
+          asrSegments = cuesToSegments(parsedCues, fullDuration);
+          if (asrSegments.length === 0) {
+            throw new Error('转写文档时间戳无法生成有效片段（可能时间超出音频长度或格式异常）。');
+          }
+        }
 
         // Build ASR units (smaller than raw segments for better alignment)
         const unitsRaw = splitTextToUnits(asrSegments)
@@ -370,7 +478,7 @@ export const useAsrAutoAligner = (args: {
           const boundary = Math.max(currentStart, boundaryCandidate);
           if (currentLineIndex === null) {
             currentLineIndex = li;
-            currentStart = 0;
+            currentStart = boundaryCandidate;
             continue;
           }
           if (boundary > currentStart) {
@@ -427,13 +535,13 @@ export const useAsrAutoAligner = (args: {
           }
 
           const segmentBlob = bufferToWav(segmentBuffer);
-          await assignAudioToLine(currentProject.id, chapter.id, lineInfo.line.id, segmentBlob, sourceAudioId, file.name);
+          await assignAudioToLine(currentProject.id, chapter.id, lineInfo.line.id, segmentBlob, sourceAudioId, audioFile.name);
           matchedCount++;
         }
 
         const missingCount = targetLines.length - matchedCount;
         alert(
-          `ASR 自动对齐完成：\n\n` +
+          `自动对齐完成（${alignMode}）：\n\n` +
             `章节：${chapter.title}\n` +
             `匹配：${matchedCount}/${targetLines.length} 句\n` +
             `漏句：${Math.max(0, missingCount)} 句\n\n` +
@@ -448,8 +556,8 @@ export const useAsrAutoAligner = (args: {
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error('ASR align failed:', e);
-      alert(`ASR 自动对齐失败：${msg}`);
+      console.error('Auto align failed:', e);
+      alert(`自动对齐失败：${msg}`);
     } finally {
       setIsAsrAlignLoading(false);
       if (event.target) event.target.value = '';
