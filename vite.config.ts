@@ -8,7 +8,8 @@ export default defineConfig(({ mode }) => {
 
     return {
       plugins: [react()],
-      base: '/huanhuan-test/',
+      // 使用相对路径，兼容 GitHub Pages（子路径）与 Electron file:// 本地加载
+      base: './',
       define: {
         'process.env.API_KEY': JSON.stringify(apiKey),
         'process.env.GEMINI_API_KEY': JSON.stringify(apiKey),
